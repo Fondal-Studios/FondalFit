@@ -1,0 +1,1 @@
+{"name":"arquitecto","private":true,"type":"module","scripts":{"test":"node tests/geometry.test.mjs"}}

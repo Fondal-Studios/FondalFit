@@ -1,0 +1,23 @@
+:root{--bg:#f6f7f9;--card:#fff;--ink:#17202b;--dim:#5b6675;--accent:#1f3a5f;--wall:#17202b;--room:#dfe9f5;--warn:#b45309;--risk:#b91c1c;--idea:#0f766e;--line:#d8dde5}
+@media (prefers-color-scheme:dark){:root{--bg:#10151c;--card:#18202a;--ink:#e8edf3;--dim:#9aa6b5;--accent:#6ea8ff;--wall:#e8edf3;--room:#233349;--line:#2a3544;--warn:#f59e0b;--risk:#f87171;--idea:#2dd4bf}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header,main{max-width:860px;margin:0 auto;padding:16px}
+h1{margin:0;font-size:1.6rem;color:var(--accent)}h2{font-size:1.1rem;margin:0 0 8px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:8px 0}
+label{display:flex;flex-direction:column;font-size:.85rem;color:var(--dim);gap:2px}
+label.chk{flex-direction:row;align-items:center;gap:6px}
+input,select{font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+button{font:inherit;padding:10px 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line)}
+button:disabled{opacity:.45}
+.dim,.note{color:var(--dim);font-size:.9rem}
+#plan{width:100%;height:auto;max-height:60vh;background:var(--bg);border-radius:8px;min-height:80px}
+ul{padding-left:18px}.f{padding:6px 10px;margin:4px 0;border-left:4px solid var(--line);background:var(--bg);border-radius:4px}
+.f.warn{border-color:var(--warn)}.f.risk{border-color:var(--risk)}.f.idea{border-color:var(--idea)}
+.card{border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0}
+#arOverlay{position:fixed;inset:0;pointer-events:none;color:#fff}
+#arOverlay[hidden]{display:none}
+.arbar{pointer-events:auto;display:flex;gap:8px;align-items:center;padding:12px;background:#000a;position:absolute;top:0;left:0;right:0}
+.arbar span{flex:1}.arhint{position:absolute;bottom:24px;left:0;right:0;text-align:center;text-shadow:0 1px 3px #000}
