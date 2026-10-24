@@ -1,0 +1,15 @@
+{
+  "name": "fondal-feed",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev:api": "npm -w @fondal/api run dev",
+    "dev:web": "npm -w @fondal/web run dev",
+    "build": "npm -w @fondal/engine run build && npm -w @fondal/web run build",
+    "typecheck": "npm -w @fondal/engine run typecheck && npm -w @fondal/api run typecheck && npm -w @fondal/web run typecheck",
+    "test": "npm -w @fondal/engine run test && npm -w @fondal/api run test && npm -w @fondal/web run test"
+  },
+  "engines": { "node": ">=22.13" }
+}

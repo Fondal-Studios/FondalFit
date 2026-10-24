@@ -1,0 +1,13 @@
+{
+  "name": "@fondal/api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": { "@fondal/engine": "*", "fastify": "^5.2.0", "zod": "^3.24.1", "@fastify/rate-limit": "^10.2.1" },
+  "devDependencies": { "@types/node": "^22.10.2", "tsx": "^4.19.2", "typescript": "^5.6.3", "vitest": "^2.1.8" }
+}

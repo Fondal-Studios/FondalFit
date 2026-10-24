@@ -1,0 +1,44 @@
+export type Goal = 'strength' | 'hypertrophy' | 'endurance' | 'fat_loss' | 'mobility' | 'general';
+export type Equipment = 'none' | 'dumbbells' | 'barbell' | 'machines' | 'bands' | 'bar';
+export type Area = 'knee' | 'shoulder' | 'lower_back' | 'hip' | 'ankle' | 'wrist' | 'neck';
+
+export interface Exercise {
+  id: string;
+  pattern: 'squat' | 'hinge' | 'push' | 'pull' | 'core' | 'lunge' | 'mobility' | 'carry';
+  equipment: Equipment[];
+  /** areas that should be avoided when the athlete reports a restriction there */
+  stresses: Area[];
+  /** load increment in kg for external-load exercises; 0 = bodyweight */
+  increment: number;
+}
+
+export interface Prescription {
+  exerciseId: string;
+  sets: number;
+  repMin: number;
+  repMax: number;
+  rirTarget: number;
+  load: number; // kg, 0 for bodyweight
+}
+
+export interface PlanDay { name: string; items: Prescription[] }
+export interface Plan { engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number }
+
+export interface AssessmentInput {
+  goal: Goal;
+  daysPerWeek: number;
+  experience: 'beginner' | 'intermediate' | 'advanced';
+  equipment: Equipment[];
+  restrictions: Area[];
+  /** PAR-Q style answers; any true is a red flag that requires clearance */
+  redFlags: { chestPain: boolean; dizziness: boolean; recentSurgery: boolean; pregnancy: boolean; medication: boolean };
+}
+
+export interface SetResult { weight: number; reps: number; rir: number }
+
+export interface AutonomyLimits {
+  maxLoadIncreasePct: number;
+  maxWeeklyVolumeDeltaPct: number;
+  maxSessionsPerWeek: number;
+  allowAutoDeload: boolean;
+}
