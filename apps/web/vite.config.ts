@@ -8,7 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Fondal Feed', short_name: 'Fondal', description: 'Training tracking for athletes and coaches',
+        name: 'Fondal Fit', short_name: 'Fondal', description: 'Training tracking for athletes and coaches',
         theme_color: '#0b0d10', background_color: '#0b0d10', display: 'standalone', start_url: '/',
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
       },

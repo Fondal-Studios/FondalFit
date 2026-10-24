@@ -1,4 +1,4 @@
-# Fondal Feed
+# Fondal Fit
 
 Plataforma para seguimiento de entrenamientos, para deportistas y profesionales (PWA oscura, ES/PT/EN).
 Base del dossier *FONDAL FIT IA* (23/10/2026). Estado: **Sprint 0 + base de los Sprints 1–5**. Ver [`docs/STATUS.md`](docs/STATUS.md) para lo implementado y lo pendiente.

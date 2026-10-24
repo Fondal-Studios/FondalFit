@@ -1,8 +1,8 @@
 # Estado y reanudación
 
 ## Hecho (con tests)
-- Motor determinista (16 tests): plan por objetivo/equipo/restricciones, doble progresión, límites de autonomía, nutrición con piso seguro, recuperación, banderas rojas.
-- API (16 tests de integración): auth, roles, consentimientos, plan/sesiones, adaptación, aprobaciones, vínculos revocables, nutrición, recuperación, exportar/borrar.
+- Motor determinista (20 tests): plan por objetivo/equipo/restricciones, doble progresión, límites de autonomía, nutrición con piso seguro, recuperación, banderas rojas.
+- API (18 tests de integración): auth, roles, consentimientos, plan/sesiones, adaptación, aprobaciones, vínculos revocables, nutrición, recuperación, exportar/borrar.
 - Web: PWA ES/PT/EN (2 tests de paridad). Humo en navegador móvil: alta → consentimiento → evaluación → plan → sesión → plan adaptado (`docs/screenshot-session-mobile.png`).
 
 ## No hecho / honesto

@@ -2,8 +2,10 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { z } from 'zod';
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import fastifyStatic from '@fastify/static';
 import {
-  checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
+  gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import { openDb, type DB } from './db';
@@ -31,7 +33,7 @@ const assessmentSchema = z.object({
   redFlags: z.object({ chestPain: z.boolean(), dizziness: z.boolean(), recentSurgery: z.boolean(), pregnancy: z.boolean(), medication: z.boolean() }),
 });
 
-export function buildApp(opts: { db?: DB; rateLimitMax?: number } = {}) {
+export function buildApp(opts: { db?: DB; rateLimitMax?: number; staticDir?: string } = {}) {
   const db = opts.db ?? openDb();
   const app = Fastify({ logger: false });
   app.register(rateLimit, { max: opts.rateLimitMax ?? 300, timeWindow: '1 minute' });
@@ -257,6 +259,34 @@ export function buildApp(opts: { db?: DB; rateLimitMax?: number } = {}) {
     (db.prepare('SELECT data,score,alerts,created_at FROM recovery WHERE user_id=? ORDER BY id DESC LIMIT 30').all(req.user!.id) as { data: string; score: number; alerts: string; created_at: string }[])
       .map((r) => ({ ...JSON.parse(r.data), score: r.score, alerts: JSON.parse(r.alerts), at: r.created_at })));
 
+  /* ---------------- Running ---------------- */
+  const weekStart = (offsetWeeks: number) => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * offsetWeeks); return d.toISOString(); };
+  const kmBetween = (uid: number, from: string, to: string) => (db.prepare('SELECT COALESCE(SUM(km),0) k FROM runs WHERE user_id=? AND created_at>=? AND created_at<?').get(uid, from, to) as { k: number }).k;
+  app.post('/api/runs', { preHandler: athleteOnly }, async (req, reply) => {
+    if (!needHealth(req, reply)) return;
+    const b = parse(z.object({ km: z.number().min(0.1).max(250), minutes: z.number().min(1).max(2000), rpe: z.number().min(1).max(10) }), req.body, reply);
+    if (!b) return;
+    db.prepare('INSERT INTO runs(user_id,km,minutes,rpe,created_at) VALUES(?,?,?,?,?)').run(req.user!.id, b.km, b.minutes, b.rpe, now());
+    return { pace: paceMinPerKm(b.km, b.minutes) };
+  });
+  app.get('/api/runs', { preHandler: athleteOnly }, async (req) => {
+    const uid = req.user!.id;
+    const runs = (db.prepare('SELECT km,minutes,rpe,created_at FROM runs WHERE user_id=? ORDER BY id DESC LIMIT 30').all(uid) as { km: number; minutes: number; rpe: number; created_at: string }[]).map((r) => ({ ...r, pace: paceMinPerKm(r.km, r.minutes) }));
+    const thisWeek = kmBetween(uid, weekStart(0), '9999'), prev = kmBetween(uid, weekStart(1), weekStart(0));
+    return { runs, weekKm: Math.round(thisWeek * 10) / 10, prevWeekKm: Math.round(prev * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
+  });
+
+  /* ---------------- Gamification ---------------- */
+  app.get('/api/gamification', { preHandler: athleteOnly }, async (req) => {
+    const uid = req.user!.id;
+    const byDay = new Map<string, { date: string; sessions: number; runs: number }>();
+    const bump = (d: string, k: 'sessions' | 'runs') => { const day = d.slice(0, 10); const e = byDay.get(day) ?? { date: day, sessions: 0, runs: 0 }; e[k]++; byDay.set(day, e); };
+    for (const r of db.prepare('SELECT created_at FROM workouts WHERE user_id=?').all(uid) as { created_at: string }[]) bump(r.created_at, 'sessions');
+    for (const r of db.prepare('SELECT created_at FROM runs WHERE user_id=?').all(uid) as { created_at: string }[]) bump(r.created_at, 'runs');
+    const rec = (db.prepare('SELECT COUNT(*) c FROM recovery WHERE user_id=?').get(uid) as { c: number }).c;
+    return gamification([...byDay.values()], rec);
+  });
+
   /* ---------------- Professional links ---------------- */
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {
     const b = parse(z.object({ email: z.string().email(), limits: limitsSchema.optional() }), req.body, reply);
@@ -358,5 +388,11 @@ export function buildApp(opts: { db?: DB; rateLimitMax?: number } = {}) {
   });
 
   app.get('/api/health', async () => ({ ok: true }));
+
+  // Serve the built PWA from the same origin (single-service deploy).
+  if (opts.staticDir && existsSync(opts.staticDir)) {
+    app.register(fastifyStatic, { root: opts.staticDir, wildcard: false });
+    app.setNotFoundHandler((req, reply) => (req.url.startsWith('/api/') ? reply.code(404).send({ error: 'not_found' }) : reply.sendFile('index.html')));
+  }
   return app;
 }

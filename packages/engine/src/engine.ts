@@ -163,3 +163,42 @@ export function recoveryScore(r: RecoveryInput): RecoveryResult {
   if (r.pain >= 7) alerts.push('high_pain');
   return { score, alerts };
 }
+
+/* ---------- Running ---------- */
+export const paceMinPerKm = (km: number, minutes: number) => (km > 0 ? Math.round((minutes / km) * 100) / 100 : 0);
+
+export interface RunWeek { km: number }
+/** Flags weekly distance jumps above 10% (and any jump >5 km from a low base): never rewarded, only warned. */
+export function runningLoadAlert(prevWeekKm: number, thisWeekKm: number): string[] {
+  const a: string[] = [];
+  if (prevWeekKm > 0 && thisWeekKm > prevWeekKm * 1.1 && thisWeekKm - prevWeekKm > 2) a.push('run_volume_jump');
+  if (prevWeekKm === 0 && thisWeekKm > 15) a.push('run_volume_jump');
+  return a;
+}
+
+/* ---------- Gamification (moderate, safe) ---------- */
+export interface ActivityDay { date: string; sessions: number; runs: number }
+export const ACHIEVEMENTS = ['first_session', 'ten_sessions', 'streak_4_weeks', 'first_run', 'recovery_logged'] as const;
+
+/** XP counts at most ONE rewarded activity per day, so training more than needed never earns more. */
+export function gamification(days: ActivityDay[], recoveryLogs: number) {
+  const active = days.filter((d) => d.sessions + d.runs > 0);
+  const xp = active.length * 50;
+  const level = Math.floor(Math.sqrt(xp / 50)) + 1;
+  const weeks = new Set(active.map((d) => isoWeek(d.date)));
+  let streak = 0;
+  const cur = isoWeekIndex(active.map((d) => d.date).sort().pop() ?? '');
+  for (let w = cur; w > 0 && weeks.has(weekKey(w)); w--) streak++;
+  const totalSessions = days.reduce((a, d) => a + d.sessions, 0);
+  const got: string[] = [];
+  if (totalSessions >= 1) got.push('first_session');
+  if (totalSessions >= 10) got.push('ten_sessions');
+  if (streak >= 4) got.push('streak_4_weeks');
+  if (days.some((d) => d.runs > 0)) got.push('first_run');
+  if (recoveryLogs >= 1) got.push('recovery_logged');
+  return { xp, level, streakWeeks: streak, achievements: got };
+}
+const weekNo = (d: string) => Math.floor(Date.parse(d.slice(0, 10) + 'T00:00:00Z') / (7 * 864e5));
+const isoWeek = (d: string) => weekKey(weekNo(d));
+const isoWeekIndex = (d: string) => (d ? weekNo(d) : 0);
+const weekKey = (n: number) => `w${n}`;

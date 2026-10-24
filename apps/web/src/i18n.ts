@@ -2,7 +2,7 @@ export type Lang = 'es' | 'pt' | 'en';
 export const LANGS: Lang[] = ['es', 'pt', 'en'];
 
 const en = {
-  app: 'Fondal Feed', login: 'Log in', register: 'Create account', logout: 'Log out', email: 'Email', password: 'Password', name: 'Name',
+  app: 'Fondal Fit', login: 'Log in', register: 'Create account', logout: 'Log out', email: 'Email', password: 'Password', name: 'Name',
   role: 'I am', athlete: 'Athlete', pro: 'Professional', trialNote: '14-day free trial. No card needed.', invalid: 'Check your data and try again.',
   today: 'Training', progress: 'Progress', nutrition: 'Nutrition', recovery: 'Recovery', settings: 'Settings', athletes: 'Athletes', approvals: 'Approvals',
   consentTitle: 'Your privacy', consentIntro: 'Everything is private by default. Grant only what you want; you can revoke any time.',
@@ -29,6 +29,8 @@ const en = {
   v_load_increase: 'load increase', v_weekly_volume: 'weekly volume', v_sessions_per_week: 'sessions per week', v_deload_not_allowed: 'deload',
   language: 'Language', export: 'Export my data', deleteAccount: 'Delete my account', confirmDelete: 'This permanently deletes your account and data. Continue?',
   subscription: 'Subscription', trialUntil: 'Free trial until', cancelSub: 'Cancel subscription', canceled: 'Canceled', paymentsNote: 'Payments are not enabled in this beta.',
+  running:'Running', distanceKm:'Distance (km)', minutes:'Minutes', rpe:'Effort (1-10)', pace:'Pace min/km', weekKm:'This week km', logRun:'Log run', a_run_volume_jump:'Big jump in weekly distance: increase gradually (about 10%) to avoid injury.',
+  level:'Level', streak:'Weekly streak', ach_first_session:'First session', ach_ten_sessions:'10 sessions', ach_streak_4_weeks:'4-week streak', ach_first_run:'First run', ach_recovery_logged:'Recovery logged', gamNote:'XP counts one activity per day: resting is part of training.', rest:'Rest', restStart:'Start rest', restDone:'Rest over',
   disclaimer: 'Not medical advice. Estimates are approximate.', offline: 'Offline — showing saved data.',
   ex_goblet_squat: 'Goblet squat', ex_back_squat: 'Back squat', ex_air_squat: 'Bodyweight squat', ex_box_squat_bodyweight: 'Box squat', ex_romanian_deadlift: 'Romanian deadlift', ex_glute_bridge: 'Glute bridge',
   ex_bench_press: 'Bench press', ex_dumbbell_press: 'Dumbbell press', ex_push_up: 'Push-up', ex_incline_push_up: 'Incline push-up', ex_dumbbell_row: 'Dumbbell row', ex_band_row: 'Band row', ex_pull_up: 'Pull-up',
@@ -37,7 +39,7 @@ const en = {
 export type Key = keyof typeof en;
 
 const es: Record<Key, string> = {
-  app: 'Fondal Feed', login: 'Iniciar sesión', register: 'Crear cuenta', logout: 'Salir', email: 'Correo', password: 'Contraseña', name: 'Nombre',
+  app: 'Fondal Fit', login: 'Iniciar sesión', register: 'Crear cuenta', logout: 'Salir', email: 'Correo', password: 'Contraseña', name: 'Nombre',
   role: 'Soy', athlete: 'Deportista', pro: 'Profesional', trialNote: '14 días de prueba gratis. Sin tarjeta.', invalid: 'Revisá tus datos e intentá de nuevo.',
   today: 'Entrenar', progress: 'Progreso', nutrition: 'Nutrición', recovery: 'Recuperación', settings: 'Ajustes', athletes: 'Alumnos', approvals: 'Aprobaciones',
   consentTitle: 'Tu privacidad', consentIntro: 'Todo es privado por defecto. Otorgá solo lo que quieras; podés revocarlo cuando quieras.',
@@ -64,6 +66,8 @@ const es: Record<Key, string> = {
   v_load_increase: 'aumento de carga', v_weekly_volume: 'volumen semanal', v_sessions_per_week: 'sesiones por semana', v_deload_not_allowed: 'descarga',
   language: 'Idioma', export: 'Exportar mis datos', deleteAccount: 'Eliminar mi cuenta', confirmDelete: 'Esto elimina tu cuenta y datos de forma permanente. ¿Continuar?',
   subscription: 'Suscripción', trialUntil: 'Prueba gratis hasta', cancelSub: 'Cancelar suscripción', canceled: 'Cancelada', paymentsNote: 'Los pagos no están habilitados en esta beta.',
+  running:'Running', distanceKm:'Distancia (km)', minutes:'Minutos', rpe:'Esfuerzo (1-10)', pace:'Ritmo min/km', weekKm:'Km esta semana', logRun:'Registrar carrera', a_run_volume_jump:'Salto grande de distancia semanal: aumentá de a poco (≈10%) para evitar lesiones.',
+  level:'Nivel', streak:'Racha semanal', ach_first_session:'Primera sesión', ach_ten_sessions:'10 sesiones', ach_streak_4_weeks:'Racha de 4 semanas', ach_first_run:'Primera carrera', ach_recovery_logged:'Recuperación registrada', gamNote:'La XP cuenta una actividad por día: descansar es parte del entrenamiento.', rest:'Descanso', restStart:'Iniciar descanso', restDone:'Descanso terminado',
   disclaimer: 'No es consejo médico. Las estimaciones son aproximadas.', offline: 'Sin conexión: mostrando datos guardados.',
   ex_goblet_squat: 'Sentadilla goblet', ex_back_squat: 'Sentadilla con barra', ex_air_squat: 'Sentadilla libre', ex_box_squat_bodyweight: 'Sentadilla al cajón', ex_romanian_deadlift: 'Peso muerto rumano', ex_glute_bridge: 'Puente de glúteos',
   ex_bench_press: 'Press de banca', ex_dumbbell_press: 'Press con mancuernas', ex_push_up: 'Flexiones', ex_incline_push_up: 'Flexiones inclinadas', ex_dumbbell_row: 'Remo con mancuerna', ex_band_row: 'Remo con banda', ex_pull_up: 'Dominadas',
@@ -71,7 +75,7 @@ const es: Record<Key, string> = {
 };
 
 const pt: Record<Key, string> = {
-  app: 'Fondal Feed', login: 'Entrar', register: 'Criar conta', logout: 'Sair', email: 'E-mail', password: 'Senha', name: 'Nome',
+  app: 'Fondal Fit', login: 'Entrar', register: 'Criar conta', logout: 'Sair', email: 'E-mail', password: 'Senha', name: 'Nome',
   role: 'Sou', athlete: 'Atleta', pro: 'Profissional', trialNote: '14 dias de teste grátis. Sem cartão.', invalid: 'Verifique seus dados e tente novamente.',
   today: 'Treinar', progress: 'Progresso', nutrition: 'Nutrição', recovery: 'Recuperação', settings: 'Ajustes', athletes: 'Alunos', approvals: 'Aprovações',
   consentTitle: 'Sua privacidade', consentIntro: 'Tudo é privado por padrão. Conceda apenas o que quiser; você pode revogar a qualquer momento.',
@@ -98,6 +102,8 @@ const pt: Record<Key, string> = {
   v_load_increase: 'aumento de carga', v_weekly_volume: 'volume semanal', v_sessions_per_week: 'sessões por semana', v_deload_not_allowed: 'descarga',
   language: 'Idioma', export: 'Exportar meus dados', deleteAccount: 'Excluir minha conta', confirmDelete: 'Isto exclui sua conta e dados permanentemente. Continuar?',
   subscription: 'Assinatura', trialUntil: 'Teste grátis até', cancelSub: 'Cancelar assinatura', canceled: 'Cancelada', paymentsNote: 'Pagamentos não estão habilitados nesta beta.',
+  running:'Corrida', distanceKm:'Distância (km)', minutes:'Minutos', rpe:'Esforço (1-10)', pace:'Ritmo min/km', weekKm:'Km esta semana', logRun:'Registrar corrida', a_run_volume_jump:'Grande salto na distância semanal: aumente aos poucos (≈10%) para evitar lesões.',
+  level:'Nível', streak:'Sequência semanal', ach_first_session:'Primeira sessão', ach_ten_sessions:'10 sessões', ach_streak_4_weeks:'Sequência de 4 semanas', ach_first_run:'Primeira corrida', ach_recovery_logged:'Recuperação registrada', gamNote:'O XP conta uma atividade por dia: descansar faz parte do treino.', rest:'Descanso', restStart:'Iniciar descanso', restDone:'Descanso concluído',
   disclaimer: 'Não é aconselhamento médico. As estimativas são aproximadas.', offline: 'Sem conexão: mostrando dados salvos.',
   ex_goblet_squat: 'Agachamento goblet', ex_back_squat: 'Agachamento com barra', ex_air_squat: 'Agachamento livre', ex_box_squat_bodyweight: 'Agachamento no caixote', ex_romanian_deadlift: 'Levantamento terra romeno', ex_glute_bridge: 'Ponte de glúteos',
   ex_bench_press: 'Supino', ex_dumbbell_press: 'Supino com halteres', ex_push_up: 'Flexão', ex_incline_push_up: 'Flexão inclinada', ex_dumbbell_row: 'Remada com halter', ex_band_row: 'Remada com elástico', ex_pull_up: 'Barra fixa',

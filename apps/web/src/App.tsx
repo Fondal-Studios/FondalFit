@@ -89,7 +89,7 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
   const isPro = me.role === 'pro';
-  const tabs = isPro ? ['athletes', 'approvals', 'settings'] : ['today', 'progress', 'nutrition', 'recovery', 'settings'];
+  const tabs = isPro ? ['athletes', 'approvals', 'settings'] : ['today', 'running', 'progress', 'nutrition', 'recovery', 'settings'];
   const [tab, setTab] = useState(tabs[0]!);
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
   return (
@@ -98,6 +98,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <>
           {tab === 'today' && <Training />}
+          {tab === 'running' && <Running />}
           {tab === 'progress' && <Progress />}
           {tab === 'nutrition' && <Nutrition />}
           {tab === 'recovery' && <Recovery />}
@@ -209,8 +210,42 @@ function Session({ day, index, onDone }: { day: { name: string; items: Rx[] }; i
           ))}
         </div>
       ))}
+      <RestTimer />
       <label htmlFor="fat">{t('fatigue')}: {fatigue}</label><input id="fat" type="range" min={1} max={10} value={fatigue} onChange={(e) => setFatigue(Number(e.target.value))} />
       <p><button className="primary" onClick={submit}>{t('finish')}</button></p>
+    </>
+  );
+}
+
+function RestTimer() {
+  const t = useT();
+  const [left, setLeft] = useState(0);
+  useEffect(() => { if (left <= 0) return; const id = setTimeout(() => setLeft((l) => l - 1), 1000); return () => clearTimeout(id); }, [left]);
+  return (
+    <div className="card row"><h3>{t('rest')}</h3>
+      {[60, 90, 120].map((s) => <button key={s} onClick={() => setLeft(s)}>{s}s</button>)}
+      <span role="timer" aria-live="off">{left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''}</span></div>
+  );
+}
+
+function Running() {
+  const t = useT();
+  const [d, setD] = useState<any>(null);
+  const [f, setF] = useState({ km: '', minutes: '', rpe: '5' });
+  const load = () => api('GET', '/api/runs').then(setD).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const fmt = (p: number) => `${Math.floor(p)}:${String(Math.round((p % 1) * 60)).padStart(2, '0')}`;
+  return (
+    <>
+      <form className="card" onSubmit={async (e) => { e.preventDefault(); await api('POST', '/api/runs', { km: +f.km, minutes: +f.minutes, rpe: +f.rpe }); setF({ km: '', minutes: '', rpe: '5' }); load(); }}>
+        <h2>{t('running')}</h2>
+        <div className="row"><input required aria-label={t('distanceKm')} placeholder={t('distanceKm')} inputMode="decimal" value={f.km} onChange={(e) => setF({ ...f, km: e.target.value })} />
+          <input required aria-label={t('minutes')} placeholder={t('minutes')} inputMode="decimal" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
+          <input required aria-label={t('rpe')} placeholder={t('rpe')} type="number" min={1} max={10} value={f.rpe} onChange={(e) => setF({ ...f, rpe: e.target.value })} /></div>
+        <p><button className="primary">{t('logRun')}</button></p></form>
+      {d && <div className="card"><p>{t('weekKm')}: <b>{d.weekKm}</b></p>
+        {d.alerts.map((a: string) => <p key={a} className="warn" role="alert">{t('a_' + a)}</p>)}
+        {d.runs.map((r: any, i: number) => <p key={i} className="muted">{r.created_at.slice(0, 10)} · {r.km} km · {fmt(r.pace)} /km · RPE {r.rpe}</p>)}</div>}
     </>
   );
 }
@@ -218,14 +253,18 @@ function Session({ day, index, onDone }: { day: { name: string; items: Rx[] }; i
 function Progress() {
   const t = useT();
   const [d, setD] = useState<{ sessions: { date: string; volume: number; sets: number }[]; total: number } | null>(null);
-  useEffect(() => { api('GET', '/api/progress').then(setD).catch(() => {}); }, []);
+  const [g, setG] = useState<{ xp: number; level: number; streakWeeks: number; achievements: string[] } | null>(null);
+  useEffect(() => { api('GET', '/api/progress').then(setD).catch(() => {}); api('GET', '/api/gamification').then(setG).catch(() => {}); }, []);
   if (!d) return null;
   const max = Math.max(1, ...d.sessions.map((s) => s.volume));
   return (
+    <>
+    {g && <div className="card"><h2>{t('level')} {g.level} · {g.xp} XP</h2><p>{t('streak')}: {g.streakWeeks}</p><div className="chips">{g.achievements.map((x) => <span key={x} className="badge ok">{t('ach_' + x)}</span>)}</div><p className="muted">{t('gamNote')}</p></div>}
     <div className="card"><h2>{t('progress')}</h2>
       {!d.total ? <p className="muted">{t('noData')}</p> : <><p>{t('sessionsDone')}: {d.total}</p>
         {d.sessions.slice(-14).map((s, i) => <div key={i}><span className="muted">{s.date.slice(0, 10)} · {Math.round(s.volume)} kg</span><div className="bar"><i style={{ width: `${(s.volume / max) * 100}%` }} /></div></div>)}</>}
     </div>
+    </>
   );
 }
 

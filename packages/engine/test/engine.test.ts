@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   checkAutonomy, DEFAULT_LIMITS, estimate1RM, generatePlan, nextLoad, nutritionTarget, recoveryScore,
-  screenSafety, seedLoad, allowedExercises, needsDeload, byId,
+  screenSafety, seedLoad, allowedExercises, needsDeload, byId, paceMinPerKm, runningLoadAlert, gamification,
 } from '../src';
 import type { AssessmentInput } from '../src';
 
@@ -93,4 +93,23 @@ describe('recovery', () => {
     expect(r.score).toBeLessThan(50);
     expect(recoveryScore({ sleepHours: 8, fatigue: 1, stress: 1, pain: 0 }).score).toBe(100);
   });
+});
+
+describe('running', () => {
+  it('pace', () => { expect(paceMinPerKm(10, 55)).toBe(5.5); expect(paceMinPerKm(0, 10)).toBe(0); });
+  it('flags jumps only', () => {
+    expect(runningLoadAlert(20, 21)).toEqual([]);
+    expect(runningLoadAlert(20, 30)).toEqual(['run_volume_jump']);
+    expect(runningLoadAlert(0, 25)).toEqual(['run_volume_jump']);
+  });
+});
+
+describe('gamification', () => {
+  it('caps XP at one activity per day and tracks streak', () => {
+    const g = gamification([{ date: '2026-10-05', sessions: 3, runs: 2 }, { date: '2026-10-12', sessions: 1, runs: 0 }, { date: '2026-10-19', sessions: 1, runs: 0 }, { date: '2026-10-26', sessions: 1, runs: 0 }], 1);
+    expect(g.xp).toBe(200);
+    expect(g.streakWeeks).toBe(4);
+    expect(g.achievements).toEqual(expect.arrayContaining(['first_session', 'first_run', 'streak_4_weeks', 'recovery_logged']));
+  });
+  it('empty', () => { expect(gamification([], 0)).toEqual({ xp: 0, level: 1, streakWeeks: 0, achievements: [] }); });
 });

@@ -8,9 +8,9 @@ Leyenda: ✅ flujo persistente + tests · 🟡 parcial · ⬜ backlog (sin imple
 | M02 | Evaluación adaptativa | 🟡 | cuestionario + banderas rojas. Pendiente: pruebas opcionales, reevaluación |
 | M03 | FONDAL COACH (LLM) | ⬜ | Sprint 3. Hoy: adaptación por motor determinista |
 | M04 | Planificación | 🟡 | plan, doble progresión, restricciones. Pendiente: periodización, sustituciones |
-| M05 | Sesión guiada | 🟡 | registro de series/RIR. Pendiente: temporizadores, offline parcial |
+| M05 | Sesión guiada | 🟡 | registro de series/RIR. temporizador de descanso. Pendiente: offline parcial |
 | M06 | Fuerza y calistenia | 🟡 | catálogo de 20 ejercicios |
-| M07 | Running | ⬜ | |
+| M07 | Running | 🟡 | registro, ritmo, aviso de saltos de volumen. Pendiente: intervalos, planes |
 | M08 | Funcional / deportes | ⬜ | |
 | M09 | Readaptación | 🟡 | derivación por banderas rojas. Pendiente: aprobación profesional del plan |
 | M10 | Biomecánica | ⬜ | Sprint 6 |
@@ -19,7 +19,7 @@ Leyenda: ✅ flujo persistente + tests · 🟡 parcial · ⬜ backlog (sin imple
 | M13 | Recuperación | 🟡 | índice y alertas |
 | M14 | Wearables | ⬜ | Sprint 7; ver ADR-004 |
 | M15 | Academia | ⬜ | |
-| M16 | Gamificación | ⬜ | Sprint 7 |
+| M16 | Gamificación | 🟡 | XP (1 actividad/día), nivel, racha, logros. Pendiente: cosméticos |
 | M17 | Panel profesional | 🟡 | alumnos, límites de IA, aprobaciones. Pendiente: informes, comunicación |
 | M18 | Agenda | ⬜ | |
 | M19 | Analítica | 🟡 | volumen por sesión |
@@ -27,4 +27,4 @@ Leyenda: ✅ flujo persistente + tests · 🟡 parcial · ⬜ backlog (sin imple
 | M21 | Idiomas / accesibilidad | 🟡 | ES/PT/EN con test de paridad; controles ≥44px |
 | M22 | Seguridad | 🟡 | RBAC, scrypt, rate limit, auditoría. Pendiente: cifrado en reposo, backups |
 | M23 | Operaciones | 🟡 | CI. Pendiente: feature flags, monitoreo |
-| M24 | QA | 🟡 | 34 tests + humo E2E en navegador |
+| M24 | QA | 🟡 | 40 tests + humo E2E en navegador |

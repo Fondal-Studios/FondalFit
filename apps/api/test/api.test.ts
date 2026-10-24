@@ -158,6 +158,28 @@ describe('professional supervision', () => {
   });
 });
 
+describe('running & gamification', () => {
+  it('logs runs, computes pace, warns on jumps, awards capped XP', async () => {
+    const { t } = await athleteWithPlan();
+    const r = await call('POST', '/api/runs', t, { km: 10, minutes: 55, rpe: 6 });
+    expect(r.body.pace).toBe(5.5);
+    await call('POST', '/api/runs', t, { km: 20, minutes: 120, rpe: 7 });
+    const list = (await call('GET', '/api/runs', t)).body;
+    expect(list.runs).toHaveLength(2);
+    expect(list.alerts).toEqual(['run_volume_jump']);
+    const plan = (await call('GET', '/api/plan', t)).body.plan;
+    await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
+    await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
+    const g = (await call('GET', '/api/gamification', t)).body;
+    expect(g.xp).toBe(50); // same day: one rewarded activity only
+    expect(g.achievements).toEqual(expect.arrayContaining(['first_session', 'first_run']));
+  });
+  it('requires consent', async () => {
+    const t = await reg('b@x.com', 'athlete');
+    expect((await call('POST', '/api/runs', t, { km: 5, minutes: 30, rpe: 5 })).status).toBe(403);
+  });
+});
+
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();
