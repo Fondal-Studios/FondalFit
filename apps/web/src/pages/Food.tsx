@@ -19,7 +19,7 @@ export function Food({ onWizard }: { onWizard: () => void }) {
   const [c, setC] = useState({ meal: '', kcal: '', proteinG: '', carbsG: '', fatG: '' });
 
   if (!n.data) return <Loading err={n.err} retry={n.reload} />;
-  const tg = n.data.target;
+  const tg = n.data.target?.explain ? n.data.target : null; // targets from the first app version lack the breakdown
   if (!tg) return <div className="card"><p>{t('noPlanYet')}</p><button className="primary" onClick={onWizard}>{t('createPlan')}</button></div>;
   const x = tg.explain, td = n.data.today;
 

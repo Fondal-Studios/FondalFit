@@ -35,7 +35,7 @@ export function Wizard({ onDone, onCancel }: { onDone: () => void; onCancel?: ()
 
   useEffect(() => {
     const a = data?.assessment;
-    if (!a) return;
+    if (!a?.profile) return; // answers saved by the first app version have no body data: start fresh
     const p = a.profile;
     const place = Object.keys(PLACES).find((k) => PLACES[k]!.length === a.equipment.length && PLACES[k]!.every((e) => a.equipment.includes(e))) ?? 'pl_gym';
     setF({ ...empty, ...a, place, profile: { sex: p.sex, age: String(p.age), weightKg: String(p.weightKg), heightCm: String(p.heightCm), bodyFatPct: p.bodyFatPct ? String(p.bodyFatPct) : '', waistCm: p.waistCm ? String(p.waistCm) : '', lifeFactor: p.lifeFactor, diet: p.diet ?? [] } });
