@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, hasToken, setToken } from './api';
 import { LANGS, translate, type Lang } from './i18n';
 
@@ -110,7 +110,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
             {tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
-            {tab === 'today' && <><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /></>}
+            {tab === 'today' && <><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><BetaCoach /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
               <button className="feature-card" onClick={() => setWellness('running')}><span className="feature-icon">↗</span><strong>{t('running')}</strong><small>Distancia, ritmos y registro de carreras</small><span>Ver actividad →</span></button>
@@ -289,6 +289,112 @@ function RestTimer() {
   );
 }
 
+// Geolocation remains foreground-only on PWAs; explicit permission and manual save.
+function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void }) {
+  const [active, setActive] = useState(false);
+  const [touchLocked, setTouchLocked] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [meters, setMeters] = useState(0);
+  const [status, setStatus] = useState('El GPS necesita permiso y una conexión segura (HTTPS).');
+  const watchId = useRef<number | null>(null);
+  const lastPoint = useRef<{lat:number;lon:number;at:number}|null>(null);
+  const startedAt = useRef(0);
+  const wake = useRef<{release:()=>Promise<void>}|null>(null);
+  const running = useRef(false);
+  const stop = useCallback(() => {
+    running.current = false;
+    if (watchId.current!==null) navigator.geolocation.clearWatch(watchId.current);
+    watchId.current = null;
+    void wake.current?.release().catch(()=>{});
+    wake.current = null;
+    setActive(false);
+    setTouchLocked(false);
+  },[]);
+  useEffect(() => () => {
+    running.current=false;
+    if(watchId.current!==null) navigator.geolocation.clearWatch(watchId.current);
+    void wake.current?.release().catch(()=>{});
+  },[]);
+  useEffect(() => {
+    if(!active) return;
+    const tick=window.setInterval(()=>setElapsed(Math.round((Date.now()-startedAt.current)/1000)),1000);
+    return ()=>clearInterval(tick);
+  },[active]);
+  const start=async()=>{
+    if(!navigator.geolocation) {setStatus('Este navegador no ofrece GPS.');return;}
+    setMeters(0);setElapsed(0);lastPoint.current=null;startedAt.current=Date.now();
+    running.current=true;setActive(true);setStatus('Buscando señal GPS…');
+    try {
+      const n=navigator as Navigator & {wakeLock?: {request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
+      if(n.wakeLock) wake.current=await n.wakeLock.request('screen');
+    } catch {setStatus('GPS activo. El dispositivo puede apagar la pantalla.');}
+    if(!running.current)return;
+    watchId.current=navigator.geolocation.watchPosition(pos=>{
+      if(!running.current)return;
+      const {latitude:lat,longitude:lon,accuracy}=pos.coords;
+      if(accuracy>45){setStatus('Esperando una señal GPS más precisa…');return;}
+      const at=pos.timestamp;
+      if(lastPoint.current){
+        const prev=lastPoint.current;
+        const rad=Math.PI/180,dlat=(lat-prev.lat)*rad,dlon=(lon-prev.lon)*rad;
+        const h=Math.sin(dlat/2)**2+Math.cos(prev.lat*rad)*Math.cos(lat*rad)*Math.sin(dlon/2)**2;
+        const distance=12742000*Math.asin(Math.min(1,Math.sqrt(h)));
+        const seconds=(at-prev.at)/1000;
+        if(seconds>0&&distance>=3&&distance/seconds<8) {
+          setMeters(m=>m+distance);
+          lastPoint.current={lat,lon,at};
+        } else if(seconds>0&&distance/seconds>=8) {
+          setStatus('Se descartó un salto de posición GPS.');
+        }
+      } else lastPoint.current={lat,lon,at};
+      setStatus('GPS activo · distancia estimada');
+    },e=>setStatus(e.code===1?'Permiso de ubicación rechazado. Podés registrar la carrera manualmente.':'Se perdió la señal GPS. Podés registrar la carrera manualmente.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+  };
+  return <div className="card gps-run">
+    <h3>Seguimiento GPS (beta)</h3>
+    <p className="muted">Funciona mientras la app permanezca activa en primer plano. En segundo plano o con pantalla apagada el sistema puede suspender el seguimiento.</p>
+    <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km estimados</small></div><div><strong>{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</strong><small>tiempo</small></div></div>
+    <p role="status" className="muted">{status}</p>
+    {!active?<button className="primary action-full" onClick={()=>void start()}>Iniciar GPS</button>:<div className="gps-actions">
+      <button onClick={()=>setTouchLocked(true)}>Bloquear toques</button>
+      <button onClick={()=>{stop();if(meters>0&&elapsed>0)onDraft(Number((meters/1000).toFixed(2)),Number((elapsed/60).toFixed(2)));}}>Finalizar y completar registro</button>
+    </div>}
+    {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla táctil bloqueada">
+      <strong>Toques bloqueados</strong><p>El GPS continúa mientras el navegador esté activo.</p><button className="primary" onClick={()=>setTouchLocked(false)}>Mantener presionado para desbloquear</button>
+      <p className="muted">Este bloqueo no controla el botón físico de suspensión.</p>
+    </div>}
+  </div>;
+}
+
+function BetaCoach() {
+  const [status,setStatus]=useState<{available:boolean;remaining:number;dailyLimit:number}|null>(null);
+  const [message,setMessage]=useState('');
+  const [answer,setAnswer]=useState('');
+  const [error,setError]=useState('');
+  const [working,setWorking]=useState(false);
+  useEffect(()=>{api<{available:boolean;remaining:number;dailyLimit:number}>('GET','/api/coach/status').then(setStatus).catch(()=>{});},[]);
+  const submit=async()=>{
+    if(!message.trim())return;
+    setWorking(true);setError('');
+    try{
+      const r=await api<{answer:string;remaining:number}>('POST','/api/coach/chat',{message});
+      setAnswer(r.answer);setStatus(x=>x?{...x,remaining:r.remaining}:x);
+    }catch(e){
+      const err=e instanceof ApiError?e.body?.error:'';
+      setError(err==='ai_consent_required'?'Activá el consentimiento de memoria de IA en Perfil antes de probarlo.':err==='coach_daily_limit'?'Llegaste al límite diario de prueba.':err==='coach_unconfigured'?'Falta configurar la clave gratuita de Gemini en el servidor.':'El entrenador no está disponible ahora.');
+    }finally{setWorking(false);}
+  };
+  return <section className="card">
+    <div className="eyebrow">FONDAL COACH · BETA</div><h2>Consultá a tu entrenador</h2>
+    <p className="muted">Consejos educativos basados en tu meta. La IA no modifica el plan ni reemplaza una evaluación profesional.</p>
+    <p className="muted">{status?.available?`Consultas restantes hoy: ${status.remaining}/${status.dailyLimit}`:'Para activar la IA se necesita una clave gratuita configurada en el servidor.'}</p>
+    <label htmlFor="coach-message">Tu consulta</label><textarea id="coach-message" rows={3} maxLength={450} value={message} onChange={e=>setMessage(e.target.value)} placeholder="¿Cómo adapto el entrenamiento de hoy a mi objetivo?"/>
+    <button className="primary action-full" disabled={working||!message.trim()||!status?.available||status.remaining<=0} onClick={()=>void submit()}>{working?'Consultando…':'Consultar al coach'}</button>
+    {error&&<p className="warn" role="alert">{error}</p>}
+    {answer&&<div className="coach-answer" role="status">{answer}</div>}
+  </section>;
+}
+
 function Running() {
   const t = useT();
   const [d, setD] = useState<any>(null);
@@ -298,6 +404,7 @@ function Running() {
   const fmt = (p: number) => `${Math.floor(p)}:${String(Math.round((p % 1) * 60)).padStart(2, '0')}`;
   return (
     <>
+      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),minutes:String(minutes)}))}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); await api('POST', '/api/runs', { km: +f.km, minutes: +f.minutes, rpe: +f.rpe }); setF({ km: '', minutes: '', rpe: '5' }); load(); }}>
         <h2>{t('running')}</h2>
         <div className="row"><input required aria-label={t('distanceKm')} placeholder={t('distanceKm')} inputMode="decimal" value={f.km} onChange={(e) => setF({ ...f, km: e.target.value })} />
