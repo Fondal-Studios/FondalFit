@@ -21,7 +21,7 @@ export function Home({ me, go }: { me: Me; go: (tab: string) => void }) {
       <h2>{t('hi')}, {me.name}</h2>
       <DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/>
       <div className="card">
-        <p className="muted">{t('nextSession')}</p>
+        <p className="muted">{(daily.data?.activities.length??0)>0?'Actividad registrada hoy · Próxima sugerencia opcional':t('nextSession')}</p>
         <h3>{next.name} · {next.kind === 'cardio' && next.cardio ? `${t(next.cardio.modality)} · ${t('ct_' + next.cardio.type)} · ${next.cardio.durationMin} ${t('minutes_short')}` : `${next.items.length} ${t('ex_count')}`}</h3>
         <button className="primary" onClick={() => go(next.kind === 'cardio' ? 'cardio' : 'train')}>{t('startNow')}</button>
       </div>
@@ -40,6 +40,6 @@ function DailySummary({activities,totalKcal,estimated,go}:{activities:{id:number
   {activities.length?<><p className="daily-kcal">≈{totalKcal} kcal <small>{estimated?'estimadas en actividades registradas':'sin estimación de peso'}</small></p>
    {activities.map(a=><div className="daily-activity" key={a.id}><strong>{a.sport==='run'?'Corrida':a.sport==='bike'?'Bicicleta':'Caminata'}</strong><p>{(a.distance_m/1000).toFixed(2)} km · {Math.floor(a.duration_sec/60)} min · ritmo {fmtPace(a.avg_pace_sec_km)} min/km</p><p>Desnivel +{a.elev_gain_m} m · {a.estimated_kcal===null?'Calorías sin estimar':`≈${a.estimated_kcal} kcal`}</p></div>)}
   </>:<><p className="muted">Todavía no registraste actividades hoy.</p><button className="primary" onClick={()=>go('cardio')}>Registrar una caminata o corrida</button></>}
-  <div className="daily-suggestion"><h3>Sugerencias para hoy</h3><p>Después de correr podés hacer un bloque corto de dominadas y flexiones, ajustando el esfuerzo según tu recuperación. La constancia importa más que sumar sesiones de más.</p><div className="row"><button onClick={()=>go('train')}>Mi entrenamiento</button><button onClick={()=>go('food')}>Ver alimentación</button></div></div>
+  <div className="daily-suggestion"><h3>{activities.length?'Ya hiciste actividad hoy':'Sugerencias para hoy'}</h3><p>{activities.length?'Tu corrida ya quedó contabilizada. Si estás recuperado podés completar una sesión corta de fuerza o calistenia; también podés descansar.':'Podés iniciar una caminata, correr o hacer fuerza. Elegí según tu objetivo y recuperación.'}</p><div className="row"><button onClick={()=>go('train')}>Mi entrenamiento</button><button onClick={()=>go('food')}>Ver alimentación</button></div></div>
  </section>;
 }
