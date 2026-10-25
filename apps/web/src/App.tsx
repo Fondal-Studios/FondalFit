@@ -163,7 +163,7 @@ function Training() {
   useEffect(() => { load(); }, [load]);
   if (!res) return <p className="muted">{msg}</p>;
   if (!res.plan) return <Assessment onDone={load} />;
-  if (session !== null) return <Session day={res.plan.days[session]!} index={session} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
+  if (session !== null) return <Session day={res.plan.days[session]!} index={session} onCancel={() => setSession(null)} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
   return (
     <>
       <p className="muted">{t('planVersion')} {res.version}</p>
@@ -198,7 +198,7 @@ function Assessment({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Session({ day, index, onDone }: { day: { name: string; items: Rx[] }; index: number; onDone: (msg: string) => void }) {
+function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[] }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
   const t = useT();
   const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
     Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
@@ -214,7 +214,9 @@ function Session({ day, index, onDone }: { day: { name: string; items: Rx[] }; i
   };
   return (
     <>
+      <button className="back-button" onClick={onCancel}>← Volver al plan</button>
       <h2>{day.name}</h2>
+      <p className="muted">Registrá tus series. Si volvés al plan antes de finalizar, los datos de esta sesión no se guardan.</p>
       {day.items.map((it) => (
         <div className="card" key={it.exerciseId}>
           <h3>{t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
