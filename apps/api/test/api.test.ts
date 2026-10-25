@@ -193,6 +193,29 @@ describe('running & gamification', () => {
   });
 });
 
+describe('daily energy calendar', () => {
+  it('records calories for a run and combines them with meals by local day', async () => {
+    const { t }=await athleteWithPlan();
+    const target=await call('POST','/api/nutrition/target',t,{sex:'m',weightKg:80,heightCm:178,age:32,activity:1.375,goal:'general',adjustmentPct:0,allergies:[]});
+    expect(target.status).toBe(200);
+    const meal=await call('POST','/api/nutrition/log',t,{meal:'almuerzo',kcal:800,proteinG:40,carbsG:80,fatG:20,waterMl:200});
+    expect(meal.status).toBe(200);
+    const run=await call('POST','/api/runs',t,{km:5,minutes:30,rpe:5,weightKg:80});
+    expect(run.status).toBe(200);expect(run.body.estimatedKcal).toBe(400);
+    const month=new Date().toISOString().slice(0,7);
+    const result=await call('GET','/api/energy/calendar?month='+month+'&timezoneOffset=0',t);
+    expect(result.status).toBe(200);
+    const day=result.body.days.find((x:any)=>x.runs.length>0);
+    expect(day).toBeTruthy();
+    expect(day.intake).toBe(800);
+    expect(day.runKcal).toBe(400);
+    expect(day.meals[0].name).toBe('almuerzo');
+  });
+  it('requires athlete authentication', async()=>{
+    expect((await call('GET','/api/energy/calendar?month=2026-10')).status).toBe(401);
+  });
+});
+
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();
