@@ -485,6 +485,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const dayFraction=Math.max(0,Math.min(1,(Date.now()-midnight)/86400000));
     const targetRow=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
     const target=targetRow?JSON.parse(targetRow.data) as {kcal?:number;explain?:{bmr?:number;lifeKcal?:number;tdee?:number;trainKcal?:number;adjustPct?:number;lifeFactor?:number}}:null;
+    const assessmentRow=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as {data:string}|undefined;
+    const goal=assessmentRow?(JSON.parse(assessmentRow.data) as {goal?:string}).goal??'general':'general';
     const bmr=Math.max(0,target?.explain?.bmr??0);
     const lifeDaily=Math.max(bmr,target?.explain?.lifeKcal??bmr*1.2);
     const neatProxy=Math.max(0,lifeDaily-bmr);
@@ -505,6 +507,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return {date:day,basalSoFar,neatSoFar,exerciseKcal,burnedSoFar,eaten,
       dailyBmr:Math.round(bmr),dailyNeatProxy:Math.round(neatProxy),
       targetBudget:budget,remaining:budget===null?null:budget-eaten,
+      goal,plannedTdee:Math.round(plannedTdee),goalAdjustment,lifeFactor:target?.explain?.lifeFactor??null,
+      nutritionMethod:'Mifflin-St Jeor',
       complete:!!target,dayFraction,
       note:'El NEAT no se mide: la cifra representa actividad cotidiana y otros gastos incluidos en el factor de vida. El ejercicio y la comida pueden estar incompletos. No es un gasto calórico medido.'};
   });
