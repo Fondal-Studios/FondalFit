@@ -111,6 +111,8 @@ export function Settings({ me, refresh, onLang, onLogout, onWizard }: { me: Me; 
   const t = useT();
   const lang = useLang();
   const [links, setLinks] = useState<any[]>([]);
+  const [joinCode,setJoinCode]=useState('');
+  const [joinStatus,setJoinStatus]=useState('');
   const loadLinks = () => me.role === 'athlete' && api('GET', '/api/links').then(setLinks).catch(() => {});
   useEffect(() => { loadLinks(); }, []); // eslint-disable-line
   const toggle = async (k: string, v: boolean) => { await api('PUT', '/api/consents', { [k]: v }); refresh(); loadLinks(); };
@@ -124,7 +126,12 @@ export function Settings({ me, refresh, onLang, onLogout, onWizard }: { me: Me; 
       {me.role === 'athlete' && <>
         <div className="card"><button onClick={onWizard}>{t('editPlan')}</button></div>
         <div className="card"><h3>{t('consentTitle')}</h3>
-          {CONSENT_KEYS.filter((k) => k !== 'terms' && k !== 'health_data').map((k) => <label key={k} className="check"><input type="checkbox" checked={!!me.consents[k]} onChange={(e) => toggle(k, e.target.checked)} />{k === 'ai_memory' ? t('coachMemory') : t('c_' + k)}</label>)}</div>
+          {CONSENT_KEYS.filter((k) => k !== 'terms' && k !== 'health_data').map((k) => <label key={k} className="check"><input type="checkbox" checked={!!me.consents[k]} onChange={(e) => toggle(k, e.target.checked)} />{k === 'public_ranking' ? 'Aparecer en rankings deportivos públicos (nombre y resultados)' : k === 'ai_memory' ? t('coachMemory') : t('c_' + k)}</label>)}</div>
+        <div className="card"><h3>Vincularme con mi entrenador</h3><p className="muted">Ingresá el código que te dio tu profesor para recibir rutinas y compartir tus entrenamientos.</p>
+          <label>Código de vinculación<input value={joinCode} maxLength={12} placeholder="Ej.: ABCD2345" onChange={e=>setJoinCode(e.target.value.toUpperCase().trim())}/></label>
+          <button className="primary" disabled={!me.consents.share_with_pro||joinCode.length<6} onClick={async()=>{try{const result=await api<{proName:string}>('POST','/api/links/join-code',{code:joinCode});setJoinStatus('Vinculado con '+result.proName);setJoinCode('');loadLinks();}catch{setJoinStatus('Código inválido o vínculo no disponible.');}}}>Vincularme</button>
+          {!me.consents.share_with_pro&&<p className="warn">Primero activá el permiso de compartir datos con el profesional.</p>}{joinStatus&&<p role="status">{joinStatus}</p>}
+        </div>
         <div className="card"><h3>{t('invitations')}</h3>
           {links.map((l) => <div className="row" key={l.id}><span>{l.proName} <span className="badge">{t(l.status)}</span></span>
             {l.status === 'pending' && <button className="primary" disabled={!me.consents.share_with_pro} onClick={async () => { await api('POST', `/api/links/${l.id}/accept`); loadLinks(); }}>{t('accept')}</button>}
