@@ -89,23 +89,39 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
   const isPro = me.role === 'pro';
-  const tabs = isPro ? ['athletes', 'approvals', 'settings'] : ['today', 'running', 'progress', 'nutrition', 'recovery', 'settings'];
-  const [tab, setTab] = useState(tabs[0]!);
+  const [tab, setTab] = useState('today');
+  const [wellness, setWellness] = useState<'running' | 'nutrition' | 'recovery' | null>(null);
+  const [proView, setProView] = useState<'athletes' | 'approvals'>('athletes');
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
+  const navigate = (next: string) => { setTab(next); setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goBack = () => { setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const screenTitle = isPro ? (proView === 'athletes' ? t('athletes') : t('approvals')) : wellness ? t(wellness) : (tab === 'today' ? t('today') : t(tab === 'wellness' ? 'recovery' : tab));
   return (
     <>
-      <header className="top"><h1>{t('app')}</h1><button onClick={onLogout}>{t('logout')}</button></header>
+      <header className="top"><div className="brand"><span className="brandmark">F</span><div><strong>FONDAL FIT</strong><small>{isPro ? t('pro') : t('athlete')}</small></div></div><button className="header-action" onClick={() => navigate('settings')} aria-label={t('settings')}>⚙</button></header>
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <>
-          {tab === 'today' && <Training />}
-          {tab === 'running' && <Running />}
-          {tab === 'progress' && <Progress />}
-          {tab === 'nutrition' && <Nutrition />}
-          {tab === 'recovery' && <Recovery />}
-          {tab === 'athletes' && <ProAthletes />}
-          {tab === 'approvals' && <ProApprovals />}
-          {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
-          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={tab === k ? 'on' : ''} aria-current={tab === k} onClick={() => setTab(k)}>{t(k)}</button>)}</nav>
+          <div className="screen-heading">
+            {wellness && <button className="back-button" onClick={goBack} aria-label="Volver a bienestar">← Volver</button>}
+            <h1>{screenTitle}</h1>
+            {!isPro && tab === 'today' && <p className="screen-subtitle">Tu entrenamiento y tu progreso, en un solo lugar.</p>}
+          </div>
+          {isPro ? <>
+            <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
+            {tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
+          </> : <>
+            {tab === 'today' && <><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /></>}
+            {tab === 'progress' && <Progress />}
+            {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
+              <button className="feature-card" onClick={() => setWellness('running')}><span className="feature-icon">↗</span><strong>{t('running')}</strong><small>Distancia, ritmos y registro de carreras</small><span>Ver actividad →</span></button>
+              <button className="feature-card" onClick={() => setWellness('nutrition')}><span className="feature-icon">◉</span><strong>{t('nutrition')}</strong><small>Comidas, energía y proteínas diarias</small><span>Ver alimentación →</span></button>
+              <button className="feature-card" onClick={() => setWellness('recovery')}><span className="feature-icon">☾</span><strong>{t('recovery')}</strong><small>Sueño, fatiga y disponibilidad</small><span>Ver recuperación →</span></button>
+            </div>)}
+            {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
+          </>}
+          <nav className="tabs" aria-label="Navegación principal">
+            {(isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎']]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
+          </nav>
         </>
       )}
     </>
@@ -255,13 +271,13 @@ function Progress() {
   const [d, setD] = useState<{ sessions: { date: string; volume: number; sets: number }[]; total: number } | null>(null);
   const [g, setG] = useState<{ xp: number; level: number; streakWeeks: number; achievements: string[] } | null>(null);
   useEffect(() => { api('GET', '/api/progress').then(setD).catch(() => {}); api('GET', '/api/gamification').then(setG).catch(() => {}); }, []);
-  if (!d) return null;
+  if (!d) return <div className="card"><h2>{t('progress')}</h2><p className="muted">Cargando tu evolución…</p></div>;
   const max = Math.max(1, ...d.sessions.map((s) => s.volume));
   return (
     <>
     {g && <div className="card"><h2>{t('level')} {g.level} · {g.xp} XP</h2><p>{t('streak')}: {g.streakWeeks}</p><div className="chips">{g.achievements.map((x) => <span key={x} className="badge ok">{t('ach_' + x)}</span>)}</div><p className="muted">{t('gamNote')}</p></div>}
     <div className="card"><h2>{t('progress')}</h2>
-      {!d.total ? <p className="muted">{t('noData')}</p> : <><p>{t('sessionsDone')}: {d.total}</p>
+      {!d.total ? <p className="muted">{t('noData')}</p> : <><p className="metric"><strong>{d.total}</strong><span>{t('sessionsDone')}</span></p><p className="muted">Volumen por sesión (kg). Cada barra representa un entrenamiento.</p>
         {d.sessions.slice(-14).map((s, i) => <div key={i}><span className="muted">{s.date.slice(0, 10)} · {Math.round(s.volume)} kg</span><div className="bar"><i style={{ width: `${(s.volume / max) * 100}%` }} /></div></div>)}</>}
     </div>
     </>
