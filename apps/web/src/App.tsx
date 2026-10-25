@@ -654,6 +654,56 @@ function Recovery() {
 /* ---------- Professional ---------- */
 const LIMIT_FIELDS: [string, string][] = [['maxLoadIncreasePct', 'maxLoad'], ['maxWeeklyVolumeDeltaPct', 'maxVol'], ['maxSessionsPerWeek', 'maxSess']];
 
+type ProItem = {exerciseId:string;sets:number;repMin:number;repMax:number;rirTarget:number;load:number};
+type ProDay = {name:string;items:ProItem[];run?:{minutes:number;intensity:'easy'|'moderate';note:string}};
+const EXERCISE_IDS=['air_squat','goblet_squat','back_squat','romanian_deadlift','glute_bridge','bench_press','dumbbell_press','push_up','incline_push_up','dumbbell_row','band_row','pull_up','reverse_lunge','step_up_low','plank','dead_bug','farmer_carry','hip_flow','thoracic_rotation'];
+function ProfessionalProgram({ athletes }: { athletes:{id:number;name:string}[] }) {
+  const t=useT();
+  const [code,setCode]=useState('');
+  const [templates,setTemplates]=useState<{id:number;name:string;days:ProDay[]}[]>([]);
+  const [name,setName]=useState('Mi programa personalizado');
+  const [days,setDays]=useState<ProDay[]>([{name:'Día 1',items:[{exerciseId:'goblet_squat',sets:3,repMin:8,repMax:12,rirTarget:2,load:0}]}]);
+  const [athleteId,setAthleteId]=useState(0);
+  const [result,setResult]=useState('');
+  const [feedback,setFeedback]=useState<{workouts:{date:string;items:{exerciseId:string;sets:{weight:number;reps:number}[]}[]}[];runs:{km:number;minutes:number;created_at:string}[]}|null>(null);
+  const load=()=>api<{id:number;name:string;days:ProDay[]}[]>('GET','/api/pro/templates').then(setTemplates).catch(()=>{});
+  useEffect(()=>{api<{code:string}>('GET','/api/pro/code').then(x=>setCode(x.code)).catch(()=>{});load();},[]);
+  const editDay=(index:number,change:Partial<ProDay>)=>setDays(ds=>ds.map((d,i)=>i===index?{...d,...change}:d));
+  const save=async()=>{setResult('');try{await api('POST','/api/pro/templates',{name,days});setResult('Rutina guardada. Ahora podés asignarla a un alumno.');load();}catch{setResult('Revisá los días y ejercicios antes de guardar.');}};
+  const assign=async(templateId:number)=>{if(!athleteId)return;try{await api('POST',`/api/pro/templates/${templateId}/assign`,{athleteId});setResult('Rutina asignada. El alumno la verá en su inicio.');}catch{setResult('No se pudo asignar. Verificá que el alumno esté vinculado.');}};
+  const getFeedback=async(id:number)=>{try{const data=await api<typeof feedback>('GET',`/api/pro/athletes/${id}/training-feedback`);setFeedback(data);}catch{setResult('No se pudo consultar el seguimiento.');}};
+  return <section className="card pro-program">
+    <h2>Mi estudio de entrenamiento</h2><p className="muted">Armá sesiones de fuerza y cardio independientemente. Una jornada puede tener ambos; no hay límite semanal de seis días en las rutinas del profesional.</p>
+    <div className="pro-code"><span>Código para alumnos</span><strong>{code||'Cargando…'}</strong>{code&&<button onClick={()=>navigator.clipboard?.writeText(code)}>Copiar</button>}</div>
+    <label>Nombre del programa</label><input value={name} maxLength={100} onChange={e=>setName(e.target.value)}/>
+    {days.map((day,i)=><div className="pro-day" key={i}>
+      <div className="row"><h3>Jornada {i+1}</h3><button disabled={days.length<=1} onClick={()=>setDays(ds=>ds.filter((_,j)=>j!==i))}>Quitar</button></div>
+      <label>Nombre</label><input value={day.name} onChange={e=>editDay(i,{name:e.target.value})}/>
+      <h4>Fuerza (opcional si hacés cardio)</h4>
+      {day.items.map((item,j)=><div className="pro-exercise" key={j}>
+        <label>Ejercicio</label><select value={item.exerciseId} onChange={e=>editDay(i,{items:day.items.map((v,k)=>k===j?{...v,exerciseId:e.target.value}:v)})}>{EXERCISE_IDS.map(id=><option key={id} value={id}>{t('ex_'+id)}</option>)}</select>
+        <div className="pro-numbers">{([['sets','Series'],['repMin','Rep. mín'],['repMax','Rep. máx'],['rirTarget','RIR'],['load','kg iniciales']] as [keyof ProItem,string][]).map(([key,label])=><label key={key}>{label}<input type="number" min={0} value={item[key]} onChange={e=>editDay(i,{items:day.items.map((v,k)=>k===j?{...v,[key]:Number(e.target.value)}:v)})}/></label>)}</div>
+        <button onClick={()=>editDay(i,{items:day.items.filter((_,k)=>k!==j)})}>Quitar ejercicio</button>
+      </div>)}
+      <button onClick={()=>editDay(i,{items:[...day.items,{exerciseId:'push_up',sets:3,repMin:8,repMax:12,rirTarget:2,load:0}]})}>+ Añadir ejercicio</button>
+      <label className="check"><input type="checkbox" checked={!!day.run} onChange={e=>editDay(i,{run:e.target.checked?{minutes:30,intensity:'easy',note:'Ritmo conversacional'}:undefined})}/>Incluir carrera o cardio este día</label>
+      {day.run&&<><label>Duración de carrera (minutos)</label><input type="number" min={5} max={240} value={day.run.minutes} onChange={e=>editDay(i,{run:{...day.run!,minutes:Number(e.target.value)}})}/>
+      <label>Intensidad</label><select value={day.run.intensity} onChange={e=>editDay(i,{run:{...day.run!,intensity:e.target.value as 'easy'|'moderate'}})}><option value="easy">Suave</option><option value="moderate">Moderada</option></select>
+      <label>Indicaciones</label><input value={day.run.note} maxLength={300} onChange={e=>editDay(i,{run:{...day.run!,note:e.target.value}})}/></>}
+    </div>)}
+    <div className="row"><button disabled={days.length>=14} onClick={()=>setDays(ds=>[...ds,{name:'Día '+(ds.length+1),items:[],run:{minutes:30,intensity:'easy',note:'Ritmo cómodo'}}])}>+ Añadir jornada</button><button className="primary" onClick={()=>void save()}>Guardar rutina</button></div>
+    {result&&<p role="status" className="muted">{result}</p>}
+    <h3>Asignar rutinas</h3>
+    <label>Alumno vinculado</label><select value={athleteId} onChange={e=>setAthleteId(Number(e.target.value))}><option value={0}>Elegí un alumno</option>{athletes.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+    {templates.map(template=><div className="template-entry" key={template.id}><strong>{template.name}</strong><small>{template.days.length} jornadas</small><button disabled={!athleteId} onClick={()=>void assign(template.id)}>Asignar a alumno</button></div>)}
+    {athleteId>0&&<button className="action-full" onClick={()=>void getFeedback(athleteId)}>Ver evolución del alumno</button>}
+    {feedback&&<div className="card"><h3>Seguimiento reciente</h3><p>{feedback.workouts.length} sesiones de fuerza · {feedback.runs.length} carreras registradas</p>
+      {feedback.workouts.slice(0,8).map((w,i)=><details key={i}><summary>{w.date.slice(0,10)} · {w.items.length} ejercicios</summary>{w.items.map((it,j)=><p key={j}>{t('ex_'+it.exerciseId)}: {it.sets.map(set=>`${set.weight} kg × ${set.reps}`).join(' · ')}</p>)}</details>)}
+      {feedback.runs.slice(0,5).map((v,i)=><p key={i}>{v.created_at.slice(0,10)} · {v.km} km · {v.minutes} min</p>)}
+    </div>}
+  </section>;
+}
+
 function ProAthletes() {
   const t = useT();
   const [list, setList] = useState<any[]>([]);
@@ -664,6 +714,7 @@ function ProAthletes() {
   const saveLimits = async (a: any, limits: any) => { await api('PUT', `/api/pro/athletes/${a.id}/limits`, limits); load(); };
   return (
     <>
+      <ProfessionalProgram athletes={list}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); await api('POST', '/api/pro/invites', { email }); setSent(true); setEmail(''); }}>
         <h3>{t('invite')}</h3><input type="email" required aria-label={t('email')} value={email} onChange={(e) => setEmail(e.target.value)} />
         <p><button className="primary">{t('send')}</button></p>{sent && <p className="ok" role="status">{t('inviteSent')}</p>}</form>
@@ -703,6 +754,8 @@ function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => vo
   const t = useT();
   const { lang } = useContext(LangCtx);
   const [links, setLinks] = useState<any[]>([]);
+  const [joinCode,setJoinCode] = useState('');
+  const [joinResult,setJoinResult] = useState('');
   const loadLinks = () => me.role === 'athlete' && api('GET', '/api/links').then(setLinks).catch(() => {});
   useEffect(() => { loadLinks(); }, []); // eslint-disable-line
   const toggle = async (k: string, v: boolean) => { await api('PUT', '/api/consents', { [k]: v }); refresh(); loadLinks(); };
@@ -716,7 +769,7 @@ function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => vo
       {me.role === 'athlete' && <>
         <div className="card"><h3>{t('consentTitle')}</h3>
           {CONSENT_KEYS.filter((k) => k !== 'terms' && k !== 'health_data').map((k) => <label key={k} className="check"><input type="checkbox" checked={!!me.consents[k]} onChange={(e) => toggle(k, e.target.checked)} />{t('c_' + k)}</label>)}</div>
-        <div className="card"><h3>{t('invitations')}</h3>
+        <div className="card"><h3>Vincularme con mi entrenador</h3><p className="muted">Pedile el código a tu profesional. Al vincularte podrá asignarte una rutina y revisar los entrenamientos que registres.</p><label>Código de vinculación</label><input value={joinCode} onChange={e=>setJoinCode(e.target.value.trim().toUpperCase())} placeholder="Ingresá el código"/><button className="primary action-full" disabled={!me.consents.share_with_pro||!joinCode} onClick={async()=>{try{const r=await api<{professional:string}>('POST','/api/links/join-code',{code:joinCode});setJoinResult('Vinculado con '+r.professional);setJoinCode('');loadLinks();}catch{setJoinResult('No se pudo vincular. Revisá el código.');}}}>Unirme a mi entrenador</button>{!me.consents.share_with_pro&&<p className="warn">Activá el consentimiento para compartir con el profesional.</p>}{joinResult&&<p role="status">{joinResult}</p>}</div><div className="card"><h3>{t('invitations')}</h3>
           {links.map((l) => <div className="row" key={l.id}><span>{l.proName} <span className="badge">{t(l.status)}</span></span>
             {l.status === 'pending' && <button className="primary" disabled={!me.consents.share_with_pro} onClick={async () => { await api('POST', `/api/links/${l.id}/accept`); loadLinks(); }}>{t('accept')}</button>}
             {l.status !== 'revoked' && <button className="danger" onClick={async () => { await api('POST', `/api/links/${l.id}/revoke`); loadLinks(); }}>{t('revoke')}</button>}</div>)}

@@ -127,3 +127,16 @@ textarea {display:block;width:100%;min-height:92px;background:#0f1317;color:var(
 .run-summary {margin-top:20px;border-top:1px solid var(--line);padding-top:12px;}
 .run-summary h4 {margin:18px 0 8px;color:var(--accent);}
 .run-split {padding:9px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+
+/* Professional workflow */
+.pro-program .pro-code {display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:#182f24;border:1px solid #416750;border-radius:14px;padding:14px;margin:15px 0;}
+.pro-code strong {font-size:1.12rem;color:var(--accent);letter-spacing:.1em;overflow-wrap:anywhere;}
+.pro-code button {margin-left:auto}
+.pro-day {padding:16px;margin:16px 0;border:1px solid var(--line);border-radius:16px;background:#101b1b}
+.pro-exercise {padding:12px 0;border-top:1px solid var(--line);}
+.pro-numbers {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.pro-numbers input {min-width:0;padding:8px;}
+.template-entry {display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:11px 0;border-bottom:1px solid var(--line);}
+.template-entry small {color:var(--muted);margin-right:auto}
+.pro-program .row>h3 {flex:2}
+@media(max-width:450px){.pro-numbers{grid-template-columns:repeat(2,minmax(0,1fr));}.pro-code button{margin-left:0}}

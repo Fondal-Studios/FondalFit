@@ -171,7 +171,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.post('/api/workouts', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
     const b = parse(z.object({
-      dayIndex: z.number().int().min(0).max(5),
+      dayIndex: z.number().int().min(0).max(13),
       fatigue: z.number().min(1).max(10).default(5),
       items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
@@ -179,11 +179,11 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const uid = req.user!.id;
     const cur = await latestPlan(uid);
     if (!cur) return reply.code(409).send({ error: 'no_plan' });
-    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
-
     const plan = JSON.parse(cur.data) as Plan;
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
+    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
+    if (cur.source.startsWith('pro:')) return { applied: true, professionalPlan: true, message:'workout_recorded' };
     const next: Plan = structuredClone(plan);
     let maxIncPct = 0;
     const decisions: Record<string, string> = {};
@@ -374,6 +374,70 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     for (const r of await db.prepare('SELECT created_at FROM runs WHERE user_id=?').all(uid) as { created_at: string }[]) bump(r.created_at, 'runs');
     const rec = (await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM recovery WHERE user_id=?').get(uid) as { c: number }).c;
     return gamification([...byDay.values()], rec);
+  });
+
+  /* Professional-designed plans: strength and cardio are independent on every day. */
+  const professionalDay = z.object({
+    name: z.string().trim().min(1).max(80),
+    items: z.array(z.object({
+      exerciseId: z.string().min(1).max(80), sets:z.number().int().min(1).max(12),
+      repMin:z.number().int().min(1).max(100), repMax:z.number().int().min(1).max(150),
+      rirTarget:z.number().min(0).max(10), load:z.number().min(0).max(1000),
+    }).refine(i=>i.repMax>=i.repMin)).max(25),
+    run: z.object({minutes:z.number().min(5).max(240),intensity:z.enum(['easy','moderate']),note:z.string().max(300)}).optional(),
+  }).refine(d=>d.items.length>0 || !!d.run);
+  const professionalTemplate = z.object({name:z.string().trim().min(2).max(100),days:z.array(professionalDay).min(1).max(14)});
+  app.get('/api/pro/code',{preHandler:proOnly},async(req)=>{
+    const uid=req.user!.id;
+    let row=await db.prepare('SELECT code FROM pro_codes WHERE pro_id=?').get(uid) as {code:string}|undefined;
+    if(!row){
+      // High entropy invitation token: only the professional may view it.
+      const code=randomBytes(8).toString('hex').toUpperCase();
+      await db.prepare('INSERT INTO pro_codes(code,pro_id,created_at) VALUES(?,?,?)').run(code,uid,now());
+      row={code};
+    }
+    return {code:row.code};
+  });
+  app.post('/api/links/join-code',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await hasConsent(req.user!.id,'share_with_pro')) return reply.code(403).send({error:'consent_required',scope:'share_with_pro'});
+    const body=parse(z.object({code:z.string().trim().min(10).max(32)}),req.body,reply);
+    if(!body)return;
+    const found=await db.prepare("SELECT c.pro_id,u.name FROM pro_codes c JOIN users u ON u.id=c.pro_id AND u.role='pro' WHERE c.code=?").get(body.code.toUpperCase()) as {pro_id:number;name:string}|undefined;
+    if(!found)return reply.code(404).send({error:'invalid_code'});
+    await db.prepare("INSERT INTO links(pro_id,athlete_id,status,limits,created_at) VALUES(?,?,'active',?,?) ON CONFLICT(pro_id,athlete_id) DO UPDATE SET status='active'").run(found.pro_id,req.user!.id,JSON.stringify(DEFAULT_LIMITS),now());
+    await audit(req.user!.id,found.pro_id,'join:code');
+    return {ok:true,professional:found.name};
+  });
+  app.get('/api/pro/templates',{preHandler:proOnly},async(req)=>{
+    const rows=await db.prepare('SELECT id,name,data,created_at FROM pro_templates WHERE pro_id=? ORDER BY id DESC').all(req.user!.id) as {id:number;name:string;data:string;created_at:string}[];
+    return rows.map(row=>({id:row.id,name:row.name,days:JSON.parse(row.data).days,createdAt:row.created_at}));
+  });
+  app.post('/api/pro/templates',{preHandler:proOnly},async(req,reply)=>{
+    const body=parse(professionalTemplate,req.body,reply);
+    if(!body)return;
+    const created=await db.prepare('INSERT INTO pro_templates(pro_id,name,data,created_at) VALUES(?,?,?,?) RETURNING id').get(req.user!.id,body.name,JSON.stringify(body),now()) as {id:number};
+    return {id:created.id,name:body.name};
+  });
+  app.post('/api/pro/templates/:id/assign',{preHandler:proOnly},async(req,reply)=>{
+    const body=parse(z.object({athleteId:z.number().int().positive()}),req.body,reply);
+    if(!body)return;
+    const linked=await db.prepare("SELECT id FROM links WHERE pro_id=? AND athlete_id=? AND status='active'").get(req.user!.id,body.athleteId);
+    if(!linked)return reply.code(403).send({error:'not_linked'});
+    const template=await db.prepare('SELECT id,name,data FROM pro_templates WHERE id=? AND pro_id=?').get(Number((req.params as {id:string}).id),req.user!.id) as {id:number;name:string;data:string}|undefined;
+    if(!template)return reply.code(404).send({error:'not_found'});
+    const saved=JSON.parse(template.data) as {days:Plan['days']};
+    const plan:Plan={engineVersion:'professional-1',goal:'general',weeksSinceDeload:0,days:saved.days};
+    const version=await savePlan(body.athleteId,plan,'pro:'+req.user!.id);
+    await audit(req.user!.id,body.athleteId,'professional:assign');
+    return {ok:true,version,athleteId:body.athleteId,template:template.name};
+  });
+  app.get('/api/pro/athletes/:id/training-feedback',{preHandler:proOnly},async(req,reply)=>{
+    const aid=Number((req.params as {id:string}).id);
+    const linked=await db.prepare("SELECT id FROM links WHERE pro_id=? AND athlete_id=? AND status='active'").get(req.user!.id,aid);
+    if(!linked)return reply.code(403).send({error:'not_linked'});
+    const workouts=await db.prepare('SELECT data,created_at FROM workouts WHERE user_id=? ORDER BY id DESC LIMIT 30').all(aid) as {data:string;created_at:string}[];
+    const runs=await db.prepare('SELECT km,minutes,rpe,created_at FROM runs WHERE user_id=? ORDER BY id DESC LIMIT 30').all(aid);
+    return {workouts:workouts.map(r=>({date:r.created_at,...JSON.parse(r.data)})),runs};
   });
 
   /* ---------------- Professional links ---------------- */
