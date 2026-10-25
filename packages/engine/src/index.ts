@@ -6,3 +6,5 @@ export * from './nutrition';
 export * from './menus';
 export * from './gps';
 export * from './supplements';
+export * from './foods';
+export * from './mealparse';

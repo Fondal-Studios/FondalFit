@@ -38,10 +38,29 @@ CREATE TABLE IF NOT EXISTS profiles(user_id INTEGER PRIMARY KEY REFERENCES users
 CREATE TABLE IF NOT EXISTS activities(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, sport TEXT NOT NULL, started_at TEXT NOT NULL, duration_sec INTEGER NOT NULL, moving_sec INTEGER NOT NULL, distance_m INTEGER NOT NULL, avg_pace_sec_km INTEGER NOT NULL, elev_gain_m INTEGER NOT NULL, route TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_activities_user ON activities(user_id);
 CREATE TABLE IF NOT EXISTS audit(id @ID, actor_id INTEGER, subject_id INTEGER, action TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS daily_active(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, PRIMARY KEY(user_id, day));
+CREATE TABLE IF NOT EXISTS pro_templates(id @ID, pro_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS measurements(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS coach_memory(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(user_id, key));
+CREATE TABLE IF NOT EXISTS ranking(user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, alias TEXT NOT NULL, zone TEXT NOT NULL, enabled INTEGER NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_workouts_user ON workouts(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON plans(user_id, version);
 CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens(user_id);
 `;
+/** Idempotent additive migration: adds a column to a table created by an earlier app version. */
+async function ensureColumn(db: DB, table: string, column: string, ddlType: string) {
+  const exists = db.dialect === 'pg'
+    ? await db.prepare('SELECT 1 AS x FROM information_schema.columns WHERE table_name=? AND column_name=? AND table_schema=current_schema()').get(table, column)
+    : (await db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+  if (!exists) await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlType}`);
+}
+async function migrate(db: DB) {
+  await ensureColumn(db, 'users', 'pro_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(db, 'users', 'mode', 'TEXT');
+  await ensureColumn(db, 'users', 'last_seen_at', 'TEXT');
+  await ensureColumn(db, 'users', 'pro_code', 'TEXT');
+}
+
 const ddl = (d: DB['dialect']) =>
   SCHEMA.replaceAll('@ID', d === 'pg' ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY').replaceAll('@REAL', d === 'pg' ? 'DOUBLE PRECISION' : 'REAL')
     .split(';').map((s) => s.trim()).filter(Boolean);
@@ -62,6 +81,7 @@ async function openSqlite(path: string): Promise<DB> {
     close: async () => { raw.close(); },
   };
   for (const s of ddl('sqlite')) raw.exec(s);
+  await migrate(db);
   return db;
 }
 
@@ -80,6 +100,7 @@ async function openPg(url: string): Promise<DB> {
     close: async () => { await pool.end(); },
   };
   for (const s of ddl('pg')) await pool.query(s);
+  await migrate(db);
   return db;
 }
 

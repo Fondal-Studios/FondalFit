@@ -11,13 +11,20 @@ import {
 } from '@fondal/engine';
 import type { DB } from './db';
 import { COACH_SYSTEM, type CoachFn } from './coach';
+import { registerAdmin } from './admin';
+import { registerFood } from './food';
+import { registerPro } from './pro';
 
 const now = () => new Date().toISOString();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const TRIAL_DAYS = 14;
 export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video'] as const;
 
-interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null }
+interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null; pro_enabled: number; mode: string | null; last_seen_at: string | null; pro_code: string | null }
+
+/** One account can be athlete and professional: `mode` is the hat currently worn. Legacy rows (mode NULL) fall back to their role. */
+export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' => (u.mode === 'pro' && (u.pro_enabled || u.role === 'pro') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
+export const canPro = (u: Pick<User, 'role' | 'pro_enabled'>) => !!u.pro_enabled || u.role === 'pro' || u.role === 'admin';
 declare module 'fastify' { interface FastifyRequest { user?: User } }
 
 const limitsSchema = z.object({
@@ -45,7 +52,7 @@ const assessmentSchema = z.object({
 }).refine((a) => a.strengthDays + a.cardioDays >= 1 && a.strengthDays + a.cardioDays <= 6, { message: 'days' })
   .refine((a) => a.cardioDays === 0 || a.cardioModalities.length > 0, { message: 'cardio_modality' });
 
-export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: string; coach?: CoachFn }) {
+export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: string; coach?: CoachFn; adminEmails?: string[] }) {
   const db = opts.db;
   const app = Fastify({ logger: false, trustProxy: true });
   app.register(rateLimit, { max: opts.rateLimitMax ?? 300, timeWindow: '1 minute' });
@@ -67,11 +74,30 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const row = h && (await db.prepare('SELECT u.* FROM tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.expires_at>?').get(sha(h), now()) as unknown as User | undefined);
     if (!row) return reply.code(401).send({ error: 'unauthorized' });
     req.user = row;
+    void touch(row.id);
   }
+  /** Daily-active telemetry: one row per user per day (cached in memory so it costs one query per user per day). */
+  const seen = new Set<string>();
+  const touch = async (uid: number) => {
+    const day = now().slice(0, 10), key = `${uid}:${day}`;
+    if (seen.has(key)) return;
+    seen.add(key); if (seen.size > 50000) seen.clear();
+    try {
+      await db.prepare('INSERT INTO daily_active(user_id,day) VALUES(?,?) ON CONFLICT(user_id,day) DO NOTHING').run(uid, day);
+      await db.prepare('UPDATE users SET last_seen_at=? WHERE id=?').run(now(), uid);
+    } catch { seen.delete(key); }
+  };
+  const adminSet = new Set((opts.adminEmails ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean));
+  const isAdmin = (u: User) => adminSet.has(u.email.toLowerCase()) || u.role === 'admin';
+  const adminOnly = async (req: FastifyRequest, reply: FastifyReply) => {
+    await auth(req, reply);
+    if (reply.sent) return;
+    if (!isAdmin(req.user!)) return reply.code(403).send({ error: 'admin_only' });
+  };
   const requireRole = (role: 'athlete' | 'pro') => async (req: FastifyRequest, reply: FastifyReply) => {
     await auth(req, reply);
     if (reply.sent) return;
-    if (req.user!.role !== role && req.user!.role !== 'admin') return reply.code(403).send({ error: 'forbidden' });
+    if (req.user!.role !== 'admin' && modeOf(req.user!) !== role) return reply.code(403).send({ error: 'forbidden', mode: modeOf(req.user!) });
     if (!subscriptionActive(req.user!)) return reply.code(402).send({ error: 'subscription_required' });
   };
   const athleteOnly = requireRole('athlete');
@@ -97,7 +123,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const hash = scryptSync(b.password, salt, 64).toString('hex');
     const trial = new Date(Date.now() + TRIAL_DAYS * 864e5).toISOString();
     try {
-      const r = await db.prepare('INSERT INTO users(email,name,role,lang,pass_hash,salt,created_at,trial_ends_at) VALUES(?,?,?,?,?,?,?,?) RETURNING id').get(b.email.toLowerCase(), b.name, b.role, b.lang, hash, salt, now(), trial) as { id: number };
+      const r = await db.prepare('INSERT INTO users(email,name,role,lang,pass_hash,salt,created_at,trial_ends_at,pro_enabled,mode) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id').get(b.email.toLowerCase(), b.name, b.role, b.lang, hash, salt, now(), trial, b.role === 'pro' ? 1 : 0, b.role) as { id: number };
       await audit(r.id, null, 'register');
       return { token: await newToken(r.id) };
     } catch { return reply.code(409).send({ error: 'email_taken' }); }
@@ -114,9 +140,24 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   app.get('/api/me', { preHandler: auth }, async (req) => {
     const u = req.user!;
-    return { id: u.id, email: u.email, name: u.name, role: u.role, lang: u.lang, subscription: { plan: u.plan, trialEndsAt: u.trial_ends_at, active: subscriptionActive(u), canceled: !!u.canceled_at }, consents: await consentsOf(u.id) };
+    return { id: u.id, email: u.email, name: u.name, role: u.role, mode: modeOf(u), canPro: canPro(u), isAdmin: isAdmin(u), proCode: u.pro_code, lang: u.lang, subscription: { plan: u.plan, trialEndsAt: u.trial_ends_at, active: subscriptionActive(u), canceled: !!u.canceled_at }, consents: await consentsOf(u.id) };
   });
   const consentsOf = async (uid: number) => Object.fromEntries((await db.prepare('SELECT scope,granted FROM consents WHERE user_id=?').all(uid) as { scope: string; granted: number }[]).map((r) => [r.scope, !!r.granted]));
+
+  /** Switch hat. Becoming a professional is self-serve; students only see your data after they accept your link. */
+  app.post('/api/me/mode', { preHandler: auth }, async (req, reply) => {
+    const b = parse(z.object({ mode: z.enum(['athlete', 'pro']) }), req.body, reply);
+    if (!b) return;
+    if (b.mode === 'pro' && !canPro(req.user!)) return reply.code(403).send({ error: 'pro_not_enabled' });
+    await db.prepare('UPDATE users SET mode=? WHERE id=?').run(b.mode, req.user!.id);
+    await audit(req.user!.id, null, `mode:${b.mode}`);
+    return { mode: b.mode };
+  });
+  app.post('/api/me/pro', { preHandler: auth }, async (req) => {
+    await db.prepare('UPDATE users SET pro_enabled=1 WHERE id=?').run(req.user!.id);
+    await audit(req.user!.id, null, 'pro:enabled');
+    return { ok: true };
+  });
 
   app.patch('/api/me', { preHandler: auth }, async (req, reply) => {
     const b = parse(z.object({ lang: z.enum(['es', 'pt', 'en']).optional(), name: z.string().min(1).optional() }), req.body, reply);
@@ -198,7 +239,10 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
     const p = await latestPlan(req.user!.id);
-    return p ? { version: p.version, source: p.source, plan: JSON.parse(p.data) as Plan } : { plan: null };
+    if (!p) return { plan: null };
+    const proId = p.source.startsWith('pro:') ? Number(p.source.slice(4)) : 0;
+    const pro = proId ? await db.prepare('SELECT name FROM users WHERE id=?').get(proId) as { name: string } | undefined : undefined;
+    return { version: p.version, source: p.source, proName: pro?.name ?? null, plan: JSON.parse(p.data) as Plan };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
@@ -288,23 +332,6 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const avgProtein = days ? logs.reduce((s, l) => s + (l.proteinG ?? 0), 0) / days : null;
     const gap = avgProtein === null ? 0 : Math.max(0, Math.round(t.proteinG - avgProtein));
     return { supplements: supplementAdvice({ goal: a.goal, cardioDays: a.cardioDays, strengthDays: a.strengthDays, diet: a.profile.diet, proteinGapG: gap }), proteinGapG: gap, basedOnLogs: avgProtein !== null };
-  });
-
-  app.post('/api/nutrition/log', { preHandler: athleteOnly }, async (req, reply) => {
-    if (!await needHealth(req, reply)) return;
-    const b = parse(z.object({ meal: z.string().min(1), kcal: z.number().min(0).max(5000), proteinG: z.number().min(0).max(500), carbsG: z.number().min(0).max(1000), fatG: z.number().min(0).max(500), waterMl: z.number().min(0).max(10000).default(0) }), req.body, reply);
-    if (!b) return;
-    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'log',?,?)").run(req.user!.id, JSON.stringify(b), now());
-    return { ok: true };
-  });
-  app.get('/api/nutrition', { preHandler: athleteOnly }, async (req) => {
-    const rows = await db.prepare('SELECT kind,data,created_at FROM nutrition WHERE user_id=? ORDER BY id DESC').all(req.user!.id) as { kind: string; data: string; created_at: string }[];
-    const target = rows.find((r) => r.kind === 'target');
-    const today = now().slice(0, 10);
-    const logs = rows.filter((r) => r.kind === 'log').map((r) => ({ ...JSON.parse(r.data), at: r.created_at }));
-    const todayLogs = logs.filter((l) => l.at.startsWith(today));
-    const sum = (k: string) => todayLogs.reduce((a, l) => a + (l[k] ?? 0), 0);
-    return { target: target ? JSON.parse(target.data) : null, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
   });
 
   /* ---------------- Recovery ---------------- */
@@ -523,7 +550,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {
     const b = parse(z.object({ email: z.string().email(), limits: limitsSchema.optional() }), req.body, reply);
     if (!b) return;
-    const a = await db.prepare("SELECT id FROM users WHERE email=? AND role='athlete'").get(b.email.toLowerCase()) as { id: number } | undefined;
+    const a = await db.prepare("SELECT id FROM users WHERE email=? AND id<>?").get(b.email.toLowerCase(), req.user!.id) as { id: number } | undefined;
     // Identical response whether or not the athlete exists: no account enumeration.
     if (a) {
       await db.prepare("INSERT INTO links(pro_id,athlete_id,status,limits,created_at) VALUES(?,?,'pending',?,?) ON CONFLICT(pro_id,athlete_id) DO UPDATE SET status=CASE WHEN links.status='revoked' THEN 'pending' ELSE links.status END")
@@ -620,6 +647,10 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   });
 
   app.get('/api/health', async () => ({ ok: true }));
+
+  registerAdmin({ app, db, adminOnly, parse, audit, now });
+  registerPro({ app, db, parse, audit, now, proOnly, athleteOnly, hasConsent, savePlan });
+  registerFood({ app, db, parse, audit, now, athleteOnly, needHealth, profileWeight, activityEnergy });
 
   // Serve the built PWA from the same origin (single-service deploy).
   if (opts.staticDir && existsSync(opts.staticDir)) {
