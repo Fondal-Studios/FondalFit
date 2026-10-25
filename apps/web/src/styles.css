@@ -226,3 +226,15 @@ nav.tabs{padding-bottom:calc(7px + env(safe-area-inset-bottom))}
 .gps-touch-lock .unlock-slider{touch-action:pan-x;min-height:62px;width:min(90vw,420px);accent-color:#9af1aa}
 .live-kcal{padding:10px 14px;border-radius:12px;background:#1a3927;border:1px solid #446a50;color:#baf6c7;font-weight:750}
 @media(max-width:420px){.energy-figures{grid-template-columns:1fr 1fr}.energy-figures div:last-child{grid-column:span 2}.energy-day{min-height:43px}}
+
+/* Custom training blocks and tile-backed running map */
+.fitness-block{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0;background:#14251f}
+.fitness-block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.fitness-block-grid label{min-width:0}.fitness-block-grid input,.fitness-block-grid select{max-width:100%}
+.running-map{position:relative;margin:12px 0;background:#d3dfcc;border-radius:13px;overflow:hidden}
+.running-map-tiles{height:240px;position:relative;overflow:hidden}
+.running-map-tiles img{position:absolute;width:256px;height:256px;max-width:none;border:0}
+.running-map-tiles svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.running-map small{display:block;text-align:right;background:#e8f0e7;color:#25362e;padding:4px 8px;font-size:.67rem}
+.running-map a{color:#155b6e}
+@media(max-width:440px){.fitness-block-grid{grid-template-columns:1fr 1fr}}
