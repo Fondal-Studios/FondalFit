@@ -28,6 +28,17 @@ export interface AssessmentInput {
   goal: Goal;
   secondaryGoals?: Goal[];
   targetDescription?: string;
+  specificGoals?: string[];
+  baseline?: {
+    age?: number; weightKg?: number; heightCm?: number;
+    weeklyStrengthSessions?: number; weeklyRunKm?: number;
+    longestComfortableRunKm?: number; comfortableRunPaceMinKm?: number;
+    walkingMinutes?: number; pushUps?: number; sitToStand30s?: number;
+    restingHeartRate?: number; perceivedFitness?: number;
+    activityMinutesPerWeek?: number; sleepHours?: number; recovery?: number;
+  };
+  trainingContext?: { strengthDays?: number; cardioDays?: number; recentBreakWeeks?: number; confidence?: number; preferredReassessmentWeeks?: number };
+
   targetDate?: string;
   sessionMinutes?: number;
   preferredActivities?: ('strength' | 'running' | 'mobility')[];
