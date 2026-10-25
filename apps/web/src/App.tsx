@@ -119,7 +119,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
             {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
-            {tab === 'today' && <><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'today' && <><ActivityBlocks/><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
@@ -648,6 +648,30 @@ function DailyEnergyCalendar(){
  </section>;
 }
 
+type FitnessBlock={name:string;kind:'calisthenics'|'strength'|'functional'|'walk';minutes:number;intensity:'light'|'moderate'|'vigorous'};
+function ActivityBlocks(){
+ const [blocks,setBlocks]=useState<FitnessBlock[]>([{name:'Dominadas y flexiones',kind:'calisthenics',minutes:15,intensity:'moderate'}]);
+ const [weight,setWeight]=useState(70),[saved,setSaved]=useState(''),[working,setWorking]=useState(false);
+ const met:Record<string,number>={calisthenics:3.8,strength:3.5,functional:5,walk:3.5};
+ const total=blocks.reduce((n,b)=>n+Math.round((met[b.kind]*(b.intensity==='light'?.75:b.intensity==='vigorous'?1.5:1)-1)*3.5*weight/200*b.minutes),0);
+ const save=async()=>{setWorking(true);try{const result=await api<{activeKcal:number}>('POST','/api/activity/blocks',{weightKg:weight,blocks});setSaved('Se guardaron '+result.activeKcal+' kcal activas aproximadas. Revisá Nutrición para ver el balance.');}catch{setSaved('No se pudieron guardar los bloques.');}finally{setWorking(false);}};
+ return <section className="card"><div className="eyebrow">SESIÓN PERSONALIZADA</div><h2>Armá tu entrenamiento por bloques</h2>
+   <p className="muted">Podés correr y después agregar dominadas, flexiones, caminata o fuerza. Estimación orientativa con MET y tiempo efectivo, excluyendo el gasto en reposo.</p>
+   <label>Peso corporal (kg)</label><input type="number" min={30} max={250} value={weight} onChange={e=>setWeight(Number(e.target.value)||70)}/>
+   {blocks.map((b,i)=><div className="fitness-block" key={i}>
+     <label>Nombre del bloque<input value={b.name} maxLength={100} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,name:e.target.value}:x))}/></label>
+     <div className="fitness-block-grid"><label>Actividad<select value={b.kind} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,kind:e.target.value as FitnessBlock['kind']}:x))}><option value="calisthenics">Calistenia</option><option value="strength">Fuerza</option><option value="functional">Funcional</option><option value="walk">Caminata</option></select></label>
+       <label>Minutos<input type="number" min={1} max={240} value={b.minutes} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,minutes:Number(e.target.value)}:x))}/></label>
+       <label>Intensidad<select value={b.intensity} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,intensity:e.target.value as FitnessBlock['intensity']}:x))}><option value="light">Suave</option><option value="moderate">Moderada</option><option value="vigorous">Alta</option></select></label>
+     </div><button type="button" disabled={blocks.length<=1} onClick={()=>setBlocks(v=>v.filter((_,j)=>i!==j))}>Quitar bloque</button>
+   </div>)}
+   <button type="button" disabled={blocks.length>=12} onClick={()=>setBlocks(v=>[...v,{name:'Nuevo bloque',kind:'calisthenics',minutes:15,intensity:'moderate'}])}>+ Agregar bloque</button>
+   <p className="live-kcal">≈{total} kcal activas estimadas en estos bloques</p>
+   <button className="primary action-full" disabled={working||!blocks.every(b=>b.name.trim()&&b.minutes>=1&&b.minutes<=240)} onClick={()=>void save()}>{working?'Guardando…':'Guardar bloques y sumar al día'}</button>
+   {saved&&<p role="status">{saved}</p>}
+ </section>;
+}
+
 function Running() {
   const t = useT();
   const [d, setD] = useState<any>(null);
@@ -663,6 +687,7 @@ function Running() {
   return (
     <>
       <MusicCenter />
+      <ActivityBlocks />
       <GpsRun onDraft={(km,minutes,weightKg)=>setF(prev=>({...prev,km:String(km),weightKg:String(weightKg),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe,weightKg:+f.weightKg });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
