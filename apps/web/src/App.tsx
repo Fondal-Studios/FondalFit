@@ -471,7 +471,7 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
     },e=>setStatus(e.code===1?'Ubicación denegada. Revisá los permisos.':'Sin señal GPS; la distancia puede ser incompleta.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   };
   const finish=()=>{
-    const km=(distanceRef.current+estimatedGap)/1000,mins=(Date.now()-startedAt.current)/60000;
+    const km=distanceRef.current/1000,mins=(Date.now()-startedAt.current)/60000;
     const fullSplits=splitsRef.current;
     const remainingKm=km-fullSplits.length;
     const remainingSecs=mins*60-splitAt.current;
@@ -649,8 +649,8 @@ function Development({ isAdmin }: { isAdmin: boolean }) {
   </section>;
 }
 
-type EnergyDay={date:string;intake:number;runKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];provisional:boolean};
-type EnergyCalendar={month:string;target:{kcal?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
+type EnergyDay={date:string;intake:number;runKcal:number;blocksKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[];provisional:boolean};
+type EnergyCalendar={month:string;target:{kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
 const ENERGY_LABELS:Record<string,string>={red:'Superávit alto',orange:'Superávit leve',yellow:'Cerca del mantenimiento',green:'Déficit moderado estimado',blue:'Déficit alto: revisar',violet:'Déficit muy alto: atención',unknown:'Sin estimación'};
 function DailyEnergyCalendar(){
  const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
@@ -679,8 +679,9 @@ function DailyEnergyCalendar(){
     {chosen?<><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
       <div className="energy-figures"><div><strong>{chosen.intake}</strong><small>kcal ingeridas</small></div><div><strong>{chosen.runKcal}</strong><small>kcal por carreras (aprox.)</small></div><div><strong>{chosen.balance===null?'—':(chosen.balance>0?'+':'')+chosen.balance}</strong><small>balance diario estimado, kcal</small></div></div>
       <h4>Comidas</h4>{chosen.meals.length?chosen.meals.map((meal,i)=><p key={i}>{meal.name} · ≈{Math.round(meal.kcal)} kcal</p>):<p className="muted">No se registraron comidas.</p>}
+      <h4>Bloques de entrenamiento</h4>{chosen.blocks?.length?chosen.blocks.map((b,i)=><p key={i}>{b.name} · {b.minutes} min · ≈{b.kcal} kcal activas</p>):<p className="muted">No hay otros bloques registrados.</p>}
       <h4>Carreras</h4>{chosen.runs.length?chosen.runs.map((run,i)=><p key={i}>{run.km.toFixed(2)} km · ≈{Math.round(run.kcal)} kcal</p>):<p className="muted">No hay carreras con peso registrado para estimar energía.</p>}
-      <p className="muted">Balance provisional: no asumas que el registro representa todas las comidas del día.</p>
+      <p className="muted">Balance provisional: referencia sedentaria, ejercicio registrado y alimentos declarados. No presupongas que el registro representa todas las comidas del día.</p>
      </>:<p className="muted">Todavía no hay registros para esta fecha.</p>}
    </div><details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Comparación orientativa entre alimentos registrados y gasto diario estimado, sumando la carrera. El cálculo puede contar dos veces parte del ejercicio si tu factor de actividad ya lo incluye. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
  </section>;
