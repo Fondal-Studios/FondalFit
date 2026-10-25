@@ -98,7 +98,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
   const navigate = (next: string) => { setTab(next); setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const goBack = () => { setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const screenTitle = isPro ? (proView === 'athletes' ? t('athletes') : t('approvals')) : wellness ? t(wellness) : (tab === 'today' ? t('today') : t(tab === 'wellness' ? 'recovery' : tab));
+  const screenTitle = tab === 'assessment' ? 'Mi evaluación física' : isPro ? (proView === 'athletes' ? t('athletes') : t('approvals')) : wellness ? t(wellness) : (tab === 'today' ? t('today') : t(tab === 'wellness' ? 'recovery' : tab));
   return (
     <>
       <header className="top"><div className="brand"><span className="brandmark">F</span><div><strong>FONDAL FIT</strong><small>{isPro ? t('pro') : t('athlete')}</small></div></div><button className="header-action" onClick={() => navigate('settings')} aria-label={t('settings')}>⚙</button></header>
@@ -113,7 +113,8 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
-            {tab === 'today' && <><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
+            {tab === 'today' && <><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
@@ -122,10 +123,10 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
               <button className="feature-card" onClick={() => setWellness('recovery')}><span className="feature-icon">☾</span><strong>{t('recovery')}</strong><small>Sueño, fatiga y disponibilidad</small><span>Ver recuperación →</span></button>
             </div>)}
             {coachOpen && <div className="coach-modal" role="dialog" aria-modal="true" aria-label="Fondal Coach"><button className="back-button" onClick={()=>setCoachOpen(false)}>← Volver al entrenamiento</button><BetaCoach /></div>}
-            {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
+            {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onReassess={()=>navigate('assessment')} />}
           </>}
           <nav className="tabs" aria-label="Navegación principal">
-            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
+            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['assessment', 'Evaluación', '▤'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
           </nav>
         </>
       )}
@@ -207,6 +208,17 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
  const [step,setStep]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState(''),[referral,setReferral]=useState(false);
  const [customGoal,setCustomGoal]=useState('');
  const [a,setA]=useState<AssessmentValues>(()=>({...DEFAULT_ASSESSMENT,...initial,baseline:{...initial?.baseline},trainingContext:{preferredReassessmentWeeks:6,...initial?.trainingContext},redFlags:{...DEFAULT_ASSESSMENT.redFlags,...initial?.redFlags}}));
+ useEffect(()=>{
+   if(initial)return;
+   let cancelled=false;
+   api<{date:string;assessment:Partial<AssessmentValues>}[]>('GET','/api/assessments').then(rows=>{
+     if(cancelled||!rows.length)return;
+     const prev=rows[0]!.assessment;
+     setA({...DEFAULT_ASSESSMENT,...prev,baseline:{...prev.baseline},trainingContext:{preferredReassessmentWeeks:6,...prev.trainingContext},redFlags:{...DEFAULT_ASSESSMENT.redFlags,...prev.redFlags}});
+   }).catch(()=>{});
+   return ()=>{cancelled=true;};
+ },[initial]);
+
  const baselineField=(key:string,label:string,min:number,max:number,stepSize=1)=><label key={key}>{label} <span className="muted">(opcional)</span><input type="number" min={min} max={max} step={stepSize} value={a.baseline[key]??''} placeholder="No medido" onChange={e=>{const v=e.target.value;setA(prev=>{const baseline={...prev.baseline};if(v==='')delete baseline[key];else baseline[key]=Number(v);return {...prev,baseline};});}}/></label>;
  const contextField=(key:string,label:string,min:number,max:number)=><label key={key}>{label}<input type="number" min={min} max={max} value={a.trainingContext[key]??''} placeholder="Opcional" onChange={e=>{const v=e.target.value;setA(prev=>{const trainingContext={...prev.trainingContext};if(v==='')delete trainingContext[key];else trainingContext[key]=Number(v);return {...prev,trainingContext};});}}/></label>;
  const submit=async()=>{setBusy(true);setError('');try{
@@ -877,11 +889,10 @@ function ProApprovals() {
 }
 
 /* ---------- Settings ---------- */
-function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
+function Settings({ me, refresh, onLang, onLogout, onReassess }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void; onReassess?: () => void }) {
   const t = useT();
   const { lang } = useContext(LangCtx);
   const [links, setLinks] = useState<any[]>([]);
-  const [reassess,setReassess]=useState(false);
   const [history,setHistory]=useState<{date:string;assessment:Partial<AssessmentValues>}[]>([]);
   const loadAssessments=()=>api<{date:string;assessment:Partial<AssessmentValues>}[]>('GET','/api/assessments').then(setHistory).catch(()=>{});
   useEffect(()=>{if(me.role==='athlete')loadAssessments();},[me.role]);
@@ -902,10 +913,10 @@ function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => vo
           <p className="muted">Repetí tu evaluación para actualizar objetivos y registrar cómo cambió tu condición física. Conservamos evaluaciones anteriores.</p>
           {history[0]&&<p>Última evaluación: {history[0].date.slice(0,10)} · {history[0].assessment.specificGoals?.join(', ')||'Objetivo general'}</p>}
           {history[0]&&<p className="muted">Revisión orientativa: cada {history[0].assessment.trainingContext?.preferredReassessmentWeeks??6} semanas, o cuando cambie tu condición.</p>}
-          <button className="primary action-full" onClick={()=>setReassess(true)}>Rehacer mi evaluación</button>
+          <button className="primary action-full" onClick={onReassess}>Rehacer mi evaluación</button>
           {history.length>1&&<details><summary>Historial de evaluaciones ({history.length})</summary>{history.map((h,i)=><p key={i}>{h.date.slice(0,10)} · {h.assessment.targetDescription||h.assessment.goal}</p>)}</details>}
         </div>
-        {reassess&&<Assessment initial={history[0]?.assessment} onCancel={()=>setReassess(false)} onDone={()=>{setReassess(false);loadAssessments();}}/>}
+
         <div className="card"><h3>{t('consentTitle')}</h3>
           {CONSENT_KEYS.filter((k) => k !== 'terms' && k !== 'health_data').map((k) => <label key={k} className="check"><input type="checkbox" checked={!!me.consents[k]} onChange={(e) => toggle(k, e.target.checked)} />{t('c_' + k)}</label>)}</div>
         <div className="card"><h3>Vincularme con mi entrenador</h3><p className="muted">Pedile el código a tu profesional. Al vincularte podrá asignarte una rutina y revisar los entrenamientos que registres.</p><label>Código de vinculación</label><input value={joinCode} onChange={e=>setJoinCode(e.target.value.trim().toUpperCase())} placeholder="Ingresá el código"/><button className="primary action-full" disabled={!me.consents.share_with_pro||!joinCode} onClick={async()=>{try{const r=await api<{professional:string}>('POST','/api/links/join-code',{code:joinCode});setJoinResult('Vinculado con '+r.professional);setJoinCode('');loadLinks();}catch{setJoinResult('No se pudo vincular. Revisá el código.');}}}>Unirme a mi entrenador</button>{!me.consents.share_with_pro&&<p className="warn">Activá el consentimiento para compartir con el profesional.</p>}{joinResult&&<p role="status">{joinResult}</p>}</div><div className="card"><h3>{t('invitations')}</h3>
