@@ -239,6 +239,52 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return { sessions, total: sessions.length, exercises, goal: latestAssessment ? JSON.parse(latestAssessment.data) : null };
   });
 
+  /* ---------------- Beta coach: Gemini free-tier, opt-in, server-side only ---------------- */
+  const coachDaily = new Map<number, { day: string; count: number }>();
+  app.get('/api/coach/status', { preHandler: athleteOnly }, async (req) => {
+    const day = now().slice(0,10);
+    const usage = coachDaily.get(req.user!.id);
+    return { available: !!process.env.GEMINI_API_KEY, provider: 'gemini', dailyLimit: 8, remaining: 8 - (usage?.day === day ? usage.count : 0), mode: 'beta' };
+  });
+  app.post('/api/coach/chat', { preHandler: athleteOnly }, async (req, reply) => {
+    if (!await needHealth(req, reply)) return;
+    if (!await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({ error: 'ai_consent_required' });
+    const parsed = parse(z.object({ message: z.string().trim().min(1).max(450) }),req.body,reply);
+    if (!parsed) return;
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return reply.code(503).send({ error: 'coach_unconfigured' });
+    const uid = req.user!.id, day = now().slice(0,10);
+    const usage = coachDaily.get(uid);
+    const count = usage?.day === day ? usage.count : 0;
+    if (count >= 8) return reply.code(429).send({ error: 'coach_daily_limit' });
+    coachDaily.set(uid, { day, count: count + 1 });
+    const assessment = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
+    const workout = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(uid) as { n: number };
+    const profile = assessment ? JSON.parse(assessment.data) as AssessmentInput : null;
+    const context = { primaryGoal: profile?.goal ?? 'general', secondaryGoals: profile?.secondaryGoals ?? [], target: profile?.targetDescription ?? '', availabilityDays: profile?.daysPerWeek ?? 3, sessionMinutes: profile?.sessionMinutes ?? 60, completedSessions: Number(workout.n) };
+    try {
+      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+      if (!/^[a-zA-Z0-9._-]+$/.test(model)) return reply.code(500).send({ error: 'invalid_coach_model' });
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+        method:'POST',
+        headers:{ 'content-type':'application/json', 'x-goog-api-key':key },
+        body:JSON.stringify({
+          systemInstruction:{ parts:[{text:'Sos Fondal Coach, asistente educativo de ejercicio físico basado en evidencia. Contestá en español claro, breve y con incertidumbre explícita. Personalizá según la meta y los registros; no inventes historial ni cites estudios inexistentes. No indiques esteroides, dosis ni tratamientos. Ante dolor torácico, síncope, síntomas de alarma o lesión grave recomendá suspender actividad y consultar. No generes diagnósticos. Nunca modifiques directamente el plan: solo sugerencias.'}] },
+          contents:[{role:'user',parts:[{text:'Contexto limitado: '+JSON.stringify(context)+'\\nConsulta: '+parsed.message}]}],
+          generationConfig:{temperature:0.3,maxOutputTokens:420}
+        }),
+        signal:AbortSignal.timeout(12000)
+      });
+      if (!response.ok) return reply.code(response.status===429?429:502).send({ error:'coach_provider_unavailable' });
+      const body = await response.json() as { candidates?:{ content?:{ parts?:{text?:string}[] } }[] };
+      const answer = body.candidates?.[0]?.content?.parts?.map(p=>p.text??'').join('').trim();
+      if (!answer) return reply.code(502).send({error:'coach_empty'});
+      return {answer:answer.slice(0,2500),remaining:Math.max(0,7-count)};
+    } catch {
+      return reply.code(503).send({error:'coach_timeout'});
+    }
+  });
+
   /* ---------------- Nutrition ---------------- */
   app.post('/api/nutrition/target', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;

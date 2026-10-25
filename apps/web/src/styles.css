@@ -93,3 +93,15 @@ nav.tabs button.on {background:#22372c;color:var(--accent);font-weight:700}
 .trend-chart .chart-heading {display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;}
 .chart-heading span {color:var(--accent);font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums;}
 @media(max-width:420px){.onboarding{padding:17px}.plan-overview{align-items:flex-start}.plan-overview button{flex:none;max-width:50%}}
+
+/* GPS + beta coach */
+.gps-metrics { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:15px 0; }
+.gps-metrics>div { background:#0e1c1b; border:1px solid var(--line); border-radius:15px; padding:15px; }
+.gps-metrics strong { display:block; color:var(--accent); font-variant-numeric:tabular-nums; font-size:1.8rem; }
+.gps-metrics small { display:block; color:var(--muted); }
+.gps-actions {display:flex;flex-wrap:wrap;gap:10px}.gps-actions button{flex:1;min-width:140px}
+.gps-touch-lock { position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;text-align:center;background:#081211f7;padding:30px;touch-action:manipulation; }
+.gps-touch-lock strong {font-size:1.8rem}
+.gps-touch-lock button {min-height:70px;min-width:220px;}
+textarea {display:block;width:100%;min-height:92px;background:#0f1317;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit;resize:vertical}
+.coach-answer {white-space:pre-wrap;margin-top:16px;padding:16px;background:#183128;border:1px solid #3a6946;border-radius:14px;line-height:1.6}
