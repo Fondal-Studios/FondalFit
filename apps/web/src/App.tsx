@@ -144,7 +144,7 @@ function Consents({ me, refresh }: { me: Me; refresh: () => void }) {
 
 /* ---------- Athlete: training ---------- */
 interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number }
-interface PlanRes { version?: number; plan: { days: { name: string; items: Rx[] }[] } | null }
+interface PlanRes { version?: number; recommendedDay?: number; plan: { days: { name: string; items: Rx[] }[] } | null }
 
 function Chips({ options, value, onChange, multi }: { options: string[]; value: string[]; onChange: (v: string[]) => void; multi?: boolean }) {
   const t = useT();
@@ -159,43 +159,86 @@ function Training() {
   const [res, setRes] = useState<PlanRes | null>(null);
   const [session, setSession] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
-  const load = useCallback(() => api<PlanRes>('GET', '/api/plan').then(setRes).catch(() => setMsg(t('offline'))), [t]);
+  const [allSessions, setAllSessions] = useState(false);
+  const load = useCallback(() => api<PlanRes>('GET', '/api/plan').then(setRes).catch(() => setMsg('No pudimos cargar tu plan. Revisá tu conexión.')), []);
   useEffect(() => { load(); }, [load]);
-  if (!res) return <p className="muted">{msg}</p>;
+  if (!res) return <div className="card"><p>{msg || 'Cargando tu entrenamiento…'}</p></div>;
   if (!res.plan) return <Assessment onDone={load} />;
   if (session !== null) return <Session day={res.plan.days[session]!} index={session} onCancel={() => setSession(null)} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
+  const recommended = Math.min(res.plan.days.length - 1, res.recommendedDay ?? 0);
+  const days = res.plan.days.map((day, index) => ({ day, index })).filter(({index}) => allSessions || index === recommended);
   return (
-    <>
-      <p className="muted">{t('planVersion')} {res.version}</p>
+    <section aria-label="Tu plan de entrenamiento">
+      <div className="row plan-overview"><p className="muted">Tu próxima sesión · Plan v{res.version}</p><button type="button" onClick={() => setAllSessions(!allSessions)}>{allSessions ? 'Ver solo la próxima' : 'Ver mi plan completo'}</button></div>
       {msg && <p className="ok" role="status">{msg}</p>}
-      {res.plan.days.map((d, i) => (
-        <div className="card" key={i}>
-          <div className="row"><h3>{d.name}</h3><button className="primary" onClick={() => setSession(i)}>{t('startSession')}</button></div>
-          {d.items.map((it) => <p key={it.exerciseId}>{t('ex_' + it.exerciseId)} <span className="muted">· {it.sets}×{it.repMin}-{it.repMax} · {t('rir')} {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></p>)}
-        </div>
-      ))}
-    </>
+      {days.map(({day, index}) => <div className="card workout-card" key={index}>
+        <div className="eyebrow">{index === recommended ? 'RECOMENDADA PARA HOY' : 'OTRA SESIÓN DEL PLAN'}</div>
+        <h2>{day.name}</h2>
+        <p className="muted">{day.items.length} ejercicios · Preparada según tu evaluación y tus registros.</p>
+        {day.items.map((it) => <div className="exercise-preview" key={it.exerciseId}><strong>{t('ex_' + it.exerciseId)}</strong><span>{it.sets} × {it.repMin}–{it.repMax} · RIR {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></div>)}
+        <button className="primary action-full" onClick={() => setSession(index)}>Empezar sesión →</button>
+      </div>)}
+    </section>
   );
 }
 
 function Assessment({ onDone }: { onDone: () => void }) {
   const t = useT();
-  const [a, setA] = useState({ goal: 'general', daysPerWeek: 3, experience: 'beginner', equipment: ['none'] as string[], restrictions: [] as string[], redFlags: { chestPain: false, dizziness: false, recentSurgery: false, pregnancy: false, medication: false } });
+  const GOALS = ['general', 'strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'hybrid'];
+  const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [referral, setReferral] = useState(false);
-  return (
-    <div className="card">
-      <h2>{t('assessTitle')}</h2>
-      <label>{t('goal')}</label><Chips options={['general', 'strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility']} value={[a.goal]} onChange={(v) => setA({ ...a, goal: v[0]! })} />
-      <label htmlFor="days">{t('days')}</label><input id="days" type="number" min={1} max={6} value={a.daysPerWeek} onChange={(e) => setA({ ...a, daysPerWeek: Number(e.target.value) })} />
-      <label>{t('experience')}</label><Chips options={['beginner', 'intermediate', 'advanced']} value={[a.experience]} onChange={(v) => setA({ ...a, experience: v[0]! })} />
-      <label>{t('equipment')}</label><Chips multi options={['none', 'dumbbells', 'barbell', 'bands', 'bar']} value={a.equipment} onChange={(v) => setA({ ...a, equipment: v })} />
-      <label>{t('restrictions')}</label><Chips multi options={['knee', 'shoulder', 'lower_back', 'hip', 'ankle', 'wrist', 'neck']} value={a.restrictions} onChange={(v) => setA({ ...a, restrictions: v })} />
-      <h3>{t('redFlagsTitle')}</h3>
-      {Object.keys(a.redFlags).map((k) => <label key={k} className="check"><input type="checkbox" checked={(a.redFlags as Record<string, boolean>)[k]} onChange={(e) => setA({ ...a, redFlags: { ...a.redFlags, [k]: e.target.checked } })} />{t('rf_' + k)}</label>)}
+  const [a, setA] = useState({
+    goal: 'general', secondaryGoals: [] as string[], targetDescription: '', targetDate: '',
+    daysPerWeek: 3, sessionMinutes: 60, preferredActivities: ['strength'] as string[],
+    experience: 'beginner', equipment: ['none'] as string[], restrictions: [] as string[],
+    redFlags: { chestPain: false, dizziness: false, recentSurgery: false, pregnancy: false, medication: false },
+  });
+  const generate = async () => {
+    setBusy(true); setError('');
+    try {
+      const payload = { ...a, secondaryGoals: a.secondaryGoals.filter((g) => g !== a.goal), targetDate: a.targetDate || undefined };
+      const result = await api<{ referral?: boolean }>('POST', '/api/assessment', payload);
+      if (result.referral) setReferral(true);
+      else onDone();
+    } catch (e) { setError(e instanceof ApiError ? 'Revisá tus respuestas antes de generar el plan.' : 'No pudimos guardar tu evaluación. Reintentá.'); }
+    finally { setBusy(false); }
+  };
+  const title = ['¿Qué querés lograr?', '¿Cómo entrenás hoy?', '¿Con qué contás?', 'Chequeo antes de empezar'][step];
+  return <section className="card onboarding" aria-label="Evaluación inicial">
+    <div className="eyebrow">TU ENTRENADOR · PASO {step + 1} DE 4</div>
+    <div className="wizard-track" aria-hidden="true"><span style={{width:`${(step + 1) * 25}%`}} /></div>
+    <h2>{title}</h2>
+    {step === 0 && <>
+      <p className="muted">Tu objetivo principal dirige el entrenamiento. También podés tener metas secundarias.</p>
+      <label>Objetivo principal</label><Chips options={GOALS} value={[a.goal]} onChange={(v) => setA({ ...a, goal: v[0]!, secondaryGoals: a.secondaryGoals.filter(g=>g!==v[0]) })} />
+      <label>Objetivos secundarios (opcionales, hasta 3)</label><Chips options={GOALS.filter(g=>g!==a.goal)} multi value={a.secondaryGoals} onChange={(v)=>setA({...a,secondaryGoals:v.slice(0,3)})} />
+      <label htmlFor="goal-specific">Meta concreta (opcional)</label><input id="goal-specific" maxLength={200} placeholder="Ej.: correr 21 km o mejorar mi fuerza" value={a.targetDescription} onChange={e=>setA({...a,targetDescription:e.target.value})} />
+      <label htmlFor="goal-date">Fecha deseada (opcional)</label><input id="goal-date" type="date" value={a.targetDate} onChange={e=>setA({...a,targetDate:e.target.value})} />
+    </>}
+    {step === 1 && <>
+      <label>Tu experiencia</label><Chips options={['beginner','intermediate','advanced']} value={[a.experience]} onChange={v=>setA({...a,experience:v[0]!})} />
+      <label htmlFor="days">¿Cuántos días por semana podés entrenar?</label><input id="days" type="number" min={1} max={6} value={a.daysPerWeek} onChange={e=>setA({...a,daysPerWeek:Number(e.target.value)})} />
+      <label htmlFor="session-duration">¿Cuántos minutos tenés por entrenamiento?</label><select id="session-duration" value={a.sessionMinutes} onChange={e=>setA({...a,sessionMinutes:Number(e.target.value)})}>{[20,30,45,60,75,90,120].map(n=><option key={n} value={n}>{n} minutos</option>)}</select>
+      <p className="muted">La duración ayuda a ajustar el número de ejercicios de cada sesión.</p>
+    </>}
+    {step === 2 && <>
+      <label>{t('equipment')}</label><Chips multi options={['none','dumbbells','barbell','bands','bar','machines']} value={a.equipment} onChange={v=>setA({...a,equipment:v})}/>
+      <label>Actividades de interés</label><div className="chips">{[['strength','Fuerza'],['running','Running'],['mobility','Movilidad']].map(([key,label])=><button type="button" key={key} className={'chip'+(a.preferredActivities.includes(key)?' on':'')} aria-pressed={a.preferredActivities.includes(key)} onClick={()=>setA({...a,preferredActivities:a.preferredActivities.includes(key)?a.preferredActivities.filter(x=>x!==key):[...a.preferredActivities,key]})}>{label}</button>)}</div>
+      <label>{t('restrictions')}</label><Chips multi options={['knee','shoulder','lower_back','hip','ankle','wrist','neck']} value={a.restrictions} onChange={v=>setA({...a,restrictions:v})}/>
+    </>}
+    {step === 3 && <>
+      <p className="muted">Estas preguntas permiten detectar situaciones que requieren revisión profesional. No sustituyen una evaluación médica.</p>
+      {Object.keys(a.redFlags).map(k=><label key={k} className="check"><input type="checkbox" checked={(a.redFlags as Record<string,boolean>)[k]} onChange={e=>setA({...a,redFlags:{...a.redFlags,[k]:e.target.checked}})}/>{t('rf_'+k)}</label>)}
       {referral && <p className="warn" role="alert">{t('referral')}</p>}
-      <button className="primary" onClick={async () => { const r = await api('POST', '/api/assessment', a); if (r.referral) setReferral(true); else onDone(); }}>{t('generate')}</button>
+    </>}
+    {error && <p className="bad" role="alert">{error}</p>}
+    <div className="wizard-actions">
+      {step>0 && <button type="button" onClick={()=>{setStep(step-1);setError('');}}>← Atrás</button>}
+      {step<3 ? <button type="button" className="primary" onClick={()=>setStep(step+1)}>Continuar →</button> : <button type="button" className="primary" disabled={busy||referral||!a.equipment.length||a.daysPerWeek<1||a.daysPerWeek>6} onClick={generate}>{busy?'Creando tu plan…':'Crear mi plan'}</button>}
     </div>
-  );
+  </section>;
 }
 
 function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[] }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
