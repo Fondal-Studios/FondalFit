@@ -140,3 +140,20 @@ textarea {display:block;width:100%;min-height:92px;background:#0f1317;color:var(
 .template-entry small {color:var(--muted);margin-right:auto}
 .pro-program .row>h3 {flex:2}
 @media(max-width:450px){.pro-numbers{grid-template-columns:repeat(2,minmax(0,1fr));}.pro-code button{margin-left:0}}
+
+/* Fondal Fit menu library and mentor choices */
+.meals-library .menu-title {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}
+.meal-ingredient {display:grid;grid-template-columns:minmax(0,2fr) minmax(88px,1fr);align-items:end;gap:9px;margin:11px 0}
+.meal-ingredient select {min-width:0}
+.meal-ingredient label {margin:0}
+.meal-ingredient label input {margin-top:4px}
+.nutrition-total {background:#193327;border:1px solid #3f5e4c;border-radius:14px;padding:14px;margin:16px 0;display:flex;flex-direction:column;gap:7px}
+.nutrition-total strong {font-size:1.5rem;color:var(--accent)}
+.nutrition-total span {color:#d7e6db;font-size:.84rem}
+.learning-lesson {margin-top:20px;border-top:1px solid var(--line);padding:14px 0}
+.learning-lesson button {margin:5px}
+.mentor-options {display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.mentor-options button {display:flex;flex-direction:column;align-items:start;gap:9px;text-align:left;min-height:128px;background:#10201d;border:1px solid var(--line);padding:15px}
+.mentor-options button.selected {border:2px solid var(--accent);background:#183528}
+.mentor-options span {color:var(--muted);font-size:.86rem;line-height:1.4}
+@media(max-width:440px){.mentor-options{grid-template-columns:1fr}.mentor-options button{min-height:92px}}

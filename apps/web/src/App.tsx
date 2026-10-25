@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, hasToken, setToken } from './api';
 import { LANGS, translate, type Lang } from './i18n';
+import { FOODS, MENUS, THEORY, nutrition, parseSimpleFood, type Portion } from './foodLibrary';
 
 /* ---------- i18n context ---------- */
 const LangCtx = createContext<{ lang: Lang; t: (k: string) => string }>({ lang: 'es', t: (k) => k });
@@ -111,7 +112,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
             {tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
-            {tab === 'today' && <><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'today' && <><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
               <button className="feature-card" onClick={() => setWellness('running')}><span className="feature-icon">↗</span><strong>{t('running')}</strong><small>Distancia, ritmos y registro de carreras</small><span>Ver actividad →</span></button>
@@ -572,6 +573,58 @@ function LearningTips({topic}:{topic:'nutrition'|'training'}) {
   return <div className="card learning-tips"><div className="eyebrow">FONDAL APRENDE</div><h3>Entendé lo que estás haciendo</h3>{topics.map(([title,body])=><details key={title}><summary>{title}</summary><p>{body}</p></details>)}<p className="muted">Material introductorio. No reemplaza orientación individual de un profesional.</p></div>;
 }
 
+function FoodLibrary({onUse}:{onUse:(name:string,portions:Portion[])=>void}) {
+  const [index,setIndex]=useState(0);
+  const [q,setQ]=useState('');
+  const [skip,setSkip]=useState<string[]>([]);
+  const [chosen,setChosen]=useState<Portion[]>(MENUS[0]!.ingredients.map(i=>({...i})));
+  const [course,setCourse]=useState(0);
+  const [xp,setXp]=useState(0);
+  const [answer,setAnswer]=useState<number|null>(null);
+  const matches=MENUS.filter(menu=>menu.title.toLowerCase().includes(q.toLowerCase()) && !menu.ingredients.some(i=>skip.includes(i.id)));
+  const menu=matches[index % Math.max(matches.length,1)];
+  useEffect(()=>{if(menu)setChosen(menu.ingredients.map(x=>({...x})));},[menu?.id]);
+  const total=nutrition(chosen);
+  return <section className="card meals-library">
+    <div className="eyebrow">MENÚS INTERCAMBIABLES</div><h2>150 platos para combinar</h2>
+    <p className="muted">Son combinaciones de ingredientes, no recetas culinarias completas. Cantidades y calorías son aproximadas y editables.</p>
+    <label>Buscar un ingrediente o plato</label><input value={q} onChange={e=>{setQ(e.target.value);setIndex(0);}} placeholder="Pollo, carne, arroz, lentejas…"/>
+    <label>Ingredientes a evitar (elegilos para excluir platos)</label>
+    <div className="chips">{FOODS.filter(f=>f.group==='protein').map(f=><button type="button" className={'chip'+(skip.includes(f.id)?' on':'')} key={f.id} onClick={()=>{setSkip(v=>v.includes(f.id)?v.filter(x=>x!==f.id):[...v,f.id]);setIndex(0);}}>{f.name}</button>)}</div>
+    {menu?<><div className="menu-title"><h3>{menu.title}</h3><p className="muted">{matches.length} opciones disponibles</p></div>
+      {chosen.map((item,i)=><div className="meal-ingredient" key={i}>
+        <select aria-label="Ingrediente" value={item.id} onChange={e=>setChosen(v=>v.map((it,j)=>i===j?{...it,id:e.target.value}:it))}>
+          {FOODS.map(f=><option value={f.id} key={f.id}>{f.name}</option>)}
+        </select>
+        <label>Gramos<input type="number" min={0} max={2000} value={item.grams} onChange={e=>setChosen(v=>v.map((it,j)=>i===j?{...it,grams:Number(e.target.value)}:it))}/></label>
+      </div>)}
+      <div className="nutrition-total"><strong>{Math.round(total.kcal)} kcal</strong><span>Proteínas {Math.round(total.proteinG)} g · Carbos {Math.round(total.carbsG)} g · Grasas {Math.round(total.fatG)} g</span></div>
+      <div className="row"><button onClick={()=>setChosen(v=>[...v,{id:'olive',grams:5}])}>Añadir ingrediente</button><button onClick={()=>setIndex(i=>i+1)}>Cambiar por otro plato ↻</button></div>
+      <button className="primary action-full" onClick={()=>onUse(menu.title,chosen)}>Pasar al registro de hoy</button>
+    </>:<p className="muted">No hay platos con esos filtros. Probá quitar un ingrediente excluido.</p>}
+    <details className="learning-lesson" open><summary>Aprendé mientras comés · {xp} XP</summary>
+      <h4>{THEORY[course]!.title}</h4><p>{THEORY[course]!.body}</p>
+      <button disabled={answer===course} onClick={()=>{setXp(x=>x+10);setAnswer(course);}}>Entendido +10 XP</button>
+      <button onClick={()=>{setCourse(i=>(i+1)%THEORY.length);setAnswer(null);}}>Próxima microlección</button>
+      <p className="muted">XP local de práctica: todavía no se sincroniza con el perfil.</p>
+    </details>
+  </section>;
+}
+
+function VirtualMentorChoice({onCoach,onProfessional}:{onCoach:()=>void;onProfessional:()=>void}) {
+  const [mode,setMode]=useState<'virtual'|'real'>(()=>{try{return localStorage.getItem('ff_mentor_mode')==='real'?'real':'virtual';}catch{return 'virtual';}});
+  const choose=(next:'virtual'|'real')=>{setMode(next);try{localStorage.setItem('ff_mentor_mode',next);}catch{}};
+  return <div className="card mentor-choice">
+    <div className="eyebrow">TU ACOMPAÑAMIENTO</div><h2>¿Con quién vas a entrenar?</h2>
+    <div className="mentor-options">
+      <button className={mode==='real'?'selected':''} onClick={()=>choose('real')}><strong>Profesor real</strong><span>Usá el código que te dio tu entrenador, recibí sus rutinas y compartí tu progreso.</span></button>
+      <button className={mode==='virtual'?'selected':''} onClick={()=>choose('virtual')}><strong>Tutor virtual</strong><span>Consultá a Fondal Coach, recibí explicaciones y mantené tu propio plan.</span></button>
+    </div>
+    <button className="primary action-full" onClick={mode==='real'?onProfessional:onCoach}>{mode==='real'?'Vincular profesor →':'Hablar con el tutor →'}</button>
+    <p className="muted">El tutor requiere Gemini configurado. El modo elegido se guarda en este dispositivo; no cancela un vínculo profesional existente.</p>
+  </div>;
+}
+
 function Nutrition() {
   const [d,setD]=useState<any>(null);
   const [p,setP]=useState({sex:'f',weightKg:70,heightCm:170,age:30,activity:1.375,goal:'general',adjustmentPct:0});
@@ -580,6 +633,8 @@ function Nutrition() {
   const [error,setError]=useState('');
   const [estimateNote,setEstimateNote]=useState('');
   const [editTarget,setEditTarget]=useState(false);
+  const [quick,setQuick]=useState('');
+  const [portions,setPortions]=useState<Portion[]>([]);
   const load=()=>api('GET','/api/nutrition').then(setD).catch(()=>setError('No se pudo cargar la alimentación.'));
   useEffect(()=>{load();},[]);
   const calc=async()=>{setError('');try{await api('POST','/api/nutrition/target',p);setEditTarget(false);load();}catch{setError('No se pudo calcular el objetivo.');}};
@@ -617,8 +672,11 @@ function Nutrition() {
         <button className="primary action-full" onClick={()=>void calc()}>Calcular y explicar mi objetivo</button>
       </div>}
     </div>
+    <FoodLibrary onUse={(name,items)=>{const result=nutrition(items);setM(v=>({...v,meal:name,kcal:String(Math.round(result.kcal)),proteinG:String(Math.round(result.proteinG)),carbsG:String(Math.round(result.carbsG)),fatG:String(Math.round(result.fatG))}));setEstimateNote('Valores aproximados del menú. Revisá la preparación y las cantidades antes de guardar.');setQuick('');setPortions(items);}}/>
     <form className="card" onSubmit={add}><h2>¿Qué comiste?</h2>
       <p className="muted">Escribí naturalmente qué y cuánto comiste. La IA estimará porciones; revisá los números antes de guardar.</p>
+      <label>Registro rápido sin IA</label><input value={quick} placeholder="pollo 150 g, arroz 200 g, tomate 100 g" onChange={e=>setQuick(e.target.value)}/><button type="button" onClick={()=>{const items=parseSimpleFood(quick);if(!items.length){setError('No reconocí ingredientes. Probá pollo, carne, arroz, papa, huevo o verduras.');return;}setPortions(items);setM(v=>({...v,meal:quick}));const val=nutrition(items);setM(v=>({...v,meal:quick,kcal:String(Math.round(val.kcal)),proteinG:String(Math.round(val.proteinG)),carbsG:String(Math.round(val.carbsG)),fatG:String(Math.round(val.fatG))}));setEstimateNote('Cálculo estimado de alimentos reconocidos; revisá las cantidades y agregados no reconocidos.');setError('');}}>Calcular con alimentos básicos</button>
+      {portions.length>0&&<p className="muted">Ingredientes reconocidos: {portions.map(x=>FOODS.find(f=>f.id===x.id)?.name+' '+x.grams+' g').join(' · ')}</p>}
       <textarea required rows={3} value={m.meal} onChange={e=>setM({...m,meal:e.target.value})} placeholder="Ej.: comí dos bifes medianos, arroz y una ensalada con aceite"/>
       <button type="button" disabled={busy||!m.meal.trim()} onClick={()=>void estimate()}>{busy?'Estimando…':'Estimar calorías con IA'}</button>
       {estimateNote&&<p className="muted">{estimateNote}</p>}
