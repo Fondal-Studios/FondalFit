@@ -1,5 +1,9 @@
-# Render Blueprint: un solo servicio web (API + PWA) en el plan gratuito.
-# La base de datos es PostgreSQL externa gratuita (Neon): pegá su URL en DATABASE_URL al crear el servicio.
+# Render Blueprint: app (API + PWA) y su base PostgreSQL, todo en Render, plan gratuito.
+# Aviso: la base gratuita de Render vence a los 30 días; para uso real, migrar a un plan pago o a Neon (cambiar DATABASE_URL).
+databases:
+  - name: fondal-db
+    plan: free
+    databaseName: fondal
 services:
   - type: web
     name: fondal-fit
@@ -9,4 +13,6 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: fondal-db
+          property: connectionString
