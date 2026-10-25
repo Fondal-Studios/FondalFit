@@ -110,5 +110,11 @@ const pt: Record<Key, string> = {
   ex_reverse_lunge: 'Avanço reverso', ex_step_up_low: 'Subida em degrau baixo', ex_plank: 'Prancha', ex_dead_bug: 'Dead bug', ex_farmer_carry: 'Caminhada do fazendeiro', ex_hip_flow: 'Fluxo de mobilidade do quadril', ex_thoracic_rotation: 'Rotação torácica',
 };
 
-export const dict: Record<Lang, Record<Key, string>> = { en, es, pt };
+// New calisthenics entries use a readable Spanish catalog label as a temporary
+// fallback across locales until professionally translated.
+import { CATALOG } from '@fondal/engine';
+const newExercises = Object.fromEntries(CATALOG.filter(e=>e.nameEs).map(e=>['ex_'+e.id,e.nameEs!]));
+export const dict: Record<Lang, Record<string, string>> = {
+  en:{...en,...newExercises},es:{...es,...newExercises},pt:{...pt,...newExercises}
+};
 export const translate = (lang: Lang, key: string): string => (dict[lang] as Record<string, string>)[key] ?? key;

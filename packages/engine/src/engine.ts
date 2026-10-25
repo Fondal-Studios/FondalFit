@@ -46,8 +46,8 @@ const DAY_PATTERNS: Exercise['pattern'][][] = [
 
 /** Picks the most conservative variant first (fewest stressed areas, bodyweight first for beginners). */
 function pick(pool: Exercise[], pattern: Exercise['pattern'], beginner: boolean, used: Set<string>) {
-  const c = pool.filter((e) => e.pattern === pattern);
-  c.sort((a, b) => (beginner ? a.increment - b.increment : b.increment - a.increment));
+  const c = pool.filter((e) => e.pattern === pattern && (e.level??1) <= (beginner?2:4));
+  c.sort((a, b) => (beginner ? (a.level??1)-(b.level??1) : (b.level??1)-(a.level??1)) || (beginner ? a.increment-b.increment : b.increment-a.increment));
   return c.find((e) => !used.has(e.id)) ?? c[0];
 }
 
@@ -81,10 +81,12 @@ export function generatePlan(a: AssessmentInput): Plan {
         load: 0,
       });
     }
+    // Three distinct emphasis patterns: avoid repeating an identical full-body session every day.
     const hybridRun = a.goal === 'hybrid' && d % 2 === 1;
     const enduranceRun = a.goal === 'endurance' && a.preferredActivities?.includes('running');
     const run = (hybridRun || enduranceRun) ? { minutes: Math.max(15, Math.min(50, Math.round(sessionMinutes * (hybridRun ? 0.45 : 0.75)))), intensity: 'easy' as const, note: 'Ritmo conversacional; ajustá según el esfuerzo percibido.' } : undefined;
-    days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza y carrera ${d + 1}` : `Fuerza ${d + 1}`) : `Sesión ${d + 1}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
+    const emphasis=['Empuje y sentadilla','Tracción y bisagra','Piernas y estabilidad'][d%3];
+    days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza + carrera · ${emphasis}` : `Fuerza · ${emphasis}`) : `Sesión ${d+1} · ${emphasis}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
   }
   return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
 }
@@ -188,25 +190,44 @@ export function runningLoadAlert(prevWeekKm: number, thisWeekKm: number): string
 
 /* ---------- Gamification (moderate, safe) ---------- */
 export interface ActivityDay { date: string; sessions: number; runs: number }
-export const ACHIEVEMENTS = ['first_session', 'ten_sessions', 'streak_4_weeks', 'first_run', 'recovery_logged'] as const;
+export const ACHIEVEMENTS = ['first_session','five_sessions','ten_sessions','twentyfive_sessions','fifty_sessions','first_run','five_runs','ten_runs','streak_4_weeks','streak_8_weeks','recovery_logged','consistent_week','balanced_week'] as const;
 
-/** XP counts at most ONE rewarded activity per day, so training more than needed never earns more. */
+/** Rewards consistency, not workout volume or intensity. At most one active day earns XP. */
 export function gamification(days: ActivityDay[], recoveryLogs: number) {
-  const active = days.filter((d) => d.sessions + d.runs > 0);
-  const xp = active.length * 50;
-  const level = Math.floor(Math.sqrt(xp / 50)) + 1;
-  const weeks = new Set(active.map((d) => isoWeek(d.date)));
-  let streak = 0;
-  const cur = isoWeekIndex(active.map((d) => d.date).sort().pop() ?? '');
-  for (let w = cur; w > 0 && weeks.has(weekKey(w)); w--) streak++;
-  const totalSessions = days.reduce((a, d) => a + d.sessions, 0);
-  const got: string[] = [];
-  if (totalSessions >= 1) got.push('first_session');
-  if (totalSessions >= 10) got.push('ten_sessions');
-  if (streak >= 4) got.push('streak_4_weeks');
-  if (days.some((d) => d.runs > 0)) got.push('first_run');
-  if (recoveryLogs >= 1) got.push('recovery_logged');
-  return { xp, level, streakWeeks: streak, achievements: got };
+  const unique = new Map<string,{sessions:number;runs:number}>();
+  for (const d of days) {
+    const key=d.date.slice(0,10);
+    const previous=unique.get(key)??{sessions:0,runs:0};
+    unique.set(key,{sessions:previous.sessions+Math.max(0,d.sessions),runs:previous.runs+Math.max(0,d.runs)});
+  }
+  const active=[...unique].filter(([,d])=>d.sessions+d.runs>0).sort(([a],[b])=>a.localeCompare(b));
+  const xp=active.length*50;
+  const level=Math.floor(Math.sqrt(xp/50))+1;
+  const weeks=new Set(active.map(([date])=>isoWeek(date)));
+  let streak=0;
+  const cur=isoWeekIndex(active.map(([date])=>date).pop()??'');
+  for(let w=cur;w>0&&weeks.has(weekKey(w));w--)streak++;
+  const totalSessions=[...unique.values()].reduce((n,d)=>n+d.sessions,0);
+  const totalRuns=[...unique.values()].reduce((n,d)=>n+d.runs,0);
+  const got:string[]=[];
+  for(const [n,key] of [[1,'first_session'],[5,'five_sessions'],[10,'ten_sessions'],[25,'twentyfive_sessions'],[50,'fifty_sessions']] as const) if(totalSessions>=n)got.push(key);
+  for(const [n,key] of [[1,'first_run'],[5,'five_runs'],[10,'ten_runs']] as const) if(totalRuns>=n)got.push(key);
+  if(streak>=4)got.push('streak_4_weeks');
+  if(streak>=8)got.push('streak_8_weeks');
+  if(recoveryLogs>=1)got.push('recovery_logged');
+  const byWeek=new Map<string,{days:number;strength:boolean;run:boolean}>();
+  for(const [date,activity] of active){
+    const key=isoWeek(date);const week=byWeek.get(key)??{days:0,strength:false,run:false};
+    week.days++;week.strength ||=activity.sessions>0;week.run ||=activity.runs>0;byWeek.set(key,week);
+  }
+  if([...byWeek.values()].some(w=>w.days>=3))got.push('consistent_week');
+  if([...byWeek.values()].some(w=>w.strength&&w.run))got.push('balanced_week');
+  const challenges=[
+    {id:'weekly_consistency',title:'Moverte 3 días distintos esta semana',progress:Math.min(3,[...active].filter(([date])=>isoWeek(date)===isoWeek(new Date().toISOString())).length),target:3},
+    {id:'first_strength',title:'Registrar una sesión de fuerza',progress:Math.min(1,totalSessions),target:1},
+    {id:'first_cardio',title:'Registrar una carrera',progress:Math.min(1,totalRuns),target:1},
+  ];
+  return {xp,level,streakWeeks:streak,achievements:got,challenges,rewards:{title:level>=10?'Guardián del hábito':level>=5?'Explorador constante':'Aprendiz del movimiento',unlockedFrames:Math.min(4,Math.floor(level/3))}};
 }
 const weekNo = (d: string) => Math.floor(Date.parse(d.slice(0, 10) + 'T00:00:00Z') / (7 * 864e5));
 const isoWeek = (d: string) => weekKey(weekNo(d));

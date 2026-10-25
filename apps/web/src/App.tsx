@@ -95,13 +95,16 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
   const [wellness, setWellness] = useState<'running' | 'nutrition' | 'recovery' | null>(null);
   const [proView, setProView] = useState<'athletes' | 'approvals'>('athletes');
   const [coachOpen, setCoachOpen] = useState(false);
+  const [coachMessage,setCoachMessage]=useState('');
+  const [playerLevel,setPlayerLevel]=useState<number|null>(null);
+  useEffect(()=>{if(!isPro)api<{level:number}>('GET','/api/gamification').then(v=>setPlayerLevel(v.level)).catch(()=>{});},[isPro,tab]);
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
   const navigate = (next: string) => { setTab(next); setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const goBack = () => { setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const screenTitle = isPro ? (proView === 'athletes' ? t('athletes') : t('approvals')) : wellness ? t(wellness) : (tab === 'today' ? t('today') : t(tab === 'wellness' ? 'recovery' : tab));
+  const screenTitle = tab === 'assessment' ? 'Mi evaluación física' : isPro ? (proView === 'athletes' ? t('athletes') : t('approvals')) : wellness ? t(wellness) : (tab === 'today' ? t('today') : t(tab === 'wellness' ? 'recovery' : tab));
   return (
     <>
-      <header className="top"><div className="brand"><span className="brandmark">F</span><div><strong>FONDAL FIT</strong><small>{isPro ? t('pro') : t('athlete')}</small></div></div><button className="header-action" onClick={() => navigate('settings')} aria-label={t('settings')}>⚙</button></header>
+      <header className="top"><div className="brand"><span className="brandmark">F</span><div><strong>FONDAL FIT</strong><small>{isPro ? t('pro') : playerLevel!==null ? 'Atleta · Nivel '+playerLevel : t('athlete')}</small></div></div><button className="header-action" onClick={() => navigate('settings')} aria-label={t('settings')}>⚙</button></header>
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <>
           <div className="screen-heading">
@@ -113,7 +116,8 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
-            {tab === 'today' && <><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
+            {tab === 'today' && <><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
@@ -121,11 +125,12 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
               <button className="feature-card" onClick={() => setWellness('nutrition')}><span className="feature-icon">◉</span><strong>{t('nutrition')}</strong><small>Comidas, energía y proteínas diarias</small><span>Ver alimentación →</span></button>
               <button className="feature-card" onClick={() => setWellness('recovery')}><span className="feature-icon">☾</span><strong>{t('recovery')}</strong><small>Sueño, fatiga y disponibilidad</small><span>Ver recuperación →</span></button>
             </div>)}
-            {coachOpen && <div className="coach-modal" role="dialog" aria-modal="true" aria-label="Fondal Coach"><button className="back-button" onClick={()=>setCoachOpen(false)}>← Volver al entrenamiento</button><BetaCoach /></div>}
-            {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
+            <button className="floating-coach" type="button" onClick={()=>setCoachOpen(true)} aria-label="Preguntar a mi tutor"><span className="pixel-mentor" aria-hidden="true"><span className="pixel-eyes">▪ ▪</span><span className="pixel-smile">▔</span></span><span>Preguntá a tu tutor</span></button>
+            {coachOpen && <div className="coach-modal" role="dialog" aria-modal="true" aria-label="Fondal Coach"><button className="back-button" onClick={()=>setCoachOpen(false)}>← Volver al entrenamiento</button><BetaCoach initialMessage={coachMessage} onMessageChange={setCoachMessage}/></div>}
+            {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onReassess={()=>navigate('assessment')} />}
           </>}
           <nav className="tabs" aria-label="Navegación principal">
-            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
+            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['assessment', 'Evaluación', '▤'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
           </nav>
         </>
       )}
@@ -165,11 +170,13 @@ function Training() {
   const [session, setSession] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [allSessions, setAllSessions] = useState(false);
+  const [exerciseNames,setExerciseNames]=useState<Record<string,string>>({});
+  useEffect(()=>{api<{id:string;name:string}[]>('GET','/api/exercises').then(items=>setExerciseNames(Object.fromEntries(items.map(i=>[i.id,i.name])))).catch(()=>{});},[]);
   const load = useCallback(() => api<PlanRes>('GET', '/api/plan').then(setRes).catch(() => setMsg('No pudimos cargar tu plan. Revisá tu conexión.')), []);
   useEffect(() => { load(); }, [load]);
   if (!res) return <div className="card"><p>{msg || 'Cargando tu entrenamiento…'}</p></div>;
   if (!res.plan) return <Assessment onDone={load} />;
-  if (session !== null) return <Session day={res.plan.days[session]!} index={session} onCancel={() => setSession(null)} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
+  if (session !== null) return <Session exerciseNames={exerciseNames} day={res.plan.days[session]!} index={session} onCancel={() => setSession(null)} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
   const recommended = Math.min(res.plan.days.length - 1, res.recommendedDay ?? 0);
   const days = res.plan.days.map((day, index) => ({ day, index })).filter(({index}) => allSessions || index === recommended);
   return (
@@ -181,7 +188,7 @@ function Training() {
         <h2>{day.name}</h2>
         <p className="muted">{day.items.length} ejercicios · Preparada según tu evaluación y tus registros.</p>
         {day.run && <p className="run-prescription">Carrera suave: {day.run.minutes} minutos. {day.run.note}</p>}
-        {day.items.map((it) => <div className="exercise-preview" key={it.exerciseId}><strong>{t('ex_' + it.exerciseId)}</strong><span>{it.sets} × {it.repMin}–{it.repMax} · RIR {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></div>)}
+        {day.items.map((it) => <div className="exercise-preview" key={it.exerciseId}><strong>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</strong><span>{it.sets} × {it.repMin}–{it.repMax} · RIR {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></div>)}
         <button className="primary action-full" onClick={() => setSession(index)}>Empezar sesión →</button>
       </div>)}
     </section>
@@ -207,6 +214,17 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
  const [step,setStep]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState(''),[referral,setReferral]=useState(false);
  const [customGoal,setCustomGoal]=useState('');
  const [a,setA]=useState<AssessmentValues>(()=>({...DEFAULT_ASSESSMENT,...initial,baseline:{...initial?.baseline},trainingContext:{preferredReassessmentWeeks:6,...initial?.trainingContext},redFlags:{...DEFAULT_ASSESSMENT.redFlags,...initial?.redFlags}}));
+ useEffect(()=>{
+   if(initial)return;
+   let cancelled=false;
+   api<{date:string;assessment:Partial<AssessmentValues>}[]>('GET','/api/assessments').then(rows=>{
+     if(cancelled||!rows.length)return;
+     const prev=rows[0]!.assessment;
+     setA({...DEFAULT_ASSESSMENT,...prev,baseline:{...prev.baseline},trainingContext:{preferredReassessmentWeeks:6,...prev.trainingContext},redFlags:{...DEFAULT_ASSESSMENT.redFlags,...prev.redFlags}});
+   }).catch(()=>{});
+   return ()=>{cancelled=true;};
+ },[initial]);
+
  const baselineField=(key:string,label:string,min:number,max:number,stepSize=1)=><label key={key}>{label} <span className="muted">(opcional)</span><input type="number" min={min} max={max} step={stepSize} value={a.baseline[key]??''} placeholder="No medido" onChange={e=>{const v=e.target.value;setA(prev=>{const baseline={...prev.baseline};if(v==='')delete baseline[key];else baseline[key]=Number(v);return {...prev,baseline};});}}/></label>;
  const contextField=(key:string,label:string,min:number,max:number)=><label key={key}>{label}<input type="number" min={min} max={max} value={a.trainingContext[key]??''} placeholder="Opcional" onChange={e=>{const v=e.target.value;setA(prev=>{const trainingContext={...prev.trainingContext};if(v==='')delete trainingContext[key];else trainingContext[key]=Number(v);return {...prev,trainingContext};});}}/></label>;
  const submit=async()=>{setBusy(true);setError('');try{
@@ -250,7 +268,7 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
    {baselineField('recovery','Recuperación percibida (1–10)',1,10)}</div>
    <p className="muted">Los resultados auto-reportados no estiman con precisión VO₂máx ni fuerza máxima. La carga inicial será conservadora y se ajustará con tus sesiones.</p>
   </>}
-  {step===4&&<><label>Equipamiento disponible</label><Chips multi options={['none','dumbbells','barbell','bands','bar','machines']} value={a.equipment} onChange={v=>setA({...a,equipment:v})}/>
+  {step===4&&<><label>Equipamiento disponible</label><Chips multi options={['none','dumbbells','barbell','bands','bar','rings','machines']} value={a.equipment} onChange={v=>setA({...a,equipment:v})}/>
    <label>Actividades preferidas</label><div className="chips">{(['strength','running','mobility'] as const).map(k=><button type="button" className={'chip'+(a.preferredActivities.includes(k)?' on':'')} key={k} onClick={()=>setA(v=>({...v,preferredActivities:v.preferredActivities.includes(k)?v.preferredActivities.filter(x=>x!==k):[...v.preferredActivities,k]}))}>{k==='strength'?'Fuerza':k==='running'?'Running':'Movilidad'}</button>)}</div>
    <label>Molestias o limitaciones actuales</label><Chips multi options={['knee','shoulder','lower_back','hip','ankle','wrist','neck']} value={a.restrictions} onChange={v=>setA({...a,restrictions:v})}/>
    {contextField('confidence','Confianza para sostener el plan (1–10)',1,10)}
@@ -266,7 +284,7 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
  </section>;
 }
 
-function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
+function Session({ day, index, onDone, onCancel, exerciseNames }: { exerciseNames: Record<string,string>; day: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
   const t = useT();
   const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
     Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
@@ -288,7 +306,7 @@ function Session({ day, index, onDone, onCancel }: { day: { name: string; items:
       <p className="muted">Registrá tus series. Si volvés al plan antes de finalizar, los datos de esta sesión no se guardan.</p>
       {day.items.map((it) => (
         <div className="card" key={it.exerciseId}>
-          <h3>{t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
+          <h3>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
           {sets[it.exerciseId]!.map((s, i) => (
             <div className="set" key={i}><span>{i + 1}</span>
               <input aria-label={t('weight')} placeholder={t('weight')} inputMode="decimal" value={s.weight} onChange={(e) => set(it.exerciseId, i, 'weight', e.target.value)} />
@@ -464,9 +482,9 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
   </div>;
 }
 
-function BetaCoach() {
+function BetaCoach({initialMessage='',onMessageChange}:{initialMessage?:string;onMessageChange?:(message:string)=>void}) {
   const [status,setStatus]=useState<{available:boolean;remaining:number;dailyLimit:number}|null>(null);
-  const [message,setMessage]=useState('');
+  const [message,setMessage]=useState(initialMessage);
   const [answer,setAnswer]=useState('');
   const [error,setError]=useState('');
   const [working,setWorking]=useState(false);
@@ -486,7 +504,7 @@ function BetaCoach() {
     <div className="eyebrow">FONDAL COACH · BETA</div><h2>Consultá a tu entrenador</h2>
     <p className="muted">Consejos educativos basados en tu meta. La IA no modifica el plan ni reemplaza una evaluación profesional.</p>
     <p className="muted">{status?.available?`Consultas restantes hoy: ${status.remaining}/${status.dailyLimit}`:'Para activar la IA se necesita una clave gratuita configurada en el servidor.'}</p>
-    <label htmlFor="coach-message">Tu consulta</label><textarea id="coach-message" rows={3} maxLength={450} value={message} onChange={e=>setMessage(e.target.value)} placeholder="¿Cómo adapto el entrenamiento de hoy a mi objetivo?"/>
+    <label htmlFor="coach-message">Tu consulta</label><textarea id="coach-message" rows={3} maxLength={450} value={message} onChange={e=>{setMessage(e.target.value);onMessageChange?.(e.target.value);}} placeholder="¿Cómo adapto el entrenamiento de hoy a mi objetivo?"/>
     <button className="primary action-full" disabled={working||!message.trim()||!status?.available||status.remaining<=0} onClick={()=>void submit()}>{working?'Consultando…':'Consultar al coach'}</button>
     {error&&<p className="warn" role="alert">{error}</p>}
     {answer&&<div className="coach-answer" role="status">{answer}</div>}
@@ -596,7 +614,7 @@ function Progress() {
   const t = useT();
   const [d,setD] = useState<ProgressData|null>(null);
   const [runs,setRuns] = useState<{runs:{created_at:string;km:number;pace:number}[]}|null>(null);
-  const [g,setG] = useState<{xp:number;level:number;streakWeeks:number;achievements:string[]}|null>(null);
+  const [g,setG] = useState<{xp:number;level:number;streakWeeks:number;achievements:string[];challenges?:{id:string;title:string;progress:number;target:number}[];rewards?:{title:string;unlockedFrames:number}}|null>(null);
   const [selected,setSelected] = useState('');
   const [error,setError] = useState('');
   useEffect(()=>{
@@ -613,7 +631,13 @@ function Progress() {
       <p className="muted">{d.goal?.goal?t(''+d.goal.goal):'Tu objetivo aparecerá después de la evaluación.'}{d.goal?.targetDate?' · Fecha meta: '+d.goal.targetDate:''}</p>
       <div className="metric"><strong>{d.total}</strong><span>sesiones registradas</span></div>
     </div>
-    {g&&<div className="card"><h3>Nivel {g.level} · {g.xp} XP</h3><p className="muted">Semanas activas consecutivas: {g.streakWeeks}</p><div className="chips">{g.achievements.map(x=><span className="badge ok" key={x}>{t('ach_'+x)}</span>)}</div></div>}
+    {g&&<div className="card game-progress"><div className="eyebrow">TU AVENTURA FITNESS</div><h3>Nivel {g.level} · {g.xp} XP</h3>
+      <p className="muted">{g.rewards?.title??'Aprendiz del movimiento'} · {g.streakWeeks} semanas activas consecutivas</p>
+      <div className="game-xp-track" role="progressbar" aria-label="Progreso del nivel" aria-valuenow={Math.min(100,Math.round(g.xp/Math.max(1,g.level*g.level*50)*100))} aria-valuemin={0} aria-valuemax={100}><span style={{width:`${Math.min(100,Math.round(g.xp/Math.max(1,g.level*g.level*50)*100))}%`}}/></div>
+      <h4>Desafíos</h4>{g.challenges?.map(c=><div className="challenge" key={c.id}><span>{c.title}</span><strong>{c.progress}/{c.target}</strong></div>)}
+      <h4>Logros desbloqueados</h4><div className="chips">{g.achievements.map(x=><span className="badge ok" key={x}>{({'first_session':'Primera sesión','five_sessions':'5 sesiones','ten_sessions':'10 sesiones','twentyfive_sessions':'25 sesiones','fifty_sessions':'50 sesiones','first_run':'Primera carrera','five_runs':'5 carreras','ten_runs':'10 carreras','streak_4_weeks':'4 semanas constantes','streak_8_weeks':'8 semanas constantes','recovery_logged':'Cuidás tu recuperación','consistent_week':'Semana constante','balanced_week':'Fuerza y cardio'} as Record<string,string>)[x]??t('ach_'+x)}</span>)}</div>
+      <p className="muted">Las recompensas reconocen constancia, no entrenar más de lo recomendado. El descanso también cuenta.</p>
+    </div>}
     <div className="card"><h3>Volumen de entrenamiento</h3><p className="muted">Carga total × repeticiones registradas por sesión. No compara esfuerzos entre ejercicios distintos.</p>
       <TrendChart points={d.sessions.map(x=>({label:x.date.slice(0,10),value:x.volume}))} label="Volumen por sesión" unit="kg·reps"/>
     </div>
@@ -788,13 +812,14 @@ function ProfessionalProgram({ athletes }: { athletes:{id:number;name:string}[] 
   const t=useT();
   const [code,setCode]=useState('');
   const [templates,setTemplates]=useState<{id:number;name:string;days:ProDay[]}[]>([]);
+  const [exerciseCatalog,setExerciseCatalog]=useState<{id:string;name:string;level:number;skill:string|null}[]>([]);
   const [name,setName]=useState('Mi programa personalizado');
   const [days,setDays]=useState<ProDay[]>([{name:'Día 1',items:[{exerciseId:'goblet_squat',sets:3,repMin:8,repMax:12,rirTarget:2,load:0}]}]);
   const [athleteId,setAthleteId]=useState(0);
   const [result,setResult]=useState('');
   const [feedback,setFeedback]=useState<{workouts:{date:string;items:{exerciseId:string;sets:{weight:number;reps:number}[]}[]}[];runs:{km:number;minutes:number;created_at:string}[]}|null>(null);
   const load=()=>api<{id:number;name:string;days:ProDay[]}[]>('GET','/api/pro/templates').then(setTemplates).catch(()=>{});
-  useEffect(()=>{api<{code:string}>('GET','/api/pro/code').then(x=>setCode(x.code)).catch(()=>{});load();},[]);
+  useEffect(()=>{api<{code:string}>('GET','/api/pro/code').then(x=>setCode(x.code)).catch(()=>{});api<{id:string;name:string;level:number;skill:string|null}[]>('GET','/api/exercises').then(setExerciseCatalog).catch(()=>{});load();},[]);
   const editDay=(index:number,change:Partial<ProDay>)=>setDays(ds=>ds.map((d,i)=>i===index?{...d,...change}:d));
   const save=async()=>{setResult('');try{await api('POST','/api/pro/templates',{name,days});setResult('Rutina guardada. Ahora podés asignarla a un alumno.');load();}catch{setResult('Revisá los días y ejercicios antes de guardar.');}};
   const assign=async(templateId:number)=>{if(!athleteId)return;try{await api('POST',`/api/pro/templates/${templateId}/assign`,{athleteId});setResult('Rutina asignada. El alumno la verá en su inicio.');}catch{setResult('No se pudo asignar. Verificá que el alumno esté vinculado.');}};
@@ -808,7 +833,7 @@ function ProfessionalProgram({ athletes }: { athletes:{id:number;name:string}[] 
       <label>Nombre</label><input value={day.name} onChange={e=>editDay(i,{name:e.target.value})}/>
       <h4>Fuerza (opcional si hacés cardio)</h4>
       {day.items.map((item,j)=><div className="pro-exercise" key={j}>
-        <label>Ejercicio</label><select value={item.exerciseId} onChange={e=>editDay(i,{items:day.items.map((v,k)=>k===j?{...v,exerciseId:e.target.value}:v)})}>{EXERCISE_IDS.map(id=><option key={id} value={id}>{t('ex_'+id)}</option>)}</select>
+        <label>Ejercicio</label><select value={item.exerciseId} onChange={e=>editDay(i,{items:day.items.map((v,k)=>k===j?{...v,exerciseId:e.target.value}:v)})}>{(exerciseCatalog.length?exerciseCatalog:EXERCISE_IDS.map(id=>({id,name:t('ex_'+id),level:1,skill:null}))).map(ex=><option key={ex.id} value={ex.id}>{ex.name} · nivel {ex.level}</option>)}</select>
         <div className="pro-numbers">{([['sets','Series'],['repMin','Rep. mín'],['repMax','Rep. máx'],['rirTarget','RIR'],['load','kg iniciales']] as [keyof ProItem,string][]).map(([key,label])=><label key={key}>{label}<input type="number" min={0} value={item[key]} onChange={e=>editDay(i,{items:day.items.map((v,k)=>k===j?{...v,[key]:Number(e.target.value)}:v)})}/></label>)}</div>
         <button onClick={()=>editDay(i,{items:day.items.filter((_,k)=>k!==j)})}>Quitar ejercicio</button>
       </div>)}
@@ -877,11 +902,10 @@ function ProApprovals() {
 }
 
 /* ---------- Settings ---------- */
-function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
+function Settings({ me, refresh, onLang, onLogout, onReassess }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void; onReassess?: () => void }) {
   const t = useT();
   const { lang } = useContext(LangCtx);
   const [links, setLinks] = useState<any[]>([]);
-  const [reassess,setReassess]=useState(false);
   const [history,setHistory]=useState<{date:string;assessment:Partial<AssessmentValues>}[]>([]);
   const loadAssessments=()=>api<{date:string;assessment:Partial<AssessmentValues>}[]>('GET','/api/assessments').then(setHistory).catch(()=>{});
   useEffect(()=>{if(me.role==='athlete')loadAssessments();},[me.role]);
@@ -902,10 +926,10 @@ function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => vo
           <p className="muted">Repetí tu evaluación para actualizar objetivos y registrar cómo cambió tu condición física. Conservamos evaluaciones anteriores.</p>
           {history[0]&&<p>Última evaluación: {history[0].date.slice(0,10)} · {history[0].assessment.specificGoals?.join(', ')||'Objetivo general'}</p>}
           {history[0]&&<p className="muted">Revisión orientativa: cada {history[0].assessment.trainingContext?.preferredReassessmentWeeks??6} semanas, o cuando cambie tu condición.</p>}
-          <button className="primary action-full" onClick={()=>setReassess(true)}>Rehacer mi evaluación</button>
+          <button className="primary action-full" onClick={onReassess}>Rehacer mi evaluación</button>
           {history.length>1&&<details><summary>Historial de evaluaciones ({history.length})</summary>{history.map((h,i)=><p key={i}>{h.date.slice(0,10)} · {h.assessment.targetDescription||h.assessment.goal}</p>)}</details>}
         </div>
-        {reassess&&<Assessment initial={history[0]?.assessment} onCancel={()=>setReassess(false)} onDone={()=>{setReassess(false);loadAssessments();}}/>}
+
         <div className="card"><h3>{t('consentTitle')}</h3>
           {CONSENT_KEYS.filter((k) => k !== 'terms' && k !== 'health_data').map((k) => <label key={k} className="check"><input type="checkbox" checked={!!me.consents[k]} onChange={(e) => toggle(k, e.target.checked)} />{t('c_' + k)}</label>)}</div>
         <div className="card"><h3>Vincularme con mi entrenador</h3><p className="muted">Pedile el código a tu profesional. Al vincularte podrá asignarte una rutina y revisar los entrenamientos que registres.</p><label>Código de vinculación</label><input value={joinCode} onChange={e=>setJoinCode(e.target.value.trim().toUpperCase())} placeholder="Ingresá el código"/><button className="primary action-full" disabled={!me.consents.share_with_pro||!joinCode} onClick={async()=>{try{const r=await api<{professional:string}>('POST','/api/links/join-code',{code:joinCode});setJoinResult('Vinculado con '+r.professional);setJoinCode('');loadLinks();}catch{setJoinResult('No se pudo vincular. Revisá el código.');}}}>Unirme a mi entrenador</button>{!me.consents.share_with_pro&&<p className="warn">Activá el consentimiento para compartir con el profesional.</p>}{joinResult&&<p role="status">{joinResult}</p>}</div><div className="card"><h3>{t('invitations')}</h3>

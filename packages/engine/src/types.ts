@@ -1,5 +1,5 @@
 export type Goal = 'strength' | 'hypertrophy' | 'endurance' | 'fat_loss' | 'mobility' | 'general' | 'hybrid';
-export type Equipment = 'none' | 'dumbbells' | 'barbell' | 'machines' | 'bands' | 'bar';
+export type Equipment = 'none' | 'dumbbells' | 'barbell' | 'machines' | 'bands' | 'bar' | 'rings';
 export type Area = 'knee' | 'shoulder' | 'lower_back' | 'hip' | 'ankle' | 'wrist' | 'neck';
 
 export interface Exercise {
@@ -10,6 +10,12 @@ export interface Exercise {
   stresses: Area[];
   /** load increment in kg for external-load exercises; 0 = bodyweight */
   increment: number;
+  /** Optional calisthenics skill information. */
+  nameEs?: string;
+  level?: 1 | 2 | 3 | 4 | 5;
+  skill?: 'pull' | 'push' | 'handstand' | 'core' | 'legs' | 'mobility';
+  progressionFrom?: string;
+  holdSeconds?: boolean;
 }
 
 export interface Prescription {

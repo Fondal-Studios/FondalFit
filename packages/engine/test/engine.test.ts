@@ -111,5 +111,6 @@ describe('gamification', () => {
     expect(g.streakWeeks).toBe(4);
     expect(g.achievements).toEqual(expect.arrayContaining(['first_session', 'first_run', 'streak_4_weeks', 'recovery_logged']));
   });
-  it('empty', () => { expect(gamification([], 0)).toEqual({ xp: 0, level: 1, streakWeeks: 0, achievements: [] }); });
+  it('empty', () => { expect(gamification([], 0)).toMatchObject({ xp: 0, level: 1, streakWeeks: 0, achievements: [] }); });
+  it('adds safe consistency challenges and milestone rewards', () => { const g=gamification([{date:'2026-10-19',sessions:1,runs:1}],0);expect(g.challenges.length).toBe(3);expect(g.achievements).toContain('balanced_week');expect(g.rewards.title).toBeTruthy(); });
 });
