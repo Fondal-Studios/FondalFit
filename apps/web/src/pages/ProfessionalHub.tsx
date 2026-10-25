@@ -38,7 +38,7 @@ export function ProfessionalHub(){
    <div className="pro-kpis"><div><strong>{athletes.length}</strong><small>Alumnos</small></div><div><strong>{athletes.filter(a=>a.sessions30>0).length}</strong><small>Activos 30 días</small></div><div><strong>{athletes.filter(a=>a.pendingApprovals>0).length}</strong><small>Con pendientes</small></div></div>
    <p>Tu código de vinculación: <strong className="pro-enrollment-code">{code||'Cargando…'}</strong></p><button disabled={!code} onClick={()=>void navigator.clipboard?.writeText(code)}>Copiar código</button>
    <form onSubmit={async e=>{e.preventDefault();try{await api('POST','/api/pro/invites',{email});setStatus('Invitación enviada si la cuenta existe.');setEmail('');}catch{setStatus('No se pudo enviar.');}}}><label>Invitar por correo<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="alumno@correo.com"/></label><button className="primary">Invitar</button></form>
-  </section>
+  </section>}
   {section==='students'&&<section className="card"><div className="row between"><h2>Seguimiento de alumnos</h2><button onClick={refresh}>Actualizar</button></div>
    <label>Buscar alumno<input type="search" placeholder="Nombre o correo" value={search} onChange={e=>setSearch(e.target.value)}/></label>
    <div className="row"><button className={filter==='all'?'on':''} onClick={()=>setFilter('all')}>Todos</button><button className={filter==='inactive'?'on':''} onClick={()=>setFilter('inactive')}>Sin actividad 30 días</button><button className={filter==='pending'?'on':''} onClick={()=>setFilter('pending')}>Pendientes</button></div>
