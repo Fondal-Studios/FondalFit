@@ -144,7 +144,7 @@ function Consents({ me, refresh }: { me: Me; refresh: () => void }) {
 
 /* ---------- Athlete: training ---------- */
 interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number }
-interface PlanRes { version?: number; recommendedDay?: number; plan: { days: { name: string; items: Rx[] }[] } | null }
+interface PlanRes { version?: number; recommendedDay?: number; plan: { days: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }[] } | null }
 
 function Chips({ options, value, onChange, multi }: { options: string[]; value: string[]; onChange: (v: string[]) => void; multi?: boolean }) {
   const t = useT();
@@ -175,6 +175,7 @@ function Training() {
         <div className="eyebrow">{index === recommended ? 'RECOMENDADA PARA HOY' : 'OTRA SESIÓN DEL PLAN'}</div>
         <h2>{day.name}</h2>
         <p className="muted">{day.items.length} ejercicios · Preparada según tu evaluación y tus registros.</p>
+        {day.run && <p className="run-prescription">Carrera suave: {day.run.minutes} minutos. {day.run.note}</p>}
         {day.items.map((it) => <div className="exercise-preview" key={it.exerciseId}><strong>{t('ex_' + it.exerciseId)}</strong><span>{it.sets} × {it.repMin}–{it.repMax} · RIR {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></div>)}
         <button className="primary action-full" onClick={() => setSession(index)}>Empezar sesión →</button>
       </div>)}
@@ -241,7 +242,7 @@ function Assessment({ onDone }: { onDone: () => void }) {
   </section>;
 }
 
-function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[] }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
+function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
   const t = useT();
   const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
     Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
@@ -259,6 +260,7 @@ function Session({ day, index, onDone, onCancel }: { day: { name: string; items:
     <>
       <button className="back-button" onClick={onCancel}>← Volver al plan</button>
       <h2>{day.name}</h2>
+      {day.run && <p className="run-prescription">Carrera suave de {day.run.minutes} minutos. Registrala en Running.</p>}
       <p className="muted">Registrá tus series. Si volvés al plan antes de finalizar, los datos de esta sesión no se guardan.</p>
       {day.items.map((it) => (
         <div className="card" key={it.exerciseId}>
