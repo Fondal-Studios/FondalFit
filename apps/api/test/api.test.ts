@@ -295,6 +295,22 @@ describe('AI coach', () => {
   });
 });
 
+describe('custom activity blocks and energy calendar',()=>{
+  it('records calisthenics blocks into the same daily energy log as nutrition',async()=>{
+    const {t}=await athleteWithPlan();
+    const a=await call('POST','/api/activity/blocks',t,{blocks:[{name:'Dominadas',kind:'calisthenics',minutes:15,intensity:'moderate'}]});
+    expect(a.status).toBe(200);expect(a.body.activeKcal).toBeGreaterThan(0);
+    const date=new Date().toISOString().slice(0,7);
+    const result=await call('GET','/api/energy/calendar?month='+date+'&timezoneOffset=0',t);
+    expect(result.status).toBe(200);
+    expect(result.body.days.some((day:any)=>day.sessions.includes('Dominadas'))).toBe(true);
+  });
+  it('rejects invalid month and unauthenticated calendar',async()=>{
+    expect((await call('GET','/api/energy/calendar?month=2026-20')).status).toBe(401);
+    const {t}=await athleteWithPlan();
+    expect((await call('GET','/api/energy/calendar?month=2026-20',t)).status).toBe(400);
+  });
+});
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();
