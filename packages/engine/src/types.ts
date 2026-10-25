@@ -21,7 +21,7 @@ export interface Prescription {
   load: number; // kg, 0 for bodyweight
 }
 
-export interface PlanDay { name: string; items: Prescription[] }
+export interface PlanDay { name: string; items: Prescription[]; run?: {minutes:number; intensity:'easy'|'moderate'; note:string} }
 export interface Plan { engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number }
 
 export interface AssessmentInput {
