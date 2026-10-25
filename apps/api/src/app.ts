@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
   menusForDay, dayNumberOf, supplementAdvice, simplifyRoute, type DietFlag,
-  materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
+  CATALOG, materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
