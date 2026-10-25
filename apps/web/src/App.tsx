@@ -1,3 +1,4 @@
+import {RunningMap, missingGPSGap, type GPSPoint} from './RunningMap';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, hasToken, setToken } from './api';
 import { LANGS, translate, type Lang } from './i18n';
@@ -351,6 +352,22 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
   const [summary, setSummary] = useState<RunSummary | null>(()=>{try{const saved=localStorage.getItem('ff_last_run_summary');return saved?JSON.parse(saved) as RunSummary:null;}catch{return null;}});
   const [splits, setSplits] = useState<RunSplit[]>([]);
   const [unlocked, setUnlocked] = useState(0);
+  const [route,setRoute]=useState<GPSPoint[]>([]);
+  const routeRef=useRef<GPSPoint[]>([]);
+  const resumeFlag=useRef(false);
+  const [resumeSnapshot,setResumeSnapshot]=useState<{startedAt:number;meters:number;last:GPSPoint;route:GPSPoint[]}|null>(()=>{
+    try{
+      const raw=localStorage.getItem('ff_active_gps');
+      const val=raw?JSON.parse(raw) as {startedAt:number;meters:number;last:GPSPoint;route:GPSPoint[]}:null;
+      return val&&Date.now()-val.startedAt<21600000?val:null;
+    }catch{return null;}
+  });
+  const [gap,setGap]=useState<{from:GPSPoint;to:GPSPoint;meters:number;seconds:number}|null>(null);
+  const [estimatedGap,setEstimatedGap]=useState(0);
+  const saveCheckpoint=(point:GPSPoint)=>{
+    const arr=[...routeRef.current.slice(-499),point];routeRef.current=arr;setRoute(arr);
+    try{localStorage.setItem('ff_active_gps',JSON.stringify({startedAt:startedAt.current,meters:distanceRef.current,last:point,route:arr}));}catch{}
+  };
   const watchId = useRef<number | null>(null);
   const lastPoint = useRef<{lat:number;lon:number;at:number}|null>(null);
   const startedAt = useRef(0);
@@ -385,12 +402,20 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
     return ()=>clearInterval(id);
   },[active]);
   const fmt = (minutes:number|null) => minutes === null || !Number.isFinite(minutes) || minutes <= 0 ? '—:—' : Math.floor(minutes)+':'+String(Math.round((minutes%1)*60)).padStart(2,'0');
-  const start = async () => {
+  const start = async (resume=false) => {
     if (!navigator.geolocation) { setStatus('Este navegador no ofrece GPS.'); return; }
     if (!window.isSecureContext) { setStatus('El GPS requiere HTTPS.'); return; }
-    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);setGpsInterrupted(false);
-    splitsRef.current=[];lastPaces.current=[];distanceRef.current=0;splitAt.current=0;
-    lastPoint.current=null;startedAt.current=Date.now();running.current=true;setActive(true);setStatus('Buscando señal GPS…');
+    setSummary(null);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);setGpsInterrupted(false);setGap(null);
+    splitsRef.current=[];lastPaces.current=[];splitAt.current=0;setEstimatedGap(0);
+    if(resume&&resumeSnapshot){
+      distanceRef.current=resumeSnapshot.meters;setMeters(resumeSnapshot.meters);
+      lastPoint.current=resumeSnapshot.last;startedAt.current=resumeSnapshot.startedAt;
+      routeRef.current=resumeSnapshot.route;setRoute(resumeSnapshot.route);resumeFlag.current=true;
+    }else{
+      distanceRef.current=0;setMeters(0);
+      lastPoint.current=null;startedAt.current=Date.now();routeRef.current=[];setRoute([]);resumeFlag.current=false;
+    }
+    setResumeSnapshot(null);running.current=true;setActive(true);setStatus('Buscando señal GPS…');
     try {
       const n = navigator as Navigator & {wakeLock?:{request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
       if (n.wakeLock) wake.current=await n.wakeLock.request('screen');
@@ -401,6 +426,15 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
       const {latitude:lat,longitude:lon,accuracy,speed}=pos.coords;
       if(accuracy>40) {setStatus('Señal imprecisa; esperando una posición mejor…');return;}
       const at=pos.timestamp,prev=lastPoint.current;
+      const point:GPSPoint={lat,lon,at};
+      if(resumeFlag.current&&prev){
+        resumeFlag.current=false;
+        const missing=missingGPSGap(prev,point);
+        if(missing.plausible&&missing.meters>15)setGap({from:prev,to:point,...missing});
+        lastPoint.current=point;saveCheckpoint(point);
+        setStatus('Se recuperó la ubicación. Revisá el tramo sin GPS antes de sumarlo.');
+        return;
+      }
       if(prev) {
         const rad=Math.PI/180,dlat=(lat-prev.lat)*rad,dlon=(lon-prev.lon)*rad;
         const h=Math.sin(dlat/2)**2+Math.cos(prev.lat*rad)*Math.cos(lat*rad)*Math.sin(dlon/2)**2;
@@ -426,18 +460,18 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
               splitAt.current=since;
             }
           }
-          lastPoint.current={lat,lon,at};
+          lastPoint.current=point;saveCheckpoint(point);
           setStatus('GPS activo · distancia y ritmo aproximados');
         } else if(seconds>0 && distance/seconds>=8) {
           setStatus('Se ignoró un salto GPS poco probable.');
         } else if(seconds>=15 && distance<3) {
-          lastPoint.current={lat,lon,at};setPace(null);
+          lastPoint.current=point;saveCheckpoint(point);setPace(null);
         }
-      } else {lastPoint.current={lat,lon,at};setStatus('Señal GPS adquirida.');}
+      } else {lastPoint.current=point;saveCheckpoint(point);setStatus('Señal GPS adquirida.');}
     },e=>setStatus(e.code===1?'Ubicación denegada. Revisá los permisos.':'Sin señal GPS; la distancia puede ser incompleta.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   };
   const finish=()=>{
-    const km=distanceRef.current/1000,mins=(Date.now()-startedAt.current)/60000;
+    const km=(distanceRef.current+estimatedGap)/1000,mins=(Date.now()-startedAt.current)/60000;
     const fullSplits=splitsRef.current;
     const remainingKm=km-fullSplits.length;
     const remainingSecs=mins*60-splitAt.current;
@@ -450,13 +484,17 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
       'El GPS y las calorías son estimaciones; sin pulsómetro no se pueden calcular zonas cardíacas reales.',
       'Compará tu ritmo con sesiones de distancia similar, no solamente con tu carrera más rápida.'];
     const result:RunSummary={date:new Date().toISOString(),km:Number(km.toFixed(2)),minutes:Number(mins.toFixed(2)),avgPace:km>0?mins/km:0,kcal,weightKg,splits:allSplits,tips};
-    stop();setSummary(result);
+    stop();setSummary(result);setResumeSnapshot(null);
+    try{localStorage.removeItem('ff_active_gps');}catch{}
     if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)),weightKg);
     try {localStorage.setItem('ff_last_run_summary',JSON.stringify(result));} catch {/* optional device storage */}
   };
   const paceGroups=splits.reduce((out,split)=>{const k=split.pace<5?'Rápido (<5:00)':split.pace<6.5?'Medio (5:00–6:30)':'Suave (>6:30)';out[k]=(out[k]||0)+1;return out;},{} as Record<string,number>);
   return <div className="card gps-run">
     <h3>Running GPS · beta</h3>
+    <RunningMap points={route} gap={gap}/>
+    {resumeSnapshot&&!active&&<div className="card"><p>Hay una corrida interrumpida a las {new Date(resumeSnapshot.startedAt).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}. Recuperamos {(resumeSnapshot.meters/1000).toFixed(2)} km medidos.</p><button className="primary" onClick={()=>void start(true)}>Retomar corrida interrumpida</button><button onClick={()=>{setResumeSnapshot(null);try{localStorage.removeItem('ff_active_gps');}catch{}}}>Descartar recuperación</button></div>}
+    {gap&&<div className="card"><h4>Tramo sin GPS</h4><p>Entre estos puntos transcurrieron {Math.round(gap.seconds/60)} minutos. Distancia mínima recta: {(gap.meters/1000).toFixed(2)} km. El recorrido real podría ser más largo.</p><button onClick={()=>{distanceRef.current+=gap.meters;setMeters(distanceRef.current);setEstimatedGap(g=>g+gap.meters);setGap(null);}}>Agregar estimación mínima</button><button onClick={()=>setGap(null)}>No sumar</button></div>}
     <p className="muted">Mantené abierta la pantalla. En iOS y Android la web no garantiza GPS cuando se bloquea el teléfono o queda en segundo plano.</p>
     <div className="gps-metrics">
       <div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div>
