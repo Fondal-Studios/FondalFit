@@ -96,13 +96,15 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
   const [proView, setProView] = useState<'athletes' | 'approvals'>('athletes');
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachMessage,setCoachMessage]=useState('');
+  const [playerLevel,setPlayerLevel]=useState<number|null>(null);
+  useEffect(()=>{if(!isPro)api<{level:number}>('GET','/api/gamification').then(v=>setPlayerLevel(v.level)).catch(()=>{});},[isPro,tab]);
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
   const navigate = (next: string) => { setTab(next); setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const goBack = () => { setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const screenTitle = tab === 'assessment' ? 'Mi evaluación física' : isPro ? (proView === 'athletes' ? t('athletes') : t('approvals')) : wellness ? t(wellness) : (tab === 'today' ? t('today') : t(tab === 'wellness' ? 'recovery' : tab));
   return (
     <>
-      <header className="top"><div className="brand"><span className="brandmark">F</span><div><strong>FONDAL FIT</strong><small>{isPro ? t('pro') : t('athlete')}</small></div></div><button className="header-action" onClick={() => navigate('settings')} aria-label={t('settings')}>⚙</button></header>
+      <header className="top"><div className="brand"><span className="brandmark">F</span><div><strong>FONDAL FIT</strong><small>{isPro ? t('pro') : playerLevel!==null ? 'Atleta · Nivel '+playerLevel : t('athlete')}</small></div></div><button className="header-action" onClick={() => navigate('settings')} aria-label={t('settings')}>⚙</button></header>
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <>
           <div className="screen-heading">
