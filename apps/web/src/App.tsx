@@ -311,22 +311,68 @@ function Running() {
   );
 }
 
+interface ProgressData {
+  sessions: { date: string; volume: number; sets: number }[];
+  total: number;
+  exercises?: Record<string, { date: string; weight: number; reps: number; estimated1RM: number }[]>;
+  goal?: { goal: string; targetDescription?: string; targetDate?: string; secondaryGoals?: string[] };
+}
+function TrendChart({ points, label, unit, lowerIsBetter = false }: { points: { label: string; value: number }[]; label: string; unit: string; lowerIsBetter?: boolean }) {
+  if (!points.length) return <p className="muted">Todavía no hay registros suficientes.</p>;
+  const data = points.slice(-16);
+  const values = data.map(p=>p.value);
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = Math.max(1, max - min);
+  const coords = data.map((p,i)=>[24+(i/Math.max(1,data.length-1))*312, 160-((p.value-min)/range)*125]);
+  const trajectory = coords.map(([x,y])=>`${x},${y}`).join(' ');
+  const delta = data.length>1 ? data[data.length-1]!.value-data[0]!.value : 0;
+  const improvement = lowerIsBetter ? delta < 0 : delta > 0;
+  return <div className="trend-chart">
+    <div className="chart-heading"><strong>{label}</strong><span>{data[data.length-1]!.value.toFixed(1)} {unit}</span></div>
+    <svg viewBox="0 0 360 185" role="img" aria-label={`${label}: ${data.map(p=>p.label+' '+p.value.toFixed(1)).join(', ')}`} preserveAspectRatio="xMidYMid meet">
+      {[35,97.5,160].map(y=><line key={y} x1="24" y1={y} x2="338" y2={y} stroke="#35423c" strokeWidth="1" strokeDasharray="4 6"/>)}
+      <polyline fill="none" stroke="#9af1aa" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={trajectory}/>
+      {coords.map(([x,y],i)=><circle key={i} cx={x} cy={y} r={i===coords.length-1?5:3} fill="#9af1aa"/>)}
+      <text x="22" y="179" fill="#b0c2b8" fontSize="11">{data[0]!.label.slice(0,10)}</text>
+      <text x="338" y="179" textAnchor="end" fill="#b0c2b8" fontSize="11">{data[data.length-1]!.label.slice(0,10)}</text>
+    </svg>
+    {data.length>1&&<p className={improvement?'ok':'muted'}>Cambio en el período: {delta>0?'+':''}{delta.toFixed(1)} {unit}. {lowerIsBetter?'Un ritmo menor significa mayor velocidad.':'La evolución debe interpretarse según tu objetivo.'}</p>}
+  </div>;
+}
 function Progress() {
   const t = useT();
-  const [d, setD] = useState<{ sessions: { date: string; volume: number; sets: number }[]; total: number } | null>(null);
-  const [g, setG] = useState<{ xp: number; level: number; streakWeeks: number; achievements: string[] } | null>(null);
-  useEffect(() => { api('GET', '/api/progress').then(setD).catch(() => {}); api('GET', '/api/gamification').then(setG).catch(() => {}); }, []);
-  if (!d) return <div className="card"><h2>{t('progress')}</h2><p className="muted">Cargando tu evolución…</p></div>;
-  const max = Math.max(1, ...d.sessions.map((s) => s.volume));
-  return (
-    <>
-    {g && <div className="card"><h2>{t('level')} {g.level} · {g.xp} XP</h2><p>{t('streak')}: {g.streakWeeks}</p><div className="chips">{g.achievements.map((x) => <span key={x} className="badge ok">{t('ach_' + x)}</span>)}</div><p className="muted">{t('gamNote')}</p></div>}
-    <div className="card"><h2>{t('progress')}</h2>
-      {!d.total ? <p className="muted">{t('noData')}</p> : <><p className="metric"><strong>{d.total}</strong><span>{t('sessionsDone')}</span></p><p className="muted">Volumen por sesión (kg). Cada barra representa un entrenamiento.</p>
-        {d.sessions.slice(-14).map((s, i) => <div key={i}><span className="muted">{s.date.slice(0, 10)} · {Math.round(s.volume)} kg</span><div className="bar"><i style={{ width: `${(s.volume / max) * 100}%` }} /></div></div>)}</>}
+  const [d,setD] = useState<ProgressData|null>(null);
+  const [runs,setRuns] = useState<{runs:{created_at:string;km:number;pace:number}[]}|null>(null);
+  const [g,setG] = useState<{xp:number;level:number;streakWeeks:number;achievements:string[]}|null>(null);
+  const [selected,setSelected] = useState('');
+  const [error,setError] = useState('');
+  useEffect(()=>{
+    api<ProgressData>('GET','/api/progress').then(setD).catch(()=>setError('No se pudo cargar el progreso.'));
+    api<{runs:{created_at:string;km:number;pace:number}[]}>('GET','/api/runs').then(setRuns).catch(()=>{});
+    api<{xp:number;level:number;streakWeeks:number;achievements:string[]}>('GET','/api/gamification').then(setG).catch(()=>{});
+  },[]);
+  if (!d) return <div className="card"><h2>{t('progress')}</h2><p>{error||'Cargando tu evolución…'}</p></div>;
+  const exercises = Object.entries(d.exercises??{}).filter(([,items])=>items.length>0);
+  const exerciseId = exercises.some(([id])=>id===selected)?selected:(exercises[0]?.[0]??'');
+  const exerciseHistory = d.exercises?.[exerciseId]??[];
+  return <section className="progress-dashboard">
+    <div className="card"><div className="eyebrow">TU EVOLUCIÓN</div><h2>{d.goal?.targetDescription||'Entrená, registrá y medí tu avance'}</h2>
+      <p className="muted">{d.goal?.goal?t(''+d.goal.goal):'Tu objetivo aparecerá después de la evaluación.'}{d.goal?.targetDate?' · Fecha meta: '+d.goal.targetDate:''}</p>
+      <div className="metric"><strong>{d.total}</strong><span>sesiones registradas</span></div>
     </div>
-    </>
-  );
+    {g&&<div className="card"><h3>Nivel {g.level} · {g.xp} XP</h3><p className="muted">Semanas activas consecutivas: {g.streakWeeks}</p><div className="chips">{g.achievements.map(x=><span className="badge ok" key={x}>{t('ach_'+x)}</span>)}</div></div>}
+    <div className="card"><h3>Volumen de entrenamiento</h3><p className="muted">Carga total × repeticiones registradas por sesión. No compara esfuerzos entre ejercicios distintos.</p>
+      <TrendChart points={d.sessions.map(x=>({label:x.date.slice(0,10),value:x.volume}))} label="Volumen por sesión" unit="kg·reps"/>
+    </div>
+    <div className="card"><h3>Progresión de cargas</h3><p className="muted">Fuerza estimada a partir de cada sesión: aproximación, no prueba de 1RM.</p>
+      {exercises.length>0?<><label htmlFor="progress-exercise">Elegí un ejercicio</label><select id="progress-exercise" value={exerciseId} onChange={e=>setSelected(e.target.value)}>{exercises.map(([id])=><option key={id} value={id}>{t('ex_'+id)}</option>)}</select>
+        <TrendChart points={exerciseHistory.map(x=>({label:x.date.slice(0,10),value:x.estimated1RM}))} label="1RM estimado" unit="kg"/>
+        <p className="muted">Última carga real: {exerciseHistory[exerciseHistory.length-1]?.weight??0} kg · {exerciseHistory[exerciseHistory.length-1]?.reps??0} repeticiones</p>
+      </>:<p className="muted">Registrá al menos una sesión con cargas para ver tu evolución.</p>}
+    </div>
+    <div className="card"><h3>Progreso en running</h3>{runs?.runs?.length?<><TrendChart points={[...runs.runs].reverse().map(x=>({label:x.created_at.slice(0,10),value:x.km}))} label="Distancia" unit="km"/>
+      <TrendChart points={[...runs.runs].reverse().filter(x=>x.pace>0).map(x=>({label:x.created_at.slice(0,10),value:x.pace}))} label="Ritmo" unit="min/km" lowerIsBetter/></>:<p className="muted">Registrá una carrera en Bienestar para ver los gráficos de distancia y ritmo.</p>}</div>
+  </section>;
 }
 
 /* ---------- Nutrition ---------- */
