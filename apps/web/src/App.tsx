@@ -691,8 +691,8 @@ type FitnessBlock={name:string;kind:'calisthenics'|'strength'|'functional'|'walk
 function ActivityBlocks(){
  const [blocks,setBlocks]=useState<FitnessBlock[]>([{name:'Dominadas y flexiones',kind:'calisthenics',minutes:15,intensity:'moderate'}]);
  const [weight,setWeight]=useState(70),[saved,setSaved]=useState(''),[working,setWorking]=useState(false);
- const met:Record<string,number>={calisthenics:3.8,strength:3.5,functional:5,walk:3.5};
- const total=blocks.reduce((n,b)=>n+Math.round((met[b.kind]*(b.intensity==='light'?.75:b.intensity==='vigorous'?1.5:1)-1)*3.5*weight/200*b.minutes),0);
+ const met:Record<FitnessBlock['kind'],Record<FitnessBlock['intensity'],number>>={calisthenics:{light:2.8,moderate:3.8,vigorous:6},strength:{light:3,moderate:3.5,vigorous:6},functional:{light:3.5,moderate:5,vigorous:7},walk:{light:2.5,moderate:3.5,vigorous:4.8}};
+ const total=blocks.reduce((n,b)=>n+Math.round((met[b.kind][b.intensity]-1)*3.5*weight/200*b.minutes),0);
  const save=async()=>{setWorking(true);try{const result=await api<{activeKcal:number}>('POST','/api/activity/blocks',{weightKg:weight,blocks});setSaved('Se guardaron '+result.activeKcal+' kcal activas aproximadas. Revisá Nutrición para ver el balance.');}catch{setSaved('No se pudieron guardar los bloques.');}finally{setWorking(false);}};
  return <section className="card"><div className="eyebrow">SESIÓN PERSONALIZADA</div><h2>Armá tu entrenamiento por bloques</h2>
    <p className="muted">Podés correr y después agregar dominadas, flexiones, caminata o fuerza. Estimación orientativa con MET y tiempo efectivo, excluyendo el gasto en reposo.</p>
