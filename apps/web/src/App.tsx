@@ -345,8 +345,10 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
   const [meters, setMeters] = useState(0);
   const [pace, setPace] = useState<number | null>(null);
   const [weightKg, setWeightKg] = useState(70);
+  const [gpsVisible,setGpsVisible]=useState(true);
+  const [gpsInterrupted,setGpsInterrupted]=useState(false);
   const [status, setStatus] = useState('Necesita permiso de ubicación y HTTPS.');
-  const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [summary, setSummary] = useState<RunSummary | null>(()=>{try{const saved=localStorage.getItem('ff_last_run_summary');return saved?JSON.parse(saved) as RunSummary:null;}catch{return null;}});
   const [splits, setSplits] = useState<RunSplit[]>([]);
   const [unlocked, setUnlocked] = useState(0);
   const watchId = useRef<number | null>(null);
@@ -372,6 +374,11 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
     if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     void wake.current?.release().catch(()=>{});
   }, []);
+  useEffect(()=>{
+    const visibility=()=>{setGpsVisible(document.visibilityState==='visible');if(running.current&&document.visibilityState!=='visible')setGpsInterrupted(true);};
+    document.addEventListener('visibilitychange',visibility);
+    return ()=>document.removeEventListener('visibilitychange',visibility);
+  },[]);
   useEffect(() => {
     if (!active) return;
     const id = window.setInterval(()=>setElapsed(Math.max(0,Math.floor((Date.now()-startedAt.current)/1000))),1000);
@@ -381,7 +388,7 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
   const start = async () => {
     if (!navigator.geolocation) { setStatus('Este navegador no ofrece GPS.'); return; }
     if (!window.isSecureContext) { setStatus('El GPS requiere HTTPS.'); return; }
-    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);
+    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);setGpsInterrupted(false);
     splitsRef.current=[];lastPaces.current=[];distanceRef.current=0;splitAt.current=0;
     lastPoint.current=null;startedAt.current=Date.now();running.current=true;setActive(true);setStatus('Buscando señal GPS…');
     try {
@@ -458,16 +465,21 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
       <div><strong>{fmt(meters>50?elapsed/60/(meters/1000):null)}</strong><small>ritmo promedio min/km</small></div>
     </div>
     <p role="status" className="muted">{status}</p>
+    {!gpsVisible&&<p className="warn">La aplicación está en segundo plano: el GPS puede interrumpirse.</p>}
+    {gpsInterrupted&&<p className="warn">La app pasó a segundo plano durante la sesión. Revisá la distancia: puede estar incompleta.</p>}
+    {active&&<p className="live-kcal" aria-live="off">≈{Math.round((meters/1000)*weightKg)} kcal de carrera estimadas · {weightKg} kg</p>}
     {!active ? <><label htmlFor="gps-weight">Peso para estimar energía (kg)</label><input id="gps-weight" type="number" min={30} max={250} value={weightKg} onChange={e=>setWeightKg(Number(e.target.value)||70)}/>
       <button className="primary action-full" onClick={()=>void start()}>Iniciar carrera con GPS</button></> :
       <div className="gps-actions"><button onClick={()=>setTouchLocked(true)}>Congelar pantalla</button><button onClick={finish}>Terminar carrera</button></div>}
     {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla congelada">
-      <strong>Running activo</strong>
+      <strong>Running activo · pantalla congelada</strong>
       <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div><div><strong>{fmt(pace)}</strong><small>min/km</small></div></div>
-      <p className="muted">Para evitar toques involuntarios, deslizá el control hasta el final.</p>
+      <p className="muted">Solo el deslizador permite salir del bloqueo. La corrida sigue registrándose en primer plano.</p>
       <label htmlFor="unlock-slide">Deslizar para desbloquear</label>
       <input id="unlock-slide" aria-label="Deslizar para desbloquear" className="unlock-slider" type="range" min={0} max={100} value={unlocked}
-        onChange={e=>{const value=Number(e.target.value);if(value>=95){setTouchLocked(false);setUnlocked(0);}else setUnlocked(value);}}/>
+        onChange={e=>{const value=Number(e.target.value);if(value>=95){setTouchLocked(false);setUnlocked(0);}else setUnlocked(value);}}
+        onPointerUp={()=>setUnlocked(v=>v>=95?0:0)}
+        onTouchEnd={()=>setUnlocked(0)}/> 
       <span className="muted">Deslizá de izquierda a derecha →</span>
       <small>El botón físico de suspensión no controla esta función.</small>
     </div>}
@@ -615,7 +627,7 @@ function Running() {
     <>
       <MusicCenter />
       <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
-      <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
+      <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe,weightKg:+f.weightKg });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
         <p className="muted">Registro manual: ingresá kilómetros y velocidad promedio. El tiempo, ritmo y calorías se calculan aproximadamente.</p>
         <div className="manual-run-fields">
@@ -627,6 +639,7 @@ function Running() {
         {derivedMinutes>0&&<div className="manual-preview"><strong>{Math.round(derivedMinutes)} min · {fmt(paceFromSpeed)} min/km · ≈{Math.round(km*(Number(f.weightKg)||70))} kcal</strong>
           <p>{paceZone} (banda de velocidad, no zona de frecuencia cardíaca). Sin pulso medido no podemos determinar zonas fisiológicas.</p></div>}
         <p><button className="primary">{t('logRun')}</button></p></form>
+      <DailyEnergyCalendar />
       {manualResult&&<div className="card"><h3>Resumen del registro manual</h3><p>{manualResult.km} km · {manualResult.speed} km/h · {fmt(manualResult.pace)} min/km · ≈{manualResult.kcal} kcal</p><p className="muted">{manualResult.zone}. No son zonas cardíacas. Estimación energética aproximada por distancia y peso; no es una medición metabólica.</p></div>}
       {d && <div className="card"><p>{t('weekKm')}: <b>{d.weekKm}</b></p>
         {d.alerts.map((a: string) => <p key={a} className="warn" role="alert">{t('a_' + a)}</p>)}
@@ -795,6 +808,7 @@ function Nutrition() {
   const num=(k:'weightKg'|'heightCm'|'age')=><input type="number" value={p[k]} onChange={e=>setP({...p,[k]:Number(e.target.value)})}/>;
   const target=d?.target;
   return <section>
+    <DailyEnergyCalendar />
     <div className="card"><h2>Tu objetivo de energía</h2>
       {target&&<><p className="metric"><strong>{target.kcal}</strong><span>kcal por día (estimadas)</span></p>
         <p>Consumidas: {Math.round(d.today.kcal)} kcal · Restantes: {Math.round(target.kcal-d.today.kcal)} kcal</p>
