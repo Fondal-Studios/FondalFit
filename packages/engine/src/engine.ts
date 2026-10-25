@@ -140,13 +140,14 @@ export function checkAutonomy(limits: AutonomyLimits, c: PlanChange): Autonomy {
 export const DEFAULT_LIMITS: AutonomyLimits = { maxLoadIncreasePct: 5, maxWeeklyVolumeDeltaPct: 10, maxSessionsPerWeek: 5, allowAutoDeload: true };
 
 /* ---------- Nutrition (conservative) ---------- */
-export interface NutritionInput { sex: 'f' | 'm'; weightKg: number; heightCm: number; age: number; activity: 1.2 | 1.375 | 1.55 | 1.725; goal: Goal }
-export interface NutritionTarget { kcal: number; proteinG: number; fatG: number; carbsG: number; waterMl: number; floored: boolean }
+export interface NutritionInput { sex: 'f' | 'm'; weightKg: number; heightCm: number; age: number; activity: 1.2 | 1.375 | 1.55 | 1.725; goal: Goal; adjustmentPct?: number }
+export interface NutritionTarget { kcal: number; proteinG: number; fatG: number; carbsG: number; waterMl: number; floored: boolean; bmr: number; tdee: number; adjustmentPct: number; rawKcal: number }
 
 export function nutritionTarget(n: NutritionInput): NutritionTarget {
   const bmr = 10 * n.weightKg + 6.25 * n.heightCm - 5 * n.age + (n.sex === 'm' ? 5 : -161);
   const tdee = bmr * n.activity;
-  const adj = n.goal === 'fat_loss' ? 0.85 : n.goal === 'hypertrophy' ? 1.08 : 1;
+  const adjustmentPct = n.adjustmentPct ?? (n.goal === 'fat_loss' ? -15 : n.goal === 'hypertrophy' ? 8 : 0);
+  const adj = 1 + adjustmentPct / 100;
   // never below BMR nor below an absolute floor: no extreme restriction
   const floor = Math.max(bmr, n.sex === 'm' ? 1500 : 1200);
   const raw = tdee * adj;
@@ -154,7 +155,7 @@ export function nutritionTarget(n: NutritionInput): NutritionTarget {
   const proteinG = Math.round(n.weightKg * (n.goal === 'strength' || n.goal === 'hypertrophy' ? 1.8 : 1.6));
   const fatG = Math.round((kcal * 0.27) / 9);
   const carbsG = Math.max(0, Math.round((kcal - proteinG * 4 - fatG * 9) / 4));
-  return { kcal, proteinG, fatG, carbsG, waterMl: Math.round(n.weightKg * 35), floored: raw < floor };
+  return { kcal, proteinG, fatG, carbsG, waterMl: Math.round(n.weightKg * 35), floored: raw < floor, bmr: Math.round(bmr), tdee: Math.round(tdee), adjustmentPct, rawKcal: Math.round(raw) };
 }
 
 /* ---------- Recovery ---------- */
