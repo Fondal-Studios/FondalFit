@@ -358,7 +358,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   /* Calendar: explicit local-time offset; estimated energy balance, not a medical measurement. */
   app.get('/api/energy/calendar', { preHandler: athleteOnly }, async(req,reply)=>{
-    const q=parse(z.object({month:z.string().regex(/^\\d{4}-\\d{2}$/),timezoneOffset:z.coerce.number().int().min(-840).max(840).default(0)}),req.query,reply);
+    const q=parse(z.object({month:z.string().regex(/^\d{4}-\d{2}$/),timezoneOffset:z.coerce.number().int().min(-840).max(840).default(0)}),req.query,reply);
     if(!q)return;
     const [year,month]=q.month.split('-').map(Number);
     if(year<2020||year>2100||month<1||month>12)return reply.code(400).send({error:'invalid_month'});
