@@ -410,6 +410,32 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     run: z.object({minutes:z.number().min(5).max(240),intensity:z.enum(['easy','moderate']),note:z.string().max(300)}).optional(),
   }).refine(d=>d.items.length>0 || !!d.run);
   const professionalTemplate = z.object({name:z.string().trim().min(2).max(100),days:z.array(professionalDay).min(1).max(14)});
+  app.post('/api/pro/ai-plan-draft',{preHandler:proOnly},async(req,reply)=>{
+    const b=parse(z.object({instruction:z.string().trim().min(10).max(1500)}),req.body,reply);
+    if(!b)return;
+    const key=process.env.GEMINI_API_KEY;
+    if(!key)return reply.code(503).send({error:'coach_unconfigured'});
+    const model=process.env.GEMINI_MODEL||'gemini-2.5-flash-lite';
+    if(!/^[a-zA-Z0-9._-]+$/.test(model))return reply.code(500).send({error:'invalid_coach_model'});
+    const exerciseList=CATALOG.map(e=>({id:e.id,name:e.nameEs??e.id,pattern:e.pattern,level:e.level??1}));
+    try{
+      const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',{
+        method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},
+        body:JSON.stringify({
+          systemInstruction:{parts:[{text:'Sos un asistente de planificación de entrenamiento para un profesor. Creá un BORRADOR editable, nunca un plan aprobado. Usá solamente exerciseId de la lista. Respondé exclusivamente JSON: {"name":"...","days":[{"name":"...","items":[{"exerciseId":"...","sets":3,"repMin":8,"repMax":12,"rirTarget":3,"load":0}],"run":{"minutes":30,"intensity":"easy","note":"..."}}]}. El campo run es opcional; si no hay fuerza items puede ser []. Máximo 7 jornadas. Respetá descansos y volumen inicial prudente; nunca garantices calorías quemadas (depende de peso, intensidad y tiempo). Si el usuario pide 600 kcal, explicá en las notas que no puede garantizarse. No inventes condiciones clínicas. Solo borrador que debe aprobar el profesional.'}]},
+          contents:[{role:'user',parts:[{text:'Ejercicios permitidos: '+JSON.stringify(exerciseList)+'\nSolicitud del entrenador: '+b.instruction}]}],
+          generationConfig:{temperature:0.2,maxOutputTokens:2100,responseMimeType:'application/json'}
+        }),signal:AbortSignal.timeout(16000)
+      });
+      if(!response.ok)return reply.code(502).send({error:'coach_provider_unavailable'});
+      const data=await response.json() as {candidates?:{content?:{parts?:{text?:string}[]}}[]};
+      const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text??'').join('')??'';
+      const parsed=professionalTemplate.safeParse(JSON.parse(raw));
+      if(!parsed.success)return reply.code(502).send({error:'draft_invalid'});
+      if(parsed.data.days.some(d=>d.items.some(i=>!CATALOG.some(e=>e.id===i.exerciseId))))return reply.code(502).send({error:'unknown_exercise'});
+      return {draft:parsed.data,disclaimer:'Borrador generado por IA. Revisá volumen, progresiones, técnica y objetivos antes de guardar o asignar. El gasto calórico por sesión no puede garantizarse.'};
+    }catch{return reply.code(503).send({error:'coach_timeout'});}
+  });
   app.get('/api/pro/code',{preHandler:proOnly},async(req)=>{
     const uid=req.user!.id;
     let row=await db.prepare('SELECT code FROM pro_codes WHERE pro_id=?').get(uid) as {code:string}|undefined;
