@@ -368,27 +368,54 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const end=new Date(localEnd+q.timezoneOffset*60000).toISOString();
     const rows=await db.prepare('SELECT kind,data,created_at FROM nutrition WHERE user_id=? AND created_at>=? AND created_at<? ORDER BY created_at').all(req.user!.id,start,end) as {kind:string;data:string;created_at:string}[];
     const latestTarget=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
-    const target=latestTarget?JSON.parse(latestTarget.data) as {kcal?:number;tdee?:number;adjustmentPct?:number}:null;
-    const byDay=new Map<string,{intake:number;runKcal:number;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[]}>();
+    const target=latestTarget?JSON.parse(latestTarget.data) as {kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}:null;
+    const byDay=new Map<string,{intake:number;runKcal:number;blocksKcal:number;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[]}>();
     for(const row of rows){
       if(row.kind!=='log'&&row.kind!=='exercise')continue;
       const localDay=new Date(Date.parse(row.created_at)-q.timezoneOffset*60000).toISOString().slice(0,10);
-      const item=byDay.get(localDay)??{intake:0,runKcal:0,meals:[],runs:[]};
-      const data=JSON.parse(row.data) as {kcal?:number;km?:number;meal?:string};
+      const item=byDay.get(localDay)??{intake:0,runKcal:0,blocksKcal:0,meals:[],runs:[],blocks:[]};
+      const data=JSON.parse(row.data) as {kind?:string;kcal?:number;km?:number;meal?:string;blocks?:{name:string;minutes:number;activeKcal:number}[]};
       const kcal=Math.max(0,Number(data.kcal)||0);
       if(row.kind==='log'){item.intake+=kcal;item.meals.push({name:String(data.meal??'Comida'),kcal});}
+      else if(data.kind==='blocks'){item.blocksKcal+=kcal;for(const block of data.blocks??[])item.blocks.push({name:block.name,minutes:block.minutes,kcal:block.activeKcal});}
       else{item.runKcal+=kcal;item.runs.push({km:Number(data.km)||0,kcal});}
       byDay.set(localDay,item);
     }
     const days=[...byDay].map(([date,item])=>{
       const tdee=Number(target?.tdee)||0;
-      const adjustedBudget=tdee+item.runKcal;
+      const exerciseKcal=item.runKcal+item.blocksKcal;
+      // Sedentary baseline is an estimate of BMR + everyday activity; exercises are tracked separately.
+      const bmr=Number(target?.bmr)||0;
+      const adjustedBudget=bmr>0 ? bmr*1.2+exerciseKcal : tdee+exerciseKcal;
       const balance=tdee>0?Math.round(item.intake-adjustedBudget):null;
       const ratio=balance===null?null:balance/tdee;
       const band=ratio===null?'unknown':ratio>0.05?'red':ratio>0?'orange':ratio>=-0.05?'yellow':ratio>=-0.15?'green':ratio>=-0.25?'blue':'violet';
-      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,provisional:true};
+      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,provisional:true};
     });
-    return {month:q.month,target:target?{kcal:target.kcal,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,note:'Estimaciones provisionales. El gasto basal ya puede incluir parte de la actividad; sumar running podría duplicar gasto. Los colores no diagnostican déficit real.'};
+    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,note:'Estimaciones provisionales. El gasto basal ya puede incluir parte de la actividad; sumar running podría duplicar gasto. Los colores no diagnostican déficit real.'};
+  });
+
+  app.post('/api/activity/blocks',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({
+      blocks:z.array(z.object({name:z.string().trim().min(1).max(100),kind:z.enum(['calisthenics','strength','functional','walk']),minutes:z.number().min(1).max(240),intensity:z.enum(['light','moderate','vigorous']),notes:z.string().max(200).optional()})).min(1).max(12),
+      weightKg:z.number().min(30).max(250)
+    }),req.body,reply);
+    if(!b)return;
+    const MET:Record<string,Record<string,number>>={
+      calisthenics:{light:2.8,moderate:3.8,vigorous:6.0},
+      strength:{light:3.0,moderate:3.5,vigorous:6.0},
+      functional:{light:3.5,moderate:5.0,vigorous:7.0},
+      walk:{light:2.5,moderate:3.5,vigorous:4.8}
+    };
+    const blocks=b.blocks.map(block=>{
+      const met=MET[block.kind]![block.intensity]!;
+      const activeKcal=Math.round(Math.max(0,met-1)*3.5*b.weightKg/200*block.minutes);
+      return {...block,met,activeKcal};
+    });
+    const total=blocks.reduce((n,b)=>n+b.activeKcal,0);
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'exercise',?,?)").run(req.user!.id,JSON.stringify({kind:'blocks',blocks,kcal:total,weightKg:b.weightKg}),now());
+    return {blocks,activeKcal:total,explanation:'MET orientativos: gasto adicional al reposo, no calorías totales. La intensidad y pausas afectan el cálculo. No se mide realmente el gasto.'};
   });
 
   /* ---------------- Recovery ---------------- */
