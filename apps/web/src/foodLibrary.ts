@@ -44,9 +44,10 @@ const synonyms:Record<string,string[]>={chicken:['pollo','pechuga'],beef:['carne
 export function parseSimpleFood(description:string):Portion[]{
 const txt=normalized(description);const portions:Portion[]=[];
 for(const food of FOODS){const aliases=synonyms[food.id]??[];const found=aliases.map(alias=>({alias,at:txt.indexOf(alias)})).find(x=>x.at>=0);if(!found)continue;
-const ahead=txt.slice(Math.max(0,found.at-38),found.at+found.alias.length+25);
-const grams=ahead.match(/(\d{1,4})\s*(?:g|gr|gramos)\b/);
-const count=ahead.match(/(?:^|\s)(\d{1,2})\s+(?:bifes?|huevos?|piezas?|porciones?)\b/);
+const after=txt.slice(found.at+found.alias.length,found.at+found.alias.length+18).split(/[,;.]/)[0];
+const before=txt.slice(Math.max(0,found.at-16),found.at).split(/[,;.]/).pop()??'';
+const grams=after.match(/^\\s*(\\d{1,4})\\s*(?:g|gr|gramos)\\b/)??before.match(/(\\d{1,4})\\s*(?:g|gr|gramos)\\s*$/);
+const count=before.match(/(\\d{1,2})\\s*$/);
 const base=food.id==='eggs'?55:food.id==='olive'?10:150;
 portions.push({id:food.id,grams:grams?Number(grams[1]):count?Number(count[1])*base:base});
 }
