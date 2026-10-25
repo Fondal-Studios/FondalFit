@@ -444,6 +444,42 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     });
     return {month:q.month,baselineKcal:Math.round(base),days:summary,note:'Calorías y balance provisionales. El NEAT no está medido, el ejercicio puede ser impreciso y el registro alimentario podría estar incompleto.'};
   });
+  /** Home energy widget: elapsed baseline, actual registered activity, and full-day budget. */
+  app.get('/api/energy/today',{preHandler:athleteOnly},async(req)=>{
+    const uid=req.user!.id;
+    const query=req.query as {timezoneOffset?:string};
+    const offset=Math.max(-840,Math.min(840,Number(query.timezoneOffset)||0));
+    const localNow=Date.now()-offset*60000;
+    const day=new Date(localNow).toISOString().slice(0,10);
+    const midnight=Date.parse(day+'T00:00:00Z')+offset*60000;
+    const start=new Date(midnight).toISOString(),end=new Date(midnight+86400000).toISOString();
+    const dayFraction=Math.max(0,Math.min(1,(Date.now()-midnight)/86400000));
+    const targetRow=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
+    const target=targetRow?JSON.parse(targetRow.data) as {kcal?:number;explain?:{bmr?:number;lifeKcal?:number;tdee?:number;trainKcal?:number;adjustPct?:number;lifeFactor?:number}}:null;
+    const bmr=Math.max(0,target?.explain?.bmr??0);
+    const lifeDaily=Math.max(bmr,target?.explain?.lifeKcal??bmr*1.2);
+    const neatProxy=Math.max(0,lifeDaily-bmr);
+    const mealRows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='log' AND created_at>=? AND created_at<?").all(uid,start,end) as {data:string}[];
+    const eaten=Math.round(mealRows.reduce((n,r)=>n+Math.max(0,Number((JSON.parse(r.data) as {kcal?:number}).kcal)||0),0));
+    const activityRows=await db.prepare('SELECT sport,distance_m,duration_sec FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(uid,start,end) as {sport:string;distance_m:number;duration_sec:number}[];
+    const weight=await profileWeight(uid);
+    const gpsKcal=activityRows.reduce((n,a)=>n+(weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0),0);
+    const blockRows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='exercise' AND created_at>=? AND created_at<?").all(uid,start,end) as {data:string}[];
+    const blocksKcal=blockRows.reduce((n,r)=>{const d=JSON.parse(r.data) as {kind?:string;kcal?:number};return n+(d.kind==='blocks'?Math.max(0,Number(d.kcal)||0):0);},0);
+    const exerciseKcal=Math.round(gpsKcal+blocksKcal);
+    const basalSoFar=Math.round(bmr*dayFraction),neatSoFar=Math.round(neatProxy*dayFraction);
+    const burnedSoFar=basalSoFar+neatSoFar+exerciseKcal;
+    // Replace planned-training average with exercises actually registered; retain goal adjustment.
+    const plannedTdee=target?.explain?.tdee??lifeDaily;
+    const goalAdjustment=target?Math.round((target.kcal??plannedTdee)-plannedTdee):0;
+    const budget=target?Math.max(Math.round(bmr),Math.round(lifeDaily+exerciseKcal+goalAdjustment)):null;
+    return {date:day,basalSoFar,neatSoFar,exerciseKcal,burnedSoFar,eaten,
+      dailyBmr:Math.round(bmr),dailyNeatProxy:Math.round(neatProxy),
+      targetBudget:budget,remaining:budget===null?null:budget-eaten,
+      complete:!!target,dayFraction,
+      note:'El NEAT no se mide: la cifra representa actividad cotidiana y otros gastos incluidos en el factor de vida. El ejercicio y la comida pueden estar incompletos. No es un gasto calórico medido.'};
+  });
+
   /* ---------------- AI coach ---------------- */
   app.get('/api/coach/status', { preHandler: athleteOnly }, async () => ({ configured: !!opts.coach }));
   app.post('/api/coach', { preHandler: athleteOnly, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req, reply) => {
