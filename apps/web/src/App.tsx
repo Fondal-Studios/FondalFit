@@ -188,63 +188,82 @@ function Training() {
   );
 }
 
-function Assessment({ onDone }: { onDone: () => void }) {
-  const t = useT();
-  const GOALS = ['general', 'strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'hybrid'];
-  const [step, setStep] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [referral, setReferral] = useState(false);
-  const [a, setA] = useState({
-    goal: 'general', secondaryGoals: [] as string[], targetDescription: '', targetDate: '',
-    daysPerWeek: 3, sessionMinutes: 60, preferredActivities: ['strength'] as string[],
-    experience: 'beginner', equipment: ['none'] as string[], restrictions: [] as string[],
-    redFlags: { chestPain: false, dizziness: false, recentSurgery: false, pregnancy: false, medication: false },
-  });
-  const generate = async () => {
-    setBusy(true); setError('');
-    try {
-      const payload = { ...a, secondaryGoals: a.secondaryGoals.filter((g) => g !== a.goal), targetDate: a.targetDate || undefined };
-      const result = await api<{ referral?: boolean }>('POST', '/api/assessment', payload);
-      if (result.referral) setReferral(true);
-      else onDone();
-    } catch (e) { setError(e instanceof ApiError ? 'Revisá tus respuestas antes de generar el plan.' : 'No pudimos guardar tu evaluación. Reintentá.'); }
-    finally { setBusy(false); }
-  };
-  const title = ['¿Qué querés lograr?', '¿Cómo entrenás hoy?', '¿Con qué contás?', 'Chequeo antes de empezar'][step];
-  return <section className="card onboarding" aria-label="Evaluación inicial">
-    <div className="eyebrow">TU ENTRENADOR · PASO {step + 1} DE 4</div>
-    <div className="wizard-track" aria-hidden="true"><span style={{width:`${(step + 1) * 25}%`}} /></div>
-    <h2>{title}</h2>
-    {step === 0 && <>
-      <p className="muted">Tu objetivo principal dirige el entrenamiento. También podés tener metas secundarias.</p>
-      <label>Objetivo principal</label><Chips options={GOALS} value={[a.goal]} onChange={(v) => setA({ ...a, goal: v[0]!, secondaryGoals: a.secondaryGoals.filter(g=>g!==v[0]) })} />
-      <label>Objetivos secundarios (opcionales, hasta 3)</label><Chips options={GOALS.filter(g=>g!==a.goal)} multi value={a.secondaryGoals} onChange={(v)=>setA({...a,secondaryGoals:v.slice(0,3)})} />
-      <label htmlFor="goal-specific">Meta concreta (opcional)</label><input id="goal-specific" maxLength={200} placeholder="Ej.: correr 21 km o mejorar mi fuerza" value={a.targetDescription} onChange={e=>setA({...a,targetDescription:e.target.value})} />
-      <label htmlFor="goal-date">Fecha deseada (opcional)</label><input id="goal-date" type="date" value={a.targetDate} onChange={e=>setA({...a,targetDate:e.target.value})} />
-    </>}
-    {step === 1 && <>
-      <label>Tu experiencia</label><Chips options={['beginner','intermediate','advanced']} value={[a.experience]} onChange={v=>setA({...a,experience:v[0]!})} />
-      <label htmlFor="days">¿Cuántos días por semana podés entrenar?</label><input id="days" type="number" min={1} max={6} value={a.daysPerWeek} onChange={e=>setA({...a,daysPerWeek:Number(e.target.value)})} />
-      <label htmlFor="session-duration">¿Cuántos minutos tenés por entrenamiento?</label><select id="session-duration" value={a.sessionMinutes} onChange={e=>setA({...a,sessionMinutes:Number(e.target.value)})}>{[20,30,45,60,75,90,120].map(n=><option key={n} value={n}>{n} minutos</option>)}</select>
-      <p className="muted">La duración ayuda a ajustar el número de ejercicios de cada sesión.</p>
-    </>}
-    {step === 2 && <>
-      <label>{t('equipment')}</label><Chips multi options={['none','dumbbells','barbell','bands','bar','machines']} value={a.equipment} onChange={v=>setA({...a,equipment:v})}/>
-      <label>Actividades de interés</label><div className="chips">{([['strength','Fuerza'],['running','Running'],['mobility','Movilidad']] as [string,string][]).map(([key,label])=><button type="button" key={key} className={'chip'+(a.preferredActivities.includes(key)?' on':'')} aria-pressed={a.preferredActivities.includes(key)} onClick={()=>setA({...a,preferredActivities:a.preferredActivities.includes(key)?a.preferredActivities.filter(x=>x!==key):[...a.preferredActivities,key]})}>{label}</button>)}</div>
-      <label>{t('restrictions')}</label><Chips multi options={['knee','shoulder','lower_back','hip','ankle','wrist','neck']} value={a.restrictions} onChange={v=>setA({...a,restrictions:v})}/>
-    </>}
-    {step === 3 && <>
-      <p className="muted">Estas preguntas permiten detectar situaciones que requieren revisión profesional. No sustituyen una evaluación médica.</p>
-      {Object.keys(a.redFlags).map(k=><label key={k} className="check"><input type="checkbox" checked={(a.redFlags as Record<string,boolean>)[k]} onChange={e=>setA({...a,redFlags:{...a.redFlags,[k]:e.target.checked}})}/>{t('rf_'+k)}</label>)}
-      {referral && <p className="warn" role="alert">{t('referral')}</p>}
-    </>}
-    {error && <p className="bad" role="alert">{error}</p>}
-    <div className="wizard-actions">
-      {step>0 && <button type="button" onClick={()=>{setStep(step-1);setError('');}}>← Atrás</button>}
-      {step<3 ? <button type="button" className="primary" onClick={()=>setStep(step+1)}>Continuar →</button> : <button type="button" className="primary" disabled={busy||referral||!a.equipment.length||a.daysPerWeek<1||a.daysPerWeek>6} onClick={generate}>{busy?'Creando tu plan…':'Crear mi plan'}</button>}
-    </div>
-  </section>;
+type AssessmentValues = {
+ goal:string;secondaryGoals:string[];specificGoals:string[];targetDescription:string;targetDate:string;
+ daysPerWeek:number;sessionMinutes:number;preferredActivities:string[];experience:string;equipment:string[];restrictions:string[];
+ redFlags:{chestPain:boolean;dizziness:boolean;recentSurgery:boolean;pregnancy:boolean;medication:boolean};
+ baseline:Record<string,number>;trainingContext:Record<string,number>;
+};
+const GOAL_DETAILS=['Correr 5 km','Correr 10 km','Media maratón','Maratón','Mejorar ritmo de carrera','Aumentar distancia','Mejorar capacidad aeróbica','Ganar fuerza máxima','Ganar masa muscular','Resistencia muscular','Reducir grasa corporal','Mantener peso','Mejorar composición corporal','Mejorar movilidad','Mejorar equilibrio','Volver a entrenar','Prevenir lesiones','Mejorar salud metabólica','Preparar una competencia','Entrenamiento combinado','Mejorar bienestar general'];
+const DEFAULT_ASSESSMENT:AssessmentValues={
+ goal:'general',secondaryGoals:[],specificGoals:[],targetDescription:'',targetDate:'',daysPerWeek:3,sessionMinutes:60,
+ preferredActivities:['strength'],experience:'beginner',equipment:['none'],restrictions:[],
+ redFlags:{chestPain:false,dizziness:false,recentSurgery:false,pregnancy:false,medication:false},
+ baseline:{},trainingContext:{preferredReassessmentWeeks:6}
+};
+function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>void;initial?:Partial<AssessmentValues>}) {
+ const t=useT();
+ const GOALS=['general','strength','hypertrophy','endurance','fat_loss','mobility','hybrid'];
+ const [step,setStep]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState(''),[referral,setReferral]=useState(false);
+ const [customGoal,setCustomGoal]=useState('');
+ const [a,setA]=useState<AssessmentValues>(()=>({...DEFAULT_ASSESSMENT,...initial,baseline:{...initial?.baseline},trainingContext:{preferredReassessmentWeeks:6,...initial?.trainingContext},redFlags:{...DEFAULT_ASSESSMENT.redFlags,...initial?.redFlags}}));
+ const baselineField=(key:string,label:string,min:number,max:number,stepSize=1)=><label key={key}>{label} <span className="muted">(opcional)</span><input type="number" min={min} max={max} step={stepSize} value={a.baseline[key]??''} placeholder="No medido" onChange={e=>{const v=e.target.value;setA(prev=>{const baseline={...prev.baseline};if(v==='')delete baseline[key];else baseline[key]=Number(v);return {...prev,baseline};});}}/></label>;
+ const contextField=(key:string,label:string,min:number,max:number)=><label key={key}>{label}<input type="number" min={min} max={max} value={a.trainingContext[key]??''} placeholder="Opcional" onChange={e=>{const v=e.target.value;setA(prev=>{const trainingContext={...prev.trainingContext};if(v==='')delete trainingContext[key];else trainingContext[key]=Number(v);return {...prev,trainingContext};});}}/></label>;
+ const submit=async()=>{setBusy(true);setError('');try{
+  const payload={...a,secondaryGoals:a.secondaryGoals.filter(g=>g!==a.goal),targetDate:a.targetDate||undefined};
+  const result=await api<{referral?:boolean;professionalPlanPreserved?:boolean}>('POST','/api/assessment',payload);
+  if(result.referral){setReferral(true);setError('Tus respuestas indican que es recomendable una revisión profesional antes de generar una nueva rutina.');}
+  else onDone();
+ }catch{setError('No pudimos guardar la evaluación. Revisá los campos e intentá nuevamente.');}finally{setBusy(false);}};
+ const titles=['Tus objetivos personales','Tu experiencia y disponibilidad','Tu punto de partida','Capacidad y recuperación','Equipamiento y limitaciones','Seguridad y revisión'];
+ return <section className="card onboarding" aria-label="Evaluación física y objetivos">
+  <div className="eyebrow">EVALUACIÓN PERSONAL · PASO {step+1} DE 6</div><div className="wizard-track"><span style={{width:`${(step+1)*100/6}%`}}/></div>
+  <h2>{titles[step]}</h2>
+  {step===0&&<><p className="muted">No hay una lista cerrada de metas. Elegí un enfoque principal y todas las metas específicas que correspondan.</p>
+   <label>Enfoque principal del plan</label><Chips options={GOALS} value={[a.goal]} onChange={v=>setA({...a,goal:v[0]!,secondaryGoals:a.secondaryGoals.filter(g=>g!==v[0])})}/>
+   <label>Enfoques complementarios</label><Chips multi options={GOALS.filter(g=>g!==a.goal)} value={a.secondaryGoals} onChange={v=>setA({...a,secondaryGoals:v})}/>
+   <label>Metas concretas (selección múltiple)</label><div className="chips">{GOAL_DETAILS.map(goal=><button type="button" className={'chip'+(a.specificGoals.includes(goal)?' on':'')} key={goal} onClick={()=>setA(v=>({...v,specificGoals:v.specificGoals.includes(goal)?v.specificGoals.filter(x=>x!==goal):[...v.specificGoals,goal].slice(0,12)}))}>{goal}</button>)}</div>
+   <label>Otra meta, en tus palabras</label><div className="row"><input value={customGoal} maxLength={100} placeholder="Ej.: completar 15 km sin parar" onChange={e=>setCustomGoal(e.target.value)}/><button type="button" disabled={!customGoal.trim()||a.specificGoals.length>=12} onClick={()=>{setA(v=>({...v,specificGoals:[...v.specificGoals,customGoal.trim()]}));setCustomGoal('');}}>Agregar</button></div>
+   <label>Resultado medible que querés conseguir</label><input maxLength={200} value={a.targetDescription} onChange={e=>setA({...a,targetDescription:e.target.value})} placeholder="Ej.: correr 10 km en menos de 55 minutos"/>
+   <label>Fecha objetivo (opcional)</label><input type="date" value={a.targetDate} onChange={e=>setA({...a,targetDate:e.target.value})}/>
+  </>}
+  {step===1&&<><label>Experiencia actual</label><Chips options={['beginner','intermediate','advanced']} value={[a.experience]} onChange={v=>setA({...a,experience:v[0]!})}/>
+   <label>Días disponibles para fuerza</label><input type="number" min={1} max={6} value={a.daysPerWeek} onChange={e=>setA({...a,daysPerWeek:Number(e.target.value)})}/>
+   <label>Duración disponible por sesión</label><select value={a.sessionMinutes} onChange={e=>setA({...a,sessionMinutes:Number(e.target.value)})}>{[20,30,45,60,75,90,120].map(n=><option key={n} value={n}>{n} minutos</option>)}</select>
+   {contextField('strengthDays','Sesiones actuales de fuerza por semana',0,7)}
+   {contextField('cardioDays','Sesiones actuales de cardio por semana',0,7)}
+   {contextField('recentBreakWeeks','Semanas desde tu última rutina regular (0 si entrenás)',0,520)}
+   <p className="muted">Fuerza y cardio se registran por separado y pueden realizarse el mismo día.</p>
+  </>}
+  {step===2&&<><p className="muted">Estos datos describen tu situación actual. No son exámenes obligatorios ni equivalen a una prueba de esfuerzo.</p>
+   <div className="assessment-fields">{baselineField('age','Edad (años)',13,100)}{baselineField('weightKg','Peso (kg)',25,350,.1)}{baselineField('heightCm','Altura (cm)',100,240,.1)}
+   {baselineField('weeklyStrengthSessions','Sesiones de fuerza habituales/semana',0,14)}{baselineField('weeklyRunKm','Kilómetros de carrera por semana',0,300,.1)}
+   {baselineField('longestComfortableRunKm','Mayor distancia cómoda (km)',0,100,.1)}{baselineField('comfortableRunPaceMinKm','Ritmo cómodo (min/km)',2,20,.1)}
+   {baselineField('activityMinutesPerWeek','Minutos activos por semana',0,2000)}</div>
+  </>}
+  {step===3&&<><p className="muted">Solo completá las mediciones que conozcas. No hagas pruebas máximas ni te exijas para completar el formulario.</p>
+   <div className="assessment-fields">{baselineField('walkingMinutes','Minutos caminando sin dificultad',0,240)}{baselineField('pushUps','Flexiones controladas habituales',0,200)}
+   {baselineField('sitToStand30s','Levantadas de silla en 30 segundos (si ya lo mediste)',0,100)}
+   {baselineField('restingHeartRate','Pulso en reposo medido (lat/min)',35,180)}
+   {baselineField('perceivedFitness','Condición física percibida (1–10)',1,10)}
+   {baselineField('sleepHours','Horas de sueño habituales',0,16,.5)}
+   {baselineField('recovery','Recuperación percibida (1–10)',1,10)}</div>
+   <p className="muted">Los resultados auto-reportados no estiman con precisión VO₂máx ni fuerza máxima. La carga inicial será conservadora y se ajustará con tus sesiones.</p>
+  </>}
+  {step===4&&<><label>Equipamiento disponible</label><Chips multi options={['none','dumbbells','barbell','bands','bar','machines']} value={a.equipment} onChange={v=>setA({...a,equipment:v})}/>
+   <label>Actividades preferidas</label><div className="chips">{(['strength','running','mobility'] as const).map(k=><button type="button" className={'chip'+(a.preferredActivities.includes(k)?' on':'')} key={k} onClick={()=>setA(v=>({...v,preferredActivities:v.preferredActivities.includes(k)?v.preferredActivities.filter(x=>x!==k):[...v.preferredActivities,k]}))}>{k==='strength'?'Fuerza':k==='running'?'Running':'Movilidad'}</button>)}</div>
+   <label>Molestias o limitaciones actuales</label><Chips multi options={['knee','shoulder','lower_back','hip','ankle','wrist','neck']} value={a.restrictions} onChange={v=>setA({...a,restrictions:v})}/>
+   {contextField('confidence','Confianza para sostener el plan (1–10)',1,10)}
+  </>}
+  {step===5&&<><p className="muted">Marcá las situaciones que correspondan. Las señales de alerta requieren revisión antes de generar una rutina; no sustituyen una evaluación médica.</p>
+   {Object.keys(a.redFlags).map(k=><label className="check" key={k}><input type="checkbox" checked={(a.redFlags as Record<string,boolean>)[k]} onChange={e=>setA({...a,redFlags:{...a.redFlags,[k]:e.target.checked}})}/>{t('rf_'+k)}</label>)}
+   <label>¿Cada cuántas semanas querés revisar tu evaluación?</label><select value={a.trainingContext.preferredReassessmentWeeks??6} onChange={e=>setA({...a,trainingContext:{...a.trainingContext,preferredReassessmentWeeks:Number(e.target.value)}})}>{[2,4,6,8,12,16,24].map(n=><option value={n} key={n}>{n} semanas</option>)}</select>
+   <p className="muted">Podés repetirla cuando quieras desde Perfil. Se conservará el historial y no se reemplazará una rutina asignada por tu profesional.</p>
+  </>}
+  {error&&<p className="bad" role="alert">{error}</p>}
+  <div className="wizard-actions">{step>0&&<button type="button" onClick={()=>{setStep(v=>v-1);setError('');}}>← Atrás</button>}{onCancel&&<button type="button" onClick={onCancel}>Cancelar</button>}
+  {step<5?<button className="primary" type="button" onClick={()=>setStep(v=>v+1)}>Continuar →</button>:<button className="primary" type="button" disabled={busy||referral||!a.equipment.length||a.daysPerWeek<1||a.daysPerWeek>6} onClick={()=>void submit()}>{busy?'Guardando…':'Guardar evaluación'}</button>}</div>
+ </section>;
 }
 
 function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
@@ -862,6 +881,10 @@ function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => vo
   const t = useT();
   const { lang } = useContext(LangCtx);
   const [links, setLinks] = useState<any[]>([]);
+  const [reassess,setReassess]=useState(false);
+  const [history,setHistory]=useState<{date:string;assessment:Partial<AssessmentValues>}[]>([]);
+  const loadAssessments=()=>api<{date:string;assessment:Partial<AssessmentValues>}[]>('GET','/api/assessments').then(setHistory).catch(()=>{});
+  useEffect(()=>{if(me.role==='athlete')loadAssessments();},[me.role]);
   const [joinCode,setJoinCode] = useState('');
   const [joinResult,setJoinResult] = useState('');
   const loadLinks = () => me.role === 'athlete' && api('GET', '/api/links').then(setLinks).catch(() => {});
@@ -875,6 +898,14 @@ function Settings({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => vo
     <>
       <div className="card"><LangPicker lang={lang} onLang={onLang} /></div>
       {me.role === 'athlete' && <>
+        <div className="card"><h3>Mi evaluación física</h3>
+          <p className="muted">Repetí tu evaluación para actualizar objetivos y registrar cómo cambió tu condición física. Conservamos evaluaciones anteriores.</p>
+          {history[0]&&<p>Última evaluación: {history[0].date.slice(0,10)} · {history[0].assessment.specificGoals?.join(', ')||'Objetivo general'}</p>}
+          {history[0]&&<p className="muted">Revisión orientativa: cada {history[0].assessment.trainingContext?.preferredReassessmentWeeks??6} semanas, o cuando cambie tu condición.</p>}
+          <button className="primary action-full" onClick={()=>setReassess(true)}>Rehacer mi evaluación</button>
+          {history.length>1&&<details><summary>Historial de evaluaciones ({history.length})</summary>{history.map((h,i)=><p key={i}>{h.date.slice(0,10)} · {h.assessment.targetDescription||h.assessment.goal}</p>)}</details>}
+        </div>
+        {reassess&&<Assessment initial={history[0]?.assessment} onCancel={()=>setReassess(false)} onDone={()=>{setReassess(false);loadAssessments();}}/>}
         <div className="card"><h3>{t('consentTitle')}</h3>
           {CONSENT_KEYS.filter((k) => k !== 'terms' && k !== 'health_data').map((k) => <label key={k} className="check"><input type="checkbox" checked={!!me.consents[k]} onChange={(e) => toggle(k, e.target.checked)} />{t('c_' + k)}</label>)}</div>
         <div className="card"><h3>Vincularme con mi entrenador</h3><p className="muted">Pedile el código a tu profesional. Al vincularte podrá asignarte una rutina y revisar los entrenamientos que registres.</p><label>Código de vinculación</label><input value={joinCode} onChange={e=>setJoinCode(e.target.value.trim().toUpperCase())} placeholder="Ingresá el código"/><button className="primary action-full" disabled={!me.consents.share_with_pro||!joinCode} onClick={async()=>{try{const r=await api<{professional:string}>('POST','/api/links/join-code',{code:joinCode});setJoinResult('Vinculado con '+r.professional);setJoinCode('');loadLinks();}catch{setJoinResult('No se pudo vincular. Revisá el código.');}}}>Unirme a mi entrenador</button>{!me.consents.share_with_pro&&<p className="warn">Activá el consentimiento para compartir con el profesional.</p>}{joinResult&&<p role="status">{joinResult}</p>}</div><div className="card"><h3>{t('invitations')}</h3>

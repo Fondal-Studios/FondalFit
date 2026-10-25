@@ -58,6 +58,8 @@ export function generatePlan(a: AssessmentInput): Plan {
   const pool = allowedExercises(a);
   const s = SCHEME[a.goal];
   const beginner = a.experience === 'beginner';
+  const lowActivity = (a.baseline?.activityMinutesPerWeek !== undefined && a.baseline.activityMinutesPerWeek < 60) || (a.trainingContext?.recentBreakWeeks ?? 0) >= 8;
+  const conservativeStart = beginner || lowActivity;
   const sessionMinutes = Math.min(120, Math.max(20, a.sessionMinutes ?? 60));
   const maxExercises = sessionMinutes <= 30 ? 3 : sessionMinutes <= 45 ? 4 : sessionMinutes <= 60 ? 5 : 6;
   const days: PlanDay[] = [];
@@ -72,10 +74,10 @@ export function generatePlan(a: AssessmentInput): Plan {
       const isCore = p === 'core' || p === 'mobility';
       items.push({
         exerciseId: ex.id,
-        sets: isCore ? 2 : beginner ? Math.min(s.sets, 3) : s.sets,
+        sets: isCore ? 2 : conservativeStart ? Math.min(s.sets, 2) : s.sets,
         repMin: s.repMin,
         repMax: s.repMax,
-        rirTarget: beginner ? Math.max(s.rir, 3) : s.rir,
+        rirTarget: conservativeStart ? Math.max(s.rir, 4) : s.rir,
         load: 0,
       });
     }
