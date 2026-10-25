@@ -1,4 +1,4 @@
-export type Goal = 'strength' | 'hypertrophy' | 'endurance' | 'fat_loss' | 'mobility' | 'general';
+export type Goal = 'strength' | 'hypertrophy' | 'endurance' | 'fat_loss' | 'mobility' | 'general' | 'hybrid';
 export type Equipment = 'none' | 'dumbbells' | 'barbell' | 'machines' | 'bands' | 'bar';
 export type Area = 'knee' | 'shoulder' | 'lower_back' | 'hip' | 'ankle' | 'wrist' | 'neck';
 
@@ -21,11 +21,16 @@ export interface Prescription {
   load: number; // kg, 0 for bodyweight
 }
 
-export interface PlanDay { name: string; items: Prescription[] }
+export interface PlanDay { name: string; items: Prescription[]; run?: {minutes:number; intensity:'easy'|'moderate'; note:string} }
 export interface Plan { engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number }
 
 export interface AssessmentInput {
   goal: Goal;
+  secondaryGoals?: Goal[];
+  targetDescription?: string;
+  targetDate?: string;
+  sessionMinutes?: number;
+  preferredActivities?: ('strength' | 'running' | 'mobility')[];
   daysPerWeek: number;
   experience: 'beginner' | 'intermediate' | 'advanced';
   equipment: Equipment[];

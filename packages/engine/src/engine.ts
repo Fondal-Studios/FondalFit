@@ -35,6 +35,7 @@ const SCHEME: Record<Goal, { sets: number; repMin: number; repMax: number; rir: 
   fat_loss: { sets: 3, repMin: 10, repMax: 15, rir: 2 },
   mobility: { sets: 2, repMin: 8, repMax: 12, rir: 4 },
   general: { sets: 3, repMin: 8, repMax: 12, rir: 3 },
+  hybrid: { sets: 3, repMin: 6, repMax: 12, rir: 3 },
 };
 
 const DAY_PATTERNS: Exercise['pattern'][][] = [
@@ -57,11 +58,14 @@ export function generatePlan(a: AssessmentInput): Plan {
   const pool = allowedExercises(a);
   const s = SCHEME[a.goal];
   const beginner = a.experience === 'beginner';
+  const sessionMinutes = Math.min(120, Math.max(20, a.sessionMinutes ?? 60));
+  const maxExercises = sessionMinutes <= 30 ? 3 : sessionMinutes <= 45 ? 4 : sessionMinutes <= 60 ? 5 : 6;
   const days: PlanDay[] = [];
   for (let d = 0; d < nDays; d++) {
     const used = new Set<string>();
     const items: Prescription[] = [];
     for (const p of DAY_PATTERNS[d % DAY_PATTERNS.length]!) {
+      if (items.length >= maxExercises) break;
       const ex = pick(pool, p, beginner, used);
       if (!ex) continue;
       used.add(ex.id);
@@ -75,7 +79,10 @@ export function generatePlan(a: AssessmentInput): Plan {
         load: 0,
       });
     }
-    days.push({ name: `D${d + 1}`, items });
+    const hybridRun = a.goal === 'hybrid' && d % 2 === 1;
+    const enduranceRun = a.goal === 'endurance' && a.preferredActivities?.includes('running');
+    const run = (hybridRun || enduranceRun) ? { minutes: Math.max(15, Math.min(50, Math.round(sessionMinutes * (hybridRun ? 0.45 : 0.75)))), intensity: 'easy' as const, note: 'Ritmo conversacional; ajustá según el esfuerzo percibido.' } : undefined;
+    days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza y carrera ${d + 1}` : `Fuerza ${d + 1}`) : `Sesión ${d + 1}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
   }
   return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
 }

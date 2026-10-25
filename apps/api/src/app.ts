@@ -25,7 +25,12 @@ const limitsSchema = z.object({
   allowAutoDeload: z.boolean(),
 });
 const assessmentSchema = z.object({
-  goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general']),
+  goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid']),
+  secondaryGoals: z.array(z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid'])).max(3).optional(),
+  targetDescription: z.string().trim().max(200).optional(),
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  sessionMinutes: z.number().int().min(20).max(120).optional(),
+  preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
   daysPerWeek: z.number().int().min(1).max(6),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
   equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar'])),
@@ -154,7 +159,9 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
     const p = await latestPlan(req.user!.id);
-    return p ? { version: p.version, source: p.source, plan: JSON.parse(p.data) as Plan } : { plan: null };
+    const last = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(req.user!.id) as { n: number };
+    const plan = p ? JSON.parse(p.data) as Plan : null;
+    return p ? { version: p.version, source: p.source, plan, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
@@ -216,7 +223,66 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       const d = JSON.parse(r.data) as { items: { exerciseId: string; sets: { weight: number; reps: number }[] }[] };
       return { date: r.created_at, dayIndex: r.day_index, volume: d.items.reduce((a, i) => a + i.sets.reduce((s, x) => s + x.weight * x.reps, 0), 0), sets: d.items.reduce((a, i) => a + i.sets.length, 0) };
     });
-    return { sessions, total: sessions.length };
+    const exercises: Record<string, { date: string; weight: number; reps: number; estimated1RM: number }[]> = {};
+    rows.forEach((r) => {
+      const workout = JSON.parse(r.data) as { items: { exerciseId: string; sets: { weight: number; reps: number }[] }[] };
+      for (const item of workout.items) {
+        if (!exercises[item.exerciseId]) exercises[item.exerciseId] = [];
+        const best = item.sets.reduce((max, set) => Math.max(max, set.weight > 0 && set.reps > 0 ? set.weight * (1 + Math.min(set.reps, 15) / 30) : 0), 0);
+        if (best > 0) {
+          const peak = item.sets.reduce((max, set) => set.weight * (1 + Math.min(set.reps, 15) / 30) >= max.weight * (1 + Math.min(max.reps, 15) / 30) ? set : max, { weight: 0, reps: 0 });
+          exercises[item.exerciseId]!.push({ date: r.created_at, weight: peak.weight, reps: peak.reps, estimated1RM: Math.round(best * 10) / 10 });
+        }
+      }
+    });
+    const latestAssessment = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as { data: string } | undefined;
+    return { sessions, total: sessions.length, exercises, goal: latestAssessment ? JSON.parse(latestAssessment.data) : null };
+  });
+
+  /* ---------------- Beta coach: Gemini free-tier, opt-in, server-side only ---------------- */
+  const coachDaily = new Map<number, { day: string; count: number }>();
+  app.get('/api/coach/status', { preHandler: athleteOnly }, async (req) => {
+    const day = now().slice(0,10);
+    const usage = coachDaily.get(req.user!.id);
+    return { available: !!process.env.GEMINI_API_KEY, provider: 'gemini', dailyLimit: 8, remaining: 8 - (usage?.day === day ? usage.count : 0), mode: 'beta' };
+  });
+  app.post('/api/coach/chat', { preHandler: athleteOnly }, async (req, reply) => {
+    if (!await needHealth(req, reply)) return;
+    if (!await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({ error: 'ai_consent_required' });
+    const parsed = parse(z.object({ message: z.string().trim().min(1).max(450) }),req.body,reply);
+    if (!parsed) return;
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return reply.code(503).send({ error: 'coach_unconfigured' });
+    const uid = req.user!.id, day = now().slice(0,10);
+    const usage = coachDaily.get(uid);
+    const count = usage?.day === day ? usage.count : 0;
+    if (count >= 8) return reply.code(429).send({ error: 'coach_daily_limit' });
+    coachDaily.set(uid, { day, count: count + 1 });
+    const assessment = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
+    const workout = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(uid) as { n: number };
+    const profile = assessment ? JSON.parse(assessment.data) as AssessmentInput : null;
+    const context = { primaryGoal: profile?.goal ?? 'general', secondaryGoals: profile?.secondaryGoals ?? [], target: profile?.targetDescription ?? '', availabilityDays: profile?.daysPerWeek ?? 3, sessionMinutes: profile?.sessionMinutes ?? 60, completedSessions: Number(workout.n) };
+    try {
+      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+      if (!/^[a-zA-Z0-9._-]+$/.test(model)) return reply.code(500).send({ error: 'invalid_coach_model' });
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+        method:'POST',
+        headers:{ 'content-type':'application/json', 'x-goog-api-key':key },
+        body:JSON.stringify({
+          systemInstruction:{ parts:[{text:'Sos Fondal Coach, asistente educativo de ejercicio físico basado en evidencia. Contestá en español claro, breve y con incertidumbre explícita. Personalizá según la meta y los registros; no inventes historial ni cites estudios inexistentes. No indiques esteroides, dosis ni tratamientos. Ante dolor torácico, síncope, síntomas de alarma o lesión grave recomendá suspender actividad y consultar. No generes diagnósticos. Nunca modifiques directamente el plan: solo sugerencias.'}] },
+          contents:[{role:'user',parts:[{text:'Contexto limitado: '+JSON.stringify(context)+'\\nConsulta: '+parsed.message}]}],
+          generationConfig:{temperature:0.3,maxOutputTokens:420}
+        }),
+        signal:AbortSignal.timeout(12000)
+      });
+      if (!response.ok) return reply.code(response.status===429?429:502).send({ error:'coach_provider_unavailable' });
+      const body = await response.json() as { candidates?:{ content?:{ parts?:{text?:string}[] } }[] };
+      const answer = body.candidates?.[0]?.content?.parts?.map(p=>p.text??'').join('').trim();
+      if (!answer) return reply.code(502).send({error:'coach_empty'});
+      return {answer:answer.slice(0,2500),remaining:Math.max(0,7-count)};
+    } catch {
+      return reply.code(503).send({error:'coach_timeout'});
+    }
   });
 
   /* ---------------- Nutrition ---------------- */
