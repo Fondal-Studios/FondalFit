@@ -294,78 +294,150 @@ function RestTimer() {
 }
 
 // Geolocation remains foreground-only on PWAs; explicit permission and manual save.
+type RunSplit = { km: number; seconds: number; pace: number };
+type RunSummary = { date: string; km: number; minutes: number; avgPace: number; kcal: number; weightKg: number; splits: RunSplit[]; tips: string[] };
 function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void }) {
   const [active, setActive] = useState(false);
   const [touchLocked, setTouchLocked] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [meters, setMeters] = useState(0);
-  const [status, setStatus] = useState('El GPS necesita permiso y una conexión segura (HTTPS).');
+  const [pace, setPace] = useState<number | null>(null);
+  const [weightKg, setWeightKg] = useState(70);
+  const [status, setStatus] = useState('Necesita permiso de ubicación y HTTPS.');
+  const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [splits, setSplits] = useState<RunSplit[]>([]);
+  const [unlocked, setUnlocked] = useState(0);
   const watchId = useRef<number | null>(null);
   const lastPoint = useRef<{lat:number;lon:number;at:number}|null>(null);
   const startedAt = useRef(0);
   const wake = useRef<{release:()=>Promise<void>}|null>(null);
   const running = useRef(false);
+  const distanceRef = useRef(0);
+  const splitsRef = useRef<RunSplit[]>([]);
+  const splitAt = useRef(0);
+  const lastPaces = useRef<number[]>([]);
   const stop = useCallback(() => {
     running.current = false;
-    if (watchId.current!==null) navigator.geolocation.clearWatch(watchId.current);
+    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     watchId.current = null;
     void wake.current?.release().catch(()=>{});
     wake.current = null;
     setActive(false);
     setTouchLocked(false);
-  },[]);
+  }, []);
   useEffect(() => () => {
-    running.current=false;
-    if(watchId.current!==null) navigator.geolocation.clearWatch(watchId.current);
+    running.current = false;
+    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     void wake.current?.release().catch(()=>{});
-  },[]);
+  }, []);
   useEffect(() => {
-    if(!active) return;
-    const tick=window.setInterval(()=>setElapsed(Math.round((Date.now()-startedAt.current)/1000)),1000);
-    return ()=>clearInterval(tick);
+    if (!active) return;
+    const id = window.setInterval(()=>setElapsed(Math.max(0,Math.floor((Date.now()-startedAt.current)/1000))),1000);
+    return ()=>clearInterval(id);
   },[active]);
-  const start=async()=>{
-    if(!navigator.geolocation) {setStatus('Este navegador no ofrece GPS.');return;}
-    setMeters(0);setElapsed(0);lastPoint.current=null;startedAt.current=Date.now();
-    running.current=true;setActive(true);setStatus('Buscando señal GPS…');
+  const fmt = (minutes:number|null) => minutes === null || !Number.isFinite(minutes) || minutes <= 0 ? '—:—' : Math.floor(minutes)+':'+String(Math.round((minutes%1)*60)).padStart(2,'0');
+  const start = async () => {
+    if (!navigator.geolocation) { setStatus('Este navegador no ofrece GPS.'); return; }
+    if (!window.isSecureContext) { setStatus('El GPS requiere HTTPS.'); return; }
+    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);
+    splitsRef.current=[];lastPaces.current=[];distanceRef.current=0;splitAt.current=0;
+    lastPoint.current=null;startedAt.current=Date.now();running.current=true;setActive(true);setStatus('Buscando señal GPS…');
     try {
-      const n=navigator as Navigator & {wakeLock?: {request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
-      if(n.wakeLock) wake.current=await n.wakeLock.request('screen');
-    } catch {setStatus('GPS activo. El dispositivo puede apagar la pantalla.');}
-    if(!running.current)return;
+      const n = navigator as Navigator & {wakeLock?:{request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
+      if (n.wakeLock) wake.current=await n.wakeLock.request('screen');
+    } catch {setStatus('No se pudo mantener la pantalla encendida. Evitá bloquearla.');}
+    if (!running.current) return;
     watchId.current=navigator.geolocation.watchPosition(pos=>{
-      if(!running.current)return;
-      const {latitude:lat,longitude:lon,accuracy}=pos.coords;
-      if(accuracy>45){setStatus('Esperando una señal GPS más precisa…');return;}
-      const at=pos.timestamp;
-      if(lastPoint.current){
-        const prev=lastPoint.current;
+      if(!running.current) return;
+      const {latitude:lat,longitude:lon,accuracy,speed}=pos.coords;
+      if(accuracy>40) {setStatus('Señal imprecisa; esperando una posición mejor…');return;}
+      const at=pos.timestamp,prev=lastPoint.current;
+      if(prev) {
         const rad=Math.PI/180,dlat=(lat-prev.lat)*rad,dlon=(lon-prev.lon)*rad;
         const h=Math.sin(dlat/2)**2+Math.cos(prev.lat*rad)*Math.cos(lat*rad)*Math.sin(dlon/2)**2;
         const distance=12742000*Math.asin(Math.min(1,Math.sqrt(h)));
         const seconds=(at-prev.at)/1000;
-        if(seconds>0&&distance>=3&&distance/seconds<8) {
-          setMeters(m=>m+distance);
+        if(seconds>0 && distance>=3 && distance/seconds<8) {
+          distanceRef.current+=distance;
+          setMeters(distanceRef.current);
+          const speedMps = speed!==null && speed>0.6 && speed<8 ? speed : distance/seconds;
+          if(speedMps>0.6) {
+            const nextPace=1000/speedMps/60;
+            lastPaces.current=[...lastPaces.current.slice(-4),nextPace];
+            const avg=lastPaces.current.reduce((sum,x)=>sum+x,0)/lastPaces.current.length;
+            setPace(avg);
+          } else setPace(null);
+          const wholeKm=Math.floor(distanceRef.current/1000);
+          if(wholeKm>splitsRef.current.length) {
+            const since=(at-startedAt.current)/1000;
+            const previousElapsed=splitAt.current;
+            if(since-previousElapsed>0) {
+              const split={km:wholeKm,seconds:Math.round(since-previousElapsed),pace:(since-previousElapsed)/60};
+              splitsRef.current=[...splitsRef.current,split];setSplits(splitsRef.current);
+              splitAt.current=since;
+            }
+          }
           lastPoint.current={lat,lon,at};
-        } else if(seconds>0&&distance/seconds>=8) {
-          setStatus('Se descartó un salto de posición GPS.');
+          setStatus('GPS activo · distancia y ritmo aproximados');
+        } else if(seconds>0 && distance/seconds>=8) {
+          setStatus('Se ignoró un salto GPS poco probable.');
+        } else if(seconds>=15 && distance<3) {
+          lastPoint.current={lat,lon,at};setPace(null);
         }
-      } else lastPoint.current={lat,lon,at};
-      setStatus('GPS activo · distancia estimada');
-    },e=>setStatus(e.code===1?'Permiso de ubicación rechazado. Podés registrar la carrera manualmente.':'Se perdió la señal GPS. Podés registrar la carrera manualmente.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+      } else {lastPoint.current={lat,lon,at};setStatus('Señal GPS adquirida.');}
+    },e=>setStatus(e.code===1?'Ubicación denegada. Revisá los permisos.':'Sin señal GPS; la distancia puede ser incompleta.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   };
+  const finish=()=>{
+    const km=distanceRef.current/1000,mins=(Date.now()-startedAt.current)/60000;
+    const fullSplits=splitsRef.current;
+    const remainingKm=km-fullSplits.length;
+    const remainingSecs=mins*60-splitAt.current;
+    const allSplits=remainingKm>=0.1&&remainingSecs>0?[...fullSplits,{km:Math.round(km*100)/100,seconds:Math.round(remainingSecs),pace:remainingSecs/60/remainingKm}]:fullSplits;
+    // Distance based approximation for running, not a wearable measurement.
+    const kcal=Math.round(km*Math.max(30,Math.min(250,weightKg)));
+    const validPaces=allSplits.map(x=>x.pace).filter(Number.isFinite);
+    const spread=validPaces.length>1?Math.max(...validPaces)-Math.min(...validPaces):0;
+    const tips=[spread>0.75?'Tus parciales variaron bastante: probá empezar más suave para sostener el ritmo.':'Buscá un ritmo cómodo y sostenible antes de acelerar.',
+      'El GPS y las calorías son estimaciones; sin pulsómetro no se pueden calcular zonas cardíacas reales.',
+      'Compará tu ritmo con sesiones de distancia similar, no solamente con tu carrera más rápida.'];
+    const result:RunSummary={date:new Date().toISOString(),km:Number(km.toFixed(2)),minutes:Number(mins.toFixed(2)),avgPace:km>0?mins/km:0,kcal,weightKg,splits:allSplits,tips};
+    stop();setSummary(result);
+    if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)));
+    try {localStorage.setItem('ff_last_run_summary',JSON.stringify(result));} catch {/* optional device storage */}
+  };
+  const paceGroups=splits.reduce((out,split)=>{const k=split.pace<5?'Rápido (<5:00)':split.pace<6.5?'Medio (5:00–6:30)':'Suave (>6:30)';out[k]=(out[k]||0)+1;return out;},{} as Record<string,number>);
   return <div className="card gps-run">
-    <h3>Seguimiento GPS (beta)</h3>
-    <p className="muted">Funciona mientras la app permanezca activa en primer plano. En segundo plano o con pantalla apagada el sistema puede suspender el seguimiento.</p>
-    <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km estimados</small></div><div><strong>{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</strong><small>tiempo</small></div></div>
+    <h3>Running GPS · beta</h3>
+    <p className="muted">Mantené abierta la pantalla. En iOS y Android la web no garantiza GPS cuando se bloquea el teléfono o queda en segundo plano.</p>
+    <div className="gps-metrics">
+      <div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div>
+      <div><strong>{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</strong><small>tiempo</small></div>
+      <div><strong>{fmt(pace)}</strong><small>ritmo actual min/km</small></div>
+      <div><strong>{fmt(meters>50?elapsed/60/(meters/1000):null)}</strong><small>ritmo promedio min/km</small></div>
+    </div>
     <p role="status" className="muted">{status}</p>
-    {!active?<button className="primary action-full" onClick={()=>void start()}>Iniciar GPS</button>:<div className="gps-actions">
-      <button onClick={()=>setTouchLocked(true)}>Bloquear toques</button>
-      <button onClick={()=>{stop();if(meters>0&&elapsed>0)onDraft(Number((meters/1000).toFixed(2)),Number((elapsed/60).toFixed(2)));}}>Finalizar y completar registro</button>
+    {!active ? <><label htmlFor="gps-weight">Peso para estimar energía (kg)</label><input id="gps-weight" type="number" min={30} max={250} value={weightKg} onChange={e=>setWeightKg(Number(e.target.value)||70)}/>
+      <button className="primary action-full" onClick={()=>void start()}>Iniciar carrera con GPS</button></> :
+      <div className="gps-actions"><button onClick={()=>setTouchLocked(true)}>Congelar pantalla</button><button onClick={finish}>Terminar carrera</button></div>}
+    {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla congelada">
+      <strong>Running activo</strong>
+      <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div><div><strong>{fmt(pace)}</strong><small>min/km</small></div></div>
+      <p className="muted">Para evitar toques involuntarios, deslizá el control hasta el final.</p>
+      <label htmlFor="unlock-slide">Deslizar para desbloquear</label>
+      <input id="unlock-slide" aria-label="Deslizar para desbloquear" className="unlock-slider" type="range" min={0} max={100} value={unlocked}
+        onChange={e=>{const value=Number(e.target.value);if(value>=95){setTouchLocked(false);setUnlocked(0);}else setUnlocked(value);}}/>
+      <span className="muted">Deslizá de izquierda a derecha →</span>
+      <small>El botón físico de suspensión no controla esta función.</small>
     </div>}
-    {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla táctil bloqueada">
-      <strong>Toques bloqueados</strong><p>El GPS continúa mientras el navegador esté activo.</p><button className="primary" onClick={()=>setTouchLocked(false)}>Desbloquear toques</button>
-      <p className="muted">Este bloqueo no controla el botón físico de suspensión.</p>
+    {summary&&<div className="run-summary">
+      <h3>Resumen de tu última carrera</h3>
+      <div className="gps-metrics"><div><strong>{summary.km.toFixed(2)}</strong><small>km</small></div><div><strong>{fmt(summary.avgPace)}</strong><small>ritmo medio min/km</small></div><div><strong>{summary.kcal}</strong><small>kcal estimadas</small></div><div><strong>{Math.round(summary.minutes)}</strong><small>minutos</small></div></div>
+      <h4>Ritmo por tramo</h4>
+      {summary.splits.length?summary.splits.map((sp,i)=><p key={i} className="run-split">{i<summary.splits.length-1?'Kilómetro '+sp.km:'Tramo '+sp.km+' km'}: {fmt(sp.pace)} min/km</p>):<p className="muted">No hubo suficientes puntos GPS para calcular parciales.</p>}
+      <h4>Bandas de ritmo (no zonas cardíacas)</h4>
+      {Object.entries(paceGroups).map(([label,count])=><p key={label}>{label}: {count} tramo(s)</p>)}
+      <h4>Ideas para mejorar</h4>{summary.tips.map(t=><p key={t} className="muted">{t}</p>)}
+      <p className="muted">Calorías aproximadas: peso × kilómetros. No es gasto metabólico medido. Revisá el registro de abajo y guardalo si corresponde.</p>
     </div>}
   </div>;
 }
