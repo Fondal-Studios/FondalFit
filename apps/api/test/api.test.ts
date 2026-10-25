@@ -630,6 +630,49 @@ describe('dual mode: one account, athlete and professional', () => {
   });
 });
 
+describe('end-to-end professional and athlete lifecycle',()=>{
+ it('enables both modes, links by code, assigns and retains a professional plan through workouts, reassessment and login',async()=>{
+  const coach=await reg('coachdual@x.com','athlete');
+  await call('PUT','/api/consents',coach,allConsents);
+  expect((await call('POST','/api/me/pro',coach)).status).toBe(200);
+  expect((await call('POST','/api/me/mode',coach,{mode:'pro'})).status).toBe(200);
+  const code=(await call('GET','/api/pro/code',coach)).body.code;
+  expect(code).toMatch(/^[A-Z2-9]{8}$/);
+  const {t:student}=await athleteWithPlan('dualstudent@x.com');
+  const joined=await call('POST','/api/links/join-code',student,{code});
+  expect(joined.status).toBe(200);
+  const athlete=(await call('GET','/api/pro/athletes',coach)).body[0];
+  const routine={name:'Circuito de prueba',goal:'strength',days:[
+    {name:'Fuerza',kind:'strength',items:[{exerciseId:'back_squat',sets:3,repMin:5,repMax:8,rirTarget:2,load:50}]},
+    {name:'Cardio',kind:'cardio',items:[],cardio:{modality:'run',type:'zone2',durationMin:30}}
+  ]};
+  const template=await call('POST','/api/pro/templates',coach,routine);
+  expect(template.status).toBe(200);
+  expect((await call('POST',`/api/pro/templates/${template.body.id}/assign`,coach,{athleteId:athlete.id})).status).toBe(200);
+  expect((await call('GET','/api/plan',student)).body.proName).toBe('coachdual');
+  const invalid=await call('POST','/api/workouts',student,{dayIndex:1,items:[{exerciseId:'back_squat',sets:[{weight:50,reps:6,rir:2}]}]});
+  expect(invalid.status).toBe(400);
+  expect((await call('GET','/api/progress',student)).body.total).toBe(0);
+  const workout=await call('POST','/api/workouts',student,{dayIndex:0,fatigue:4,items:[{exerciseId:'back_squat',sets:[{weight:50,reps:6,rir:2}]}]});
+  expect(workout.status).toBe(200);
+  expect((await call('GET','/api/plan',student)).body.proName).toBe('coachdual');
+  const reassessed=await call('POST','/api/assessment',student,{...assessment,goal:'recomposition'});
+  expect(reassessed.status).toBe(200);
+  expect(reassessed.body.professionalPlanPreserved).toBe(true);
+  expect((await call('GET','/api/plan',student)).body.plan.days[0].items[0].exerciseId).toBe('back_squat');
+  const feedback=await call('GET',`/api/pro/athletes/${athlete.id}/training-feedback`,coach);
+  expect(feedback.status).toBe(200);
+  expect(feedback.body.workouts).toHaveLength(1);
+  await call('POST','/api/me/mode',coach,{mode:'athlete'});
+  expect((await call('GET','/api/pro/athletes',coach)).status).toBe(403);
+  expect((await call('GET','/api/plan',coach)).status).toBe(200);
+  await call('POST','/api/me/mode',coach,{mode:'pro'});
+  const relogin=await call('POST','/api/auth/login',undefined,{email:'coachdual@x.com',password:'password123'});
+  expect((await call('GET','/api/me',relogin.body.token)).body.mode).toBe('pro');
+  expect((await call('GET','/api/pro/athletes',relogin.body.token)).body).toHaveLength(1);
+ });
+});
+
 describe('admin telemetry', () => {
   const setup = async () => {
     app = buildApp({ db, rateLimitMax: 100000, adminEmails: ['Founder@X.com'] });

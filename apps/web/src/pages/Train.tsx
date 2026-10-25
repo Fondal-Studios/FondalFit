@@ -3,7 +3,7 @@ import { api, ApiError } from '../api';
 import { byId, hrZones, schemeFor, weeklyVolume, type Goal, type Plan, type PlanDay, type Prescription } from '@fondal/engine';
 import { Bar, Loading, useLoad, useT } from '../ctx';
 
-interface PlanRes { version?: number; plan: Plan | null }
+interface PlanRes { version?: number; plan: Plan | null; proName?: string|null }
 
 export function Train({ onWizard, onCardio }: { onWizard: () => void; onCardio: () => void }) {
   const t = useT();
@@ -22,6 +22,7 @@ export function Train({ onWizard, onCardio }: { onWizard: () => void; onCardio: 
   return (
     <>
       <div className="row between"><p className="muted">{t('planVersion')} {data.version} · {t('g_' + plan.goal)}</p><button onClick={onWizard}>{t('editPlan')}</button></div>
+      {data.proName&&<div className="card linked-plan"><strong>Rutina asignada por {data.proName}</strong><p className="muted">Tus entrenamientos y cargas quedan registrados para el seguimiento del profesional. Repetir tu evaluación no elimina esta rutina asignada.</p></div>}
       {msg && <p className="ok" role="status">{msg}</p>}
       {plan.days.map((d, i) => (
         <div className="card" key={i}>

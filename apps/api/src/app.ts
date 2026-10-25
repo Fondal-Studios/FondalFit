@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
   menusForDay, dayNumberOf, supplementAdvice, simplifyRoute, type DietFlag,
-  materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
+  CATALOG, materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
@@ -216,10 +216,12 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     await db.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at').run(uid, JSON.stringify(b.profile), now());
     const safety = screenSafety(b as unknown as AssessmentInput);
     if (safety.status === 'refer') { await audit(uid, uid, 'assessment:referral'); return { referral: true, reasons: safety.reasons }; }
-    const plan = generatePlan(b as unknown as AssessmentInput);
-    const version = await savePlan(uid, plan, 'engine');
-    const target = await saveTarget(uid, b);
-    return { referral: false, planVersion: version, plan, target };
+    const previous=await latestPlan(uid);
+    const professionalPlan=previous?.source.startsWith('pro:')??false;
+    const plan=professionalPlan ? JSON.parse(previous!.data) as Plan : generatePlan(b as unknown as AssessmentInput);
+    const version=professionalPlan ? previous!.version : await savePlan(uid,plan,'engine');
+    const target=await saveTarget(uid,b);
+    return { referral:false,planVersion:version,plan,target,professionalPlanPreserved:professionalPlan };
   });
 
   /** Latest answers, to edit the plan without starting over. */
@@ -248,7 +250,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.post('/api/workouts', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
     const b = parse(z.object({
-      dayIndex: z.number().int().min(0).max(5),
+      dayIndex: z.number().int().min(0).max(6),
       fatigue: z.number().min(1).max(10).default(5),
       items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
@@ -256,12 +258,12 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const uid = req.user!.id;
     const cur = await latestPlan(uid);
     if (!cur) return reply.code(409).send({ error: 'no_plan' });
-    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
-
     const plan = JSON.parse(cur.data) as Plan;
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
     if (day.kind === 'cardio') return reply.code(400).send({ error: 'cardio_day_use_activities' });
+    if(b.items.some(item=>!day.items.some(p=>p.exerciseId===item.exerciseId)))return reply.code(400).send({error:'unknown_session_exercise'});
+    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
     // Deload weeks, post-break ramps and fixed programs log the work but do not change loads.
     const exp = ((JSON.parse((await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined)?.data ?? '{}') as { experience?: 'beginner' | 'intermediate' | 'advanced' }).experience) ?? 'intermediate';
     const mat = materialize(plan, new Date(), exp);
@@ -295,7 +297,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       return { applied: false, approvalId: r.id, violations: verdict.violations, decisions, deloadSuggested: deload };
     }
     // Without a professional the engine's own safe defaults apply (increments are already small).
-    const version = await savePlan(uid, next, 'engine:auto');
+    const version = await savePlan(uid, next, cur.source.startsWith('pro:') ? cur.source : 'engine:auto');
     return { applied: true, planVersion: version, decisions, deloadSuggested: deload };
   });
 
@@ -483,6 +485,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const dayFraction=Math.max(0,Math.min(1,(Date.now()-midnight)/86400000));
     const targetRow=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
     const target=targetRow?JSON.parse(targetRow.data) as {kcal?:number;explain?:{bmr?:number;lifeKcal?:number;tdee?:number;trainKcal?:number;adjustPct?:number;lifeFactor?:number}}:null;
+    const assessmentRow=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as {data:string}|undefined;
+    const goal=assessmentRow?(JSON.parse(assessmentRow.data) as {goal?:string}).goal??'general':'general';
     const bmr=Math.max(0,target?.explain?.bmr??0);
     const lifeDaily=Math.max(bmr,target?.explain?.lifeKcal??bmr*1.2);
     const neatProxy=Math.max(0,lifeDaily-bmr);
@@ -503,6 +507,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return {date:day,basalSoFar,neatSoFar,exerciseKcal,burnedSoFar,eaten,
       dailyBmr:Math.round(bmr),dailyNeatProxy:Math.round(neatProxy),
       targetBudget:budget,remaining:budget===null?null:budget-eaten,
+      goal,plannedTdee:Math.round(plannedTdee),goalAdjustment,lifeFactor:target?.explain?.lifeFactor??null,
+      nutritionMethod:'Mifflin-St Jeor',
       complete:!!target,dayFraction,
       note:'El NEAT no se mide: la cifra representa actividad cotidiana y otros gastos incluidos en el factor de vida. El ejercicio y la comida pueden estar incompletos. No es un gasto calórico medido.'};
   });
