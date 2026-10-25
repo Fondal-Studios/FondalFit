@@ -43,7 +43,7 @@ const assessmentSchema = z.object({
   preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
   daysPerWeek: z.number().int().min(1).max(6),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
-  equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar'])),
+  equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar', 'rings'])),
   restrictions: z.array(z.enum(['knee', 'shoulder', 'lower_back', 'hip', 'ankle', 'wrist', 'neck'])),
   redFlags: z.object({ chestPain: z.boolean(), dizziness: z.boolean(), recentSurgery: z.boolean(), pregnancy: z.boolean(), medication: z.boolean() }),
 });
