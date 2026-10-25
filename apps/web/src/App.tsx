@@ -338,7 +338,7 @@ function RestTimer() {
 // Geolocation remains foreground-only on PWAs; explicit permission and manual save.
 type RunSplit = { km: number; seconds: number; pace: number };
 type RunSummary = { date: string; km: number; minutes: number; avgPace: number; kcal: number; weightKg: number; splits: RunSplit[]; tips: string[] };
-function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void }) {
+function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: number) => void }) {
   const [active, setActive] = useState(false);
   const [touchLocked, setTouchLocked] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -451,7 +451,7 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
       'Compará tu ritmo con sesiones de distancia similar, no solamente con tu carrera más rápida.'];
     const result:RunSummary={date:new Date().toISOString(),km:Number(km.toFixed(2)),minutes:Number(mins.toFixed(2)),avgPace:km>0?mins/km:0,kcal,weightKg,splits:allSplits,tips};
     stop();setSummary(result);
-    if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)));
+    if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)),weightKg);
     try {localStorage.setItem('ff_last_run_summary',JSON.stringify(result));} catch {/* optional device storage */}
   };
   const paceGroups=splits.reduce((out,split)=>{const k=split.pace<5?'Rápido (<5:00)':split.pace<6.5?'Medio (5:00–6:30)':'Suave (>6:30)';out[k]=(out[k]||0)+1;return out;},{} as Record<string,number>);
@@ -663,7 +663,7 @@ function Running() {
   return (
     <>
       <MusicCenter />
-      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
+      <GpsRun onDraft={(km,minutes,weightKg)=>setF(prev=>({...prev,km:String(km),weightKg:String(weightKg),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe,weightKg:+f.weightKg });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
         <p className="muted">Registro manual: ingresá kilómetros y velocidad promedio. El tiempo, ritmo y calorías se calculan aproximadamente.</p>
