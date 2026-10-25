@@ -18,7 +18,7 @@ import { registerPro } from './pro';
 const now = () => new Date().toISOString();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const TRIAL_DAYS = 14;
-export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video'] as const;
+export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video', 'public_ranking'] as const;
 
 interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null; pro_enabled: number; mode: string | null; last_seen_at: string | null; pro_code: string | null }
 
