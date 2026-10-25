@@ -28,7 +28,7 @@ const assessmentSchema = z.object({
   goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid']),
   secondaryGoals: z.array(z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid'])).max(3).optional(),
   targetDescription: z.string().trim().max(200).optional(),
-  targetDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).optional(),
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   sessionMinutes: z.number().int().min(20).max(120).optional(),
   preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
   daysPerWeek: z.number().int().min(1).max(6),
