@@ -112,7 +112,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           {tab === 'approvals' && <ProApprovals />}
           {tab === 'rankings' && <WeeklyRankings />}
           {tab === 'settings' && <>{!isPro && <BackToMore go={go} />}<Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onWizard={() => go('wizard')} /></>}
-          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{t(NAV[k]!)}</button>)}</nav>
+          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{k==='rankings'?'Ranking':t(NAV[k]!)}</button>)}</nav>
         </Suspense>
       )}
     </>
