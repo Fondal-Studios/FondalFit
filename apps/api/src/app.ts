@@ -216,10 +216,12 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     await db.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at').run(uid, JSON.stringify(b.profile), now());
     const safety = screenSafety(b as unknown as AssessmentInput);
     if (safety.status === 'refer') { await audit(uid, uid, 'assessment:referral'); return { referral: true, reasons: safety.reasons }; }
-    const plan = generatePlan(b as unknown as AssessmentInput);
-    const version = await savePlan(uid, plan, 'engine');
-    const target = await saveTarget(uid, b);
-    return { referral: false, planVersion: version, plan, target };
+    const previous=await latestPlan(uid);
+    const professionalPlan=previous?.source.startsWith('pro:')??false;
+    const plan=professionalPlan ? JSON.parse(previous!.data) as Plan : generatePlan(b as unknown as AssessmentInput);
+    const version=professionalPlan ? previous!.version : await savePlan(uid,plan,'engine');
+    const target=await saveTarget(uid,b);
+    return { referral:false,planVersion:version,plan,target,professionalPlanPreserved:professionalPlan };
   });
 
   /** Latest answers, to edit the plan without starting over. */
