@@ -1,3 +1,4 @@
+import {CustomBlocks} from './ActivityBlocks';
 import { Bar, Loading, useLoad, useT, type Me } from '../ctx';
 
 export function Home({ me, go }: { me: Me; go: (tab: string) => void }) {
@@ -20,6 +21,7 @@ export function Home({ me, go }: { me: Me; go: (tab: string) => void }) {
     <>
       <h2>{t('hi')}, {me.name}</h2>
       <DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/>
+      <CustomBlocks onSaved={()=>{daily.reload();}}/>
       <div className="card">
         <p className="muted">{(daily.data?.activities.length??0)>0?'Actividad registrada hoy · Próxima sugerencia opcional':t('nextSession')}</p>
         <h3>{next.name} · {next.kind === 'cardio' && next.cardio ? `${t(next.cardio.modality)} · ${t('ct_' + next.cardio.type)} · ${next.cardio.durationMin} ${t('minutes_short')}` : `${next.items.length} ${t('ex_count')}`}</h3>
