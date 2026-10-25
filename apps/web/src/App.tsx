@@ -39,7 +39,7 @@ export function App() {
   return (
     <LangCtx.Provider value={ctx}>
       <main>
-        {me ? <Shell me={me} refresh={refresh} onLang={changeLang} onLogout={() => { setToken(null); setMe(null); }} /> : <Auth lang={lang} onLang={changeLang} onDone={refresh} />}
+        {me ? <Shell key={me.mode} me={me} refresh={refresh} onLang={changeLang} onLogout={() => { setToken(null); setMe(null); }} /> : <Auth lang={lang} onLang={changeLang} onDone={refresh} />}
         <p className="muted small">{t('disclaimer')}</p>
       </main>
     </LangCtx.Provider>
@@ -86,7 +86,19 @@ const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '
 
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
-  const isPro = me.role === 'pro';
+  const isPro = me.mode === 'pro';
+  const [switching,setSwitching]=useState(false);
+  const [modeError,setModeError]=useState('');
+  const switchMode=async()=>{
+    if(switching)return;
+    setSwitching(true);setModeError('');
+    try{
+      if(!isPro&&!me.canPro)await api('POST','/api/me/pro');
+      await api('POST','/api/me/mode',{mode:isPro?'athlete':'pro'});
+      await refresh();
+    }catch{setModeError('No se pudo cambiar de interfaz. Reintentá.');}
+    finally{setSwitching(false);}
+  };
   const tabs = isPro ? PRO_TABS : ATHLETE_TABS;
   const [tab, setTab] = useState(tabs[0]!);
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
@@ -95,7 +107,8 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
   const wizard = tab === 'wizard';
   return (
     <>
-      <header className="top"><h1>{t('app')}</h1><button onClick={onLogout}>{t('logout')}</button></header>
+      <header className="top"><div><h1>{t('app')}</h1><small className="mode-label">{isPro?'Modo profesional':'Modo deportista'}</small></div><div className="mode-actions"><button className="mode-switch" type="button" disabled={switching} onClick={()=>void switchMode()} aria-label={isPro?'Cambiar a deportista':'Cambiar a profesional'}>{switching?'Cambiando…':isPro?'⇄ Soy deportista':'⇄ Soy profesional'}</button><button onClick={onLogout}>{t('logout')}</button></div></header>
+      {modeError&&<p className="warn" role="alert">{modeError}</p>}
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<p className="muted" role="status">{t('loading')}</p>}>
           {wizard && <Wizard onDone={() => go('train')} onCancel={() => go('home')} />}
