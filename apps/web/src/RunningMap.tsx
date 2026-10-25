@@ -29,12 +29,14 @@ export function RunningMap({points,gap}:{points:GPSPoint[];gap?:{from:GPSPoint;t
   if(y>=0&&y<n)tiles.push({x:(x%n+n)%n,y,left:x*256-center.x+width/2,top:y*256-center.y+height/2});
  }
  const xy=(p:GPSPoint)=>{const v=mercator(p,zoom);return [v.x-center.x+width/2,v.y-center.y+height/2] as const;};
- const route=points.map(p=>xy(p).join(',')).join(' ');
+ const segments=points.reduce<GPSPoint[][]>((arr,p)=>{const last=arr[arr.length-1];if(!last||!last.length||p.at-last[last.length-1]!.at>30000)arr.push([p]);else last.push(p);return arr;},[]);
+ const uncertainPairs=points.slice(1).flatMap((p,i)=>p.at-points[i]!.at>30000?[{from:points[i]!,to:p}]:[]);
  const missing=gap?{a:xy(gap.from),b:xy(gap.to)}:null;
  return <div className="running-map" role="img" aria-label="Mapa cartográfico del trayecto aproximado"><div className="running-map-tiles">
   {tiles.map(t=><img key={t.x+'-'+t.y} src={`https://tile.openstreetmap.org/${zoom}/${t.x}/${t.y}.png`} alt="" loading="lazy" draggable={false} style={{left:t.left+'px',top:t.top+'px'} as CSSProperties}/>)}
   <svg viewBox={`0 0 ${width} ${height}`} aria-hidden="true" preserveAspectRatio="none">
-    {points.length>1&&<polyline points={route} fill="none" stroke="#2d9547" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>}
+    {segments.filter(segment=>segment.length>1).map((segment,i)=><polyline key={i} points={segment.map(p=>xy(p).join(',')).join(' ')} fill="none" stroke="#2d9547" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>)}
+    {uncertainPairs.map((pair,i)=><line key={'gap-'+i} x1={xy(pair.from)[0]} y1={xy(pair.from)[1]} x2={xy(pair.to)[0]} y2={xy(pair.to)[1]} stroke="#b9762a" strokeWidth="3" strokeDasharray="7 5"/>)}
     {missing&&<line x1={missing.a[0]} y1={missing.a[1]} x2={missing.b[0]} y2={missing.b[1]} stroke="#b9762a" strokeWidth="3" strokeDasharray="7 5"/>}
     {points.length>0&&<circle cx={xy(points[points.length-1]!)[0]} cy={xy(points[points.length-1]!)[1]} r="6" fill="#1750b7" stroke="white" strokeWidth="2"/>}
   </svg>
