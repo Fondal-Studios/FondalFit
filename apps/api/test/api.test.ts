@@ -665,6 +665,16 @@ describe('admin telemetry', () => {
   });
 });
 
+describe('weekly ranking opt-in',()=>{
+ it('requires authentication and keeps non-participants private',async()=>{
+   const anon=await call('GET','/api/rankings/weekly?metric=run_distance');
+   expect(anon.status).toBe(401);
+   const {t}=await athleteWithPlan();
+   const result=await call('GET','/api/rankings/weekly?metric=run_distance',t);
+   expect(result.status).toBe(200);
+   expect(result.body.entries).toEqual([]);
+ });
+});
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();

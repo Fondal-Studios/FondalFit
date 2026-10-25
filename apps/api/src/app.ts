@@ -22,7 +22,7 @@ import { registerMemory, loadMemory, saveMemory, extractMemoryTags, TONE_PROMPT 
 const now = () => new Date().toISOString();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const TRIAL_DAYS = 14;
-export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video'] as const;
+export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video', 'public_ranking'] as const;
 
 interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null; pro_enabled: number; mode: string | null; last_seen_at: string | null; pro_code: string | null }
 
@@ -562,6 +562,40 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return gamification([...byDay.values()], rec);
   });
 
+
+  /* Weekly sports leaderboards: opt-in only, and no calorie/volume-grinding rewards. */
+  app.get('/api/rankings/weekly',{preHandler:auth},async(req,reply)=>{
+    const q=parse(z.object({metric:z.enum(['strength','run_distance','run_pace','sprint_100m','sessions']).default('run_distance')}),req.query,reply);
+    if(!q)return;
+    const start=new Date();start.setUTCHours(0,0,0,0);start.setUTCDate(start.getUTCDate()-((start.getUTCDay()+6)%7));
+    const from=start.toISOString(),end=new Date(start.getTime()+7*86400000).toISOString();
+    const consentRows=await db.prepare("SELECT user_id FROM consents WHERE scope='public_ranking' AND granted=1").all() as {user_id:number}[];
+    const allowed=new Set(consentRows.map(r=>r.user_id));
+    if(!allowed.size)return {metric:q.metric,weekStart:from.slice(0,10),entries:[],note:'Los rankings son voluntarios. Activá la participación en Perfil.'};
+    const names=await db.prepare("SELECT id,name FROM users WHERE role='athlete'").all() as {id:number;name:string}[];
+    const users=new Map(names.filter(u=>allowed.has(u.id)).map(u=>[u.id,u.name]));
+    const scores=new Map<number,number>();
+    const record=(id:number,val:number)=>{if(users.has(id)&&Number.isFinite(val)&&val>0)scores.set(id,q.metric==='sessions'||q.metric==='run_distance'?(scores.get(id)??0)+val:Math.max(scores.get(id)??0,val));};
+    if(q.metric==='strength'||q.metric==='sessions'){
+      const workouts=await db.prepare('SELECT user_id,data FROM workouts WHERE created_at>=? AND created_at<?').all(from,end) as {user_id:number;data:string}[];
+      for(const w of workouts){
+        if(q.metric==='sessions'){record(w.user_id,1);continue;}
+        const data=JSON.parse(w.data) as {items?:{sets?:{weight?:number;reps?:number}[]}[]};
+        const max=Math.max(0,...(data.items??[]).flatMap(i=>(i.sets??[]).filter(x=>(x.reps??0)>=1&&(x.reps??0)<=12).map(x=>Number(x.weight)||0)));
+        record(w.user_id,max);
+      }
+    }else{
+      const activities=await db.prepare("SELECT user_id,distance_m,duration_sec,sport FROM activities WHERE started_at>=? AND started_at<? AND sport='run'").all(from,end) as {user_id:number;distance_m:number;duration_sec:number;sport:string}[];
+      for(const a of activities){
+        if(q.metric==='run_distance')record(a.user_id,a.distance_m/1000);
+        if(q.metric==='run_pace'&&a.distance_m>=1000&&a.duration_sec>=120)record(a.user_id,a.distance_m/a.duration_sec*3.6);
+        if(q.metric==='sprint_100m'&&a.distance_m>=95&&a.distance_m<=105&&a.duration_sec>=9&&a.duration_sec<=120)record(a.user_id,100/a.duration_sec*3.6);
+      }
+    }
+    const entries=[...scores].sort((a,b)=>b[1]-a[1]).slice(0,30).map(([id,value],index)=>({rank:index+1,name:users.get(id),value:Number(value.toFixed(2)),self:id===req.user!.id}));
+    return {metric:q.metric,weekStart:from.slice(0,10),entries,note:q.metric==='strength'?'Mejor carga externa registrada (kg), no 1RM calculada.':q.metric==='sprint_100m'?'Solo registros de aproximadamente 100 m; GPS de teléfono no es cronometraje certificado.':'Resultados semanales de participantes voluntarios.'};
+  });
+  app.get('/api/exercises',{preHandler:auth},async()=>CATALOG.map(e=>({id:e.id,name:e.id.replaceAll('_',' ')})));
 
   /* ---------------- Professional links ---------------- */
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {

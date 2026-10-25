@@ -2,9 +2,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { api, hasToken, setToken } from './api';
 import { initialLang, LangCtx, LangPicker, LANGS, useT, type Lang, type Me } from './ctx';
 import { translate } from './i18n';
-import { Consents, ProApprovals, ProAthletes, Progress, Recovery, Settings } from './pages/Legacy';
+import { Consents, ProApprovals, Progress, Recovery, Settings } from './pages/Legacy';
 import { Home } from './pages/Home';
 import { More } from './pages/More';
+import {ProfessionalHub} from './pages/ProfessionalHub';
+import {WeeklyRankings} from './pages/WeeklyRankings';
 
 // Heavier screens load on demand: faster first paint on the free server and slow phones.
 const Wizard = lazy(() => import('./pages/Wizard').then((m) => ({ default: m.Wizard })));
@@ -77,10 +79,10 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 }
 
 const ATHLETE_TABS = ['home', 'train', 'cardio', 'food', 'more'];
-const MORE_TABS = ['coach', 'science', 'recovery', 'progress', 'settings'];
-const PRO_TABS = ['athletes', 'approvals', 'settings'];
-const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', athletes: 'athletes', approvals: 'approvals', settings: 'settings' };
-const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', athletes: '👥', approvals: '✅', settings: '⚙️' };
+const MORE_TABS = ['coach', 'science', 'recovery', 'progress', 'rankings', 'settings'];
+const PRO_TABS = ['athletes', 'approvals', 'rankings', 'settings'];
+const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', athletes: 'athletes', approvals: 'approvals', settings: 'settings', rankings:'rankings' };
+const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', athletes: '👥', approvals: '✅', settings: '⚙️',rankings:'🏆' };
 
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
@@ -106,10 +108,11 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           {tab === 'science' && <><BackToMore go={go} /><Science /></>}
           {tab === 'recovery' && <><BackToMore go={go} /><Recovery /></>}
           {tab === 'progress' && <><BackToMore go={go} /><Progress /></>}
-          {tab === 'athletes' && <ProAthletes />}
+          {tab === 'athletes' && <ProfessionalHub />}
+          {tab === 'rankings' && <WeeklyRankings />}
           {tab === 'approvals' && <ProApprovals />}
           {tab === 'settings' && <>{!isPro && <BackToMore go={go} />}<Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onWizard={() => go('wizard')} /></>}
-          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{t(NAV[k]!)}</button>)}</nav>
+          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{k==='rankings'?'Ranking':t(NAV[k]!)}</button>)}</nav>
         </Suspense>
       )}
     </>
