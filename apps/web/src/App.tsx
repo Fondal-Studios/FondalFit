@@ -611,6 +611,43 @@ function Development({ isAdmin }: { isAdmin: boolean }) {
   </section>;
 }
 
+type EnergyDay={date:string;intake:number;runKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];provisional:boolean};
+type EnergyCalendar={month:string;target:{kcal?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
+const ENERGY_LABELS:Record<string,string>={red:'Superávit alto',orange:'Superávit leve',yellow:'Cerca del mantenimiento',green:'Déficit moderado estimado',blue:'Déficit alto: revisar',violet:'Déficit muy alto: atención',unknown:'Sin estimación'};
+function DailyEnergyCalendar(){
+ const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+ const [month,setMonth]=useState(today.slice(0,7));
+ const [selected,setSelected]=useState(today);
+ const [result,setResult]=useState<EnergyCalendar|null>(null);
+ const [error,setError]=useState('');
+ const refresh=useCallback(()=>{setError('');api<EnergyCalendar>('GET',`/api/energy/calendar?month=${encodeURIComponent(month)}&timezoneOffset=${new Date().getTimezoneOffset()}`).then(setResult).catch(()=>setError('No se pudo cargar el calendario del balance energético.'));},[month]);
+ useEffect(()=>{refresh();},[refresh]);
+ const days=result?.days??[],byDate=new Map(days.map(d=>[d.date,d]));
+ const parts=month.split('-').map(Number);const year=parts[0]??now.getFullYear(),m=parts[1]??now.getMonth()+1;
+ const daysInMonth=new Date(year,m,0).getDate(),firstOffset=(new Date(year,m-1,1).getDay()+6)%7;
+ const entries=Array.from({length:firstOffset+daysInMonth},(_,i)=>i<firstOffset?'':month+'-'+String(i-firstOffset+1).padStart(2,'0'));
+ const chosen=byDate.get(selected);
+ const move=(n:number)=>{const next=new Date(year,m-1+n,1);const value=[next.getFullYear(),String(next.getMonth()+1).padStart(2,'0')].join('-');setMonth(value);setSelected(value+'-01');};
+ return <section className="card energy-calendar">
+   <div className="eyebrow">ENERGÍA Y ACTIVIDAD</div><h2>Mi balance diario</h2>
+   <p className="muted">Sumá comidas y carreras. Los colores representan estimaciones provisionales, nunca un diagnóstico ni una meta de restricción.</p>
+   <div className="energy-month"><button onClick={()=>move(-1)} aria-label="Mes anterior">←</button><strong>{new Date(year,m-1,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'})}</strong><button onClick={()=>move(1)} aria-label="Mes siguiente">→</button></div>
+   <div className="energy-calendar-grid">{['L','M','M','J','V','S','D'].map((d,i)=><span className="weekday" key={i}>{d}</span>)}
+     {entries.map((date,i)=>date?<button key={date} className={'energy-day '+(byDate.get(date)?.band??'empty')+(selected===date?' selected':'')} aria-pressed={selected===date} onClick={()=>setSelected(date)}><span>{Number(date.slice(-2))}</span>{byDate.has(date)&&<span className="day-dot" aria-hidden="true"/>}</button>:<span key={'blank-'+i}/>)}</div>
+   {error&&<p role="alert" className="warn">{error}</p>}
+   {!result?.target&&<p className="warn">Configurá tu objetivo de calorías en Nutrición para ver el balance estimado.</p>}
+   <div className="energy-legend">{[['red','Superávit'],['orange','Superávit leve'],['yellow','Equilibrio'],['green','Déficit moderado'],['blue','Déficit alto'],['violet','Déficit muy alto']].map(([color,label])=><span key={color}><i className={color}/>{label}</span>)}</div>
+   <div className="energy-day-summary"><h3>{new Date(selected+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</h3>
+    {chosen?<><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
+      <div className="energy-figures"><div><strong>{chosen.intake}</strong><small>kcal ingeridas</small></div><div><strong>{chosen.runKcal}</strong><small>kcal por carreras (aprox.)</small></div><div><strong>{chosen.balance===null?'—':(chosen.balance>0?'+':'')+chosen.balance}</strong><small>balance diario estimado, kcal</small></div></div>
+      <h4>Comidas</h4>{chosen.meals.length?chosen.meals.map((meal,i)=><p key={i}>{meal.name} · ≈{Math.round(meal.kcal)} kcal</p>):<p className="muted">No se registraron comidas.</p>}
+      <h4>Carreras</h4>{chosen.runs.length?chosen.runs.map((run,i)=><p key={i}>{run.km.toFixed(2)} km · ≈{Math.round(run.kcal)} kcal</p>):<p className="muted">No hay carreras con peso registrado para estimar energía.</p>}
+      <p className="muted">Balance provisional: no asumas que el registro representa todas las comidas del día.</p>
+     </>:<p className="muted">Todavía no hay registros para esta fecha.</p>}
+   </div><details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Comparación orientativa entre alimentos registrados y gasto diario estimado, sumando la carrera. El cálculo puede contar dos veces parte del ejercicio si tu factor de actividad ya lo incluye. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
+ </section>;
+}
+
 function Running() {
   const t = useT();
   const [d, setD] = useState<any>(null);
