@@ -168,11 +168,13 @@ function Training() {
   const [session, setSession] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [allSessions, setAllSessions] = useState(false);
+  const [exerciseNames,setExerciseNames]=useState<Record<string,string>>({});
+  useEffect(()=>{api<{id:string;name:string}[]>('GET','/api/exercises').then(items=>setExerciseNames(Object.fromEntries(items.map(i=>[i.id,i.name])))).catch(()=>{});},[]);
   const load = useCallback(() => api<PlanRes>('GET', '/api/plan').then(setRes).catch(() => setMsg('No pudimos cargar tu plan. Revisá tu conexión.')), []);
   useEffect(() => { load(); }, [load]);
   if (!res) return <div className="card"><p>{msg || 'Cargando tu entrenamiento…'}</p></div>;
   if (!res.plan) return <Assessment onDone={load} />;
-  if (session !== null) return <Session day={res.plan.days[session]!} index={session} onCancel={() => setSession(null)} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
+  if (session !== null) return <Session exerciseNames={exerciseNames} day={res.plan.days[session]!} index={session} onCancel={() => setSession(null)} onDone={(m) => { setMsg(m); setSession(null); load(); }} />;
   const recommended = Math.min(res.plan.days.length - 1, res.recommendedDay ?? 0);
   const days = res.plan.days.map((day, index) => ({ day, index })).filter(({index}) => allSessions || index === recommended);
   return (
@@ -184,7 +186,7 @@ function Training() {
         <h2>{day.name}</h2>
         <p className="muted">{day.items.length} ejercicios · Preparada según tu evaluación y tus registros.</p>
         {day.run && <p className="run-prescription">Carrera suave: {day.run.minutes} minutos. {day.run.note}</p>}
-        {day.items.map((it) => <div className="exercise-preview" key={it.exerciseId}><strong>{t('ex_' + it.exerciseId)}</strong><span>{it.sets} × {it.repMin}–{it.repMax} · RIR {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></div>)}
+        {day.items.map((it) => <div className="exercise-preview" key={it.exerciseId}><strong>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</strong><span>{it.sets} × {it.repMin}–{it.repMax} · RIR {it.rirTarget}{it.load ? ` · ${it.load} kg` : ''}</span></div>)}
         <button className="primary action-full" onClick={() => setSession(index)}>Empezar sesión →</button>
       </div>)}
     </section>
@@ -280,7 +282,7 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
  </section>;
 }
 
-function Session({ day, index, onDone, onCancel }: { day: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
+function Session({ day, index, onDone, onCancel, exerciseNames }: { exerciseNames: Record<string,string>; day: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }; index: number; onDone: (msg: string) => void; onCancel: () => void }) {
   const t = useT();
   const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
     Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
@@ -302,7 +304,7 @@ function Session({ day, index, onDone, onCancel }: { day: { name: string; items:
       <p className="muted">Registrá tus series. Si volvés al plan antes de finalizar, los datos de esta sesión no se guardan.</p>
       {day.items.map((it) => (
         <div className="card" key={it.exerciseId}>
-          <h3>{t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
+          <h3>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
           {sets[it.exerciseId]!.map((s, i) => (
             <div className="set" key={i}><span>{i + 1}</span>
               <input aria-label={t('weight')} placeholder={t('weight')} inputMode="decimal" value={s.weight} onChange={(e) => set(it.exerciseId, i, 'weight', e.target.value)} />
