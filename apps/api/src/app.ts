@@ -360,7 +360,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.get('/api/energy/calendar', { preHandler: athleteOnly }, async(req,reply)=>{
     const q=parse(z.object({month:z.string().regex(/^\d{4}-\d{2}$/),timezoneOffset:z.coerce.number().int().min(-840).max(840).default(0)}),req.query,reply);
     if(!q)return;
-    const [year,month]=q.month.split('-').map(Number);
+    const parts=q.month.split('-');
+    const year=Number(parts[0]),month=Number(parts[1]);
     if(year<2020||year>2100||month<1||month>12)return reply.code(400).send({error:'invalid_month'});
     const localStart=Date.UTC(year,month-1,1), localEnd=Date.UTC(year,month,1);
     const start=new Date(localStart+q.timezoneOffset*60000).toISOString();
