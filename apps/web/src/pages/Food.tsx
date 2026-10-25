@@ -1,3 +1,4 @@
+import {EnergyCalendar} from './ActivityBlocks';
 import { useState } from 'react';
 import { api } from '../api';
 import { Bar, Loading, useLoad, useT } from '../ctx';
@@ -41,6 +42,7 @@ export function Food({ onWizard }: { onWizard: () => void }) {
 
   return (
     <>
+      <EnergyCalendar/>
       <div className="card">
         <h2>{t('target')}</h2>
         <p className="big">{tg.kcal} {t('kcalShort')}</p>
