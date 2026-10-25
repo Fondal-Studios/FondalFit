@@ -311,6 +311,21 @@ describe('custom activity blocks and energy calendar',()=>{
     expect((await call('GET','/api/energy/calendar?month=2026-20',t)).status).toBe(400);
   });
 });
+describe('home calorie estimate',()=>{
+ it('combines elapsed basal estimate with recorded food and activity',async()=>{
+  const {t}=await athleteWithPlan();
+  const now=new Date().toISOString();
+  await call('POST','/api/nutrition/log',t,{meal:'almuerzo',kcal:600,proteinG:30,carbsG:60,fatG:15,waterMl:200});
+  const run=await call('POST','/api/activities',t,{sport:'run',startedAt:now,durationSec:1200,movingSec:1100,distanceM:3000,avgPaceSecKm:400,elevGainM:15,route:[]});
+  expect(run.status).toBe(200);
+  const response=await call('GET','/api/energy/today?timezoneOffset=0',t);
+  expect(response.status).toBe(200);
+  expect(response.body.eaten).toBe(600);
+  expect(response.body.exerciseKcal).toBe(Math.round(profile.weightKg*3));
+  expect(response.body.burnedSoFar).toBe(response.body.basalSoFar+response.body.neatSoFar+response.body.exerciseKcal);
+  expect(response.body.remaining).toBe(response.body.targetBudget-600);
+ });
+});
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();
