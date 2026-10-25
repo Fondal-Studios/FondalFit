@@ -360,7 +360,7 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
       <button onClick={()=>{stop();if(meters>0&&elapsed>0)onDraft(Number((meters/1000).toFixed(2)),Number((elapsed/60).toFixed(2)));}}>Finalizar y completar registro</button>
     </div>}
     {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla táctil bloqueada">
-      <strong>Toques bloqueados</strong><p>El GPS continúa mientras el navegador esté activo.</p><button className="primary" onClick={()=>setTouchLocked(false)}>Mantener presionado para desbloquear</button>
+      <strong>Toques bloqueados</strong><p>El GPS continúa mientras el navegador esté activo.</p><button className="primary" onClick={()=>setTouchLocked(false)}>Desbloquear toques</button>
       <p className="muted">Este bloqueo no controla el botón físico de suspensión.</p>
     </div>}
   </div>;
