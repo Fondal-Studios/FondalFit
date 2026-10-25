@@ -25,7 +25,12 @@ const limitsSchema = z.object({
   allowAutoDeload: z.boolean(),
 });
 const assessmentSchema = z.object({
-  goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general']),
+  goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid']),
+  secondaryGoals: z.array(z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid'])).max(3).optional(),
+  targetDescription: z.string().trim().max(200).optional(),
+  targetDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).optional(),
+  sessionMinutes: z.number().int().min(20).max(120).optional(),
+  preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
   daysPerWeek: z.number().int().min(1).max(6),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
   equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar'])),
@@ -154,7 +159,9 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
     const p = await latestPlan(req.user!.id);
-    return p ? { version: p.version, source: p.source, plan: JSON.parse(p.data) as Plan } : { plan: null };
+    const last = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(req.user!.id) as { n: number };
+    const plan = p ? JSON.parse(p.data) as Plan : null;
+    return p ? { version: p.version, source: p.source, plan, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
@@ -216,7 +223,20 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       const d = JSON.parse(r.data) as { items: { exerciseId: string; sets: { weight: number; reps: number }[] }[] };
       return { date: r.created_at, dayIndex: r.day_index, volume: d.items.reduce((a, i) => a + i.sets.reduce((s, x) => s + x.weight * x.reps, 0), 0), sets: d.items.reduce((a, i) => a + i.sets.length, 0) };
     });
-    return { sessions, total: sessions.length };
+    const exercises: Record<string, { date: string; weight: number; reps: number; estimated1RM: number }[]> = {};
+    rows.forEach((r) => {
+      const workout = JSON.parse(r.data) as { items: { exerciseId: string; sets: { weight: number; reps: number }[] }[] };
+      for (const item of workout.items) {
+        if (!exercises[item.exerciseId]) exercises[item.exerciseId] = [];
+        const best = item.sets.reduce((max, set) => Math.max(max, set.weight > 0 && set.reps > 0 ? set.weight * (1 + Math.min(set.reps, 15) / 30) : 0), 0);
+        if (best > 0) {
+          const peak = item.sets.reduce((max, set) => set.weight * (1 + Math.min(set.reps, 15) / 30) >= max.weight * (1 + Math.min(max.reps, 15) / 30) ? set : max, { weight: 0, reps: 0 });
+          exercises[item.exerciseId]!.push({ date: r.created_at, weight: peak.weight, reps: peak.reps, estimated1RM: Math.round(best * 10) / 10 });
+        }
+      }
+    });
+    const latestAssessment = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as { data: string } | undefined;
+    return { sessions, total: sessions.length, exercises, goal: latestAssessment ? JSON.parse(latestAssessment.data) : null };
   });
 
   /* ---------------- Nutrition ---------------- */
