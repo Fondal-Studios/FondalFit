@@ -555,7 +555,6 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const consentRows=await db.prepare("SELECT user_id FROM consents WHERE scope='public_ranking' AND granted=1").all() as {user_id:number}[];
     const allowed=new Set(consentRows.map(r=>r.user_id));
     if(!allowed.size)return {metric:q.metric,weekStart:from.slice(0,10),entries:[],note:'Los rankings son voluntarios. Activá la participación en Perfil.'};
-    const ids=[...allowed];
     const names=await db.prepare("SELECT id,name FROM users WHERE role='athlete'").all() as {id:number;name:string}[];
     const users=new Map(names.filter(u=>allowed.has(u.id)).map(u=>[u.id,u.name]));
     const scores=new Map<number,number>();
