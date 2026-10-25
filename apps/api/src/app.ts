@@ -250,7 +250,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.post('/api/workouts', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
     const b = parse(z.object({
-      dayIndex: z.number().int().min(0).max(5),
+      dayIndex: z.number().int().min(0).max(6),
       fatigue: z.number().min(1).max(10).default(5),
       items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
@@ -258,12 +258,12 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const uid = req.user!.id;
     const cur = await latestPlan(uid);
     if (!cur) return reply.code(409).send({ error: 'no_plan' });
-    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
-
     const plan = JSON.parse(cur.data) as Plan;
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
     if (day.kind === 'cardio') return reply.code(400).send({ error: 'cardio_day_use_activities' });
+    if(b.items.some(item=>!day.items.some(p=>p.exerciseId===item.exerciseId)))return reply.code(400).send({error:'unknown_session_exercise'});
+    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
     // Deload weeks, post-break ramps and fixed programs log the work but do not change loads.
     const exp = ((JSON.parse((await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined)?.data ?? '{}') as { experience?: 'beginner' | 'intermediate' | 'advanced' }).experience) ?? 'intermediate';
     const mat = materialize(plan, new Date(), exp);
@@ -297,7 +297,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       return { applied: false, approvalId: r.id, violations: verdict.violations, decisions, deloadSuggested: deload };
     }
     // Without a professional the engine's own safe defaults apply (increments are already small).
-    const version = await savePlan(uid, next, 'engine:auto');
+    const version = await savePlan(uid, next, cur.source.startsWith('pro:') ? cur.source : 'engine:auto');
     return { applied: true, planVersion: version, decisions, deloadSuggested: deload };
   });
 
