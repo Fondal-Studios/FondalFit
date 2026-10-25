@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
   menusForDay, dayNumberOf, supplementAdvice, simplifyRoute, type DietFlag,
-  gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
+  CATALOG, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
@@ -579,6 +579,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const entries=[...scores].sort((a,b)=>b[1]-a[1]).slice(0,30).map(([id,value],index)=>({rank:index+1,name:users.get(id),value:Number(value.toFixed(2)),self:id===req.user!.id}));
     return {metric:q.metric,weekStart:from.slice(0,10),entries,note:q.metric==='strength'?'Mejor carga externa registrada (kg), no 1RM calculada.':q.metric==='sprint_100m'?'Solo registros de aproximadamente 100 m; GPS de teléfono no es cronometraje certificado.':'Resultados semanales de participantes voluntarios.'};
   });
+  app.get('/api/exercises',{preHandler:auth},async()=>CATALOG.map(e=>({id:e.id,name:e.id.replaceAll('_',' ')})));
+
   /* ---------------- Professional links ---------------- */
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {
     const b = parse(z.object({ email: z.string().email(), limits: limitsSchema.optional() }), req.body, reply);
