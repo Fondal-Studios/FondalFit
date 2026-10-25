@@ -67,3 +67,29 @@ nav.tabs button.on {background:#22372c;color:var(--accent);font-weight:700}
   .set input {min-width:0;padding:8px 6px}
 }
 @media (prefers-reduced-motion: reduce) { * {scroll-behavior:auto!important;transition:none!important} }
+
+/* Integrated goals → workout → measured progress (blocks 2–4) */
+.onboarding {max-width:720px;margin:0 auto 24px;padding:24px;}
+.onboarding h2 {font-size:1.45rem;line-height:1.25;margin:20px 0 12px;}
+.onboarding .chips {margin:8px 0 16px;}
+.onboarding label {margin-top:18px;}
+.wizard-track {height:7px;border-radius:10px;overflow:hidden;background:#293a31;margin-top:14px;}
+.wizard-track span {display:block;height:100%;background:#9af1aa;border-radius:10px;transition:width .2s;}
+.wizard-actions {display:flex;gap:12px;justify-content:flex-end;margin-top:28px;}
+.wizard-actions button {flex:1;max-width:240px;}
+.workout-card {border-color:#315c40;}
+.workout-card .eyebrow {color:var(--accent);font-size:.69rem;letter-spacing:.12em;font-weight:750;}
+.workout-card h2 {font-size:1.4rem;}
+.plan-overview {justify-content:space-between;align-items:center;}
+.plan-overview > * {flex:none;}
+.plan-overview button {font-size:.84rem;padding:9px;min-height:40px;}
+.exercise-preview {display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:5px 12px;padding:12px 0;border-bottom:1px solid var(--line);}
+.exercise-preview strong {font-size:.94rem;}
+.exercise-preview span {color:var(--muted);font-size:.82rem;}
+.action-full {display:block;width:100%;margin-top:18px;}
+.progress-dashboard .card {margin:15px 0;}
+.trend-chart {background:#101a1a;border:1px solid var(--line);border-radius:13px;padding:14px;margin-top:16px;}
+.trend-chart svg {display:block;width:100%;height:auto;max-height:245px;}
+.trend-chart .chart-heading {display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;}
+.chart-heading span {color:var(--accent);font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums;}
+@media(max-width:420px){.onboarding{padding:17px}.plan-overview{align-items:flex-start}.plan-overview button{flex:none;max-width:50%}}
