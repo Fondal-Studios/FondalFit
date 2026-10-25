@@ -120,7 +120,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
           </>}
           <nav className="tabs" aria-label="Navegación principal">
-            {(isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎']] as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
+            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
           </nav>
         </>
       )}
@@ -225,7 +225,7 @@ function Assessment({ onDone }: { onDone: () => void }) {
     </>}
     {step === 2 && <>
       <label>{t('equipment')}</label><Chips multi options={['none','dumbbells','barbell','bands','bar','machines']} value={a.equipment} onChange={v=>setA({...a,equipment:v})}/>
-      <label>Actividades de interés</label><div className="chips">{[['strength','Fuerza'],['running','Running'],['mobility','Movilidad']] as [string,string][]).map(([key,label])=><button type="button" key={key} className={'chip'+(a.preferredActivities.includes(key)?' on':'')} aria-pressed={a.preferredActivities.includes(key)} onClick={()=>setA({...a,preferredActivities:a.preferredActivities.includes(key)?a.preferredActivities.filter(x=>x!==key):[...a.preferredActivities,key]})}>{label}</button>)}</div>
+      <label>Actividades de interés</label><div className="chips">{([['strength','Fuerza'],['running','Running'],['mobility','Movilidad']] as [string,string][]).map(([key,label])=><button type="button" key={key} className={'chip'+(a.preferredActivities.includes(key)?' on':'')} aria-pressed={a.preferredActivities.includes(key)} onClick={()=>setA({...a,preferredActivities:a.preferredActivities.includes(key)?a.preferredActivities.filter(x=>x!==key):[...a.preferredActivities,key]})}>{label}</button>)}</div>
       <label>{t('restrictions')}</label><Chips multi options={['knee','shoulder','lower_back','hip','ankle','wrist','neck']} value={a.restrictions} onChange={v=>setA({...a,restrictions:v})}/>
     </>}
     {step === 3 && <>
