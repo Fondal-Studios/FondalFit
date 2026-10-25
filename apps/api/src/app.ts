@@ -28,6 +28,16 @@ const assessmentSchema = z.object({
   goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid']),
   secondaryGoals: z.array(z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid'])).max(3).optional(),
   targetDescription: z.string().trim().max(200).optional(),
+  specificGoals: z.array(z.string().trim().min(2).max(100)).max(12).optional(),
+  baseline: z.object({
+    age:z.number().int().min(13).max(100).optional(),weightKg:z.number().min(25).max(350).optional(),heightCm:z.number().min(100).max(240).optional(),
+    weeklyStrengthSessions:z.number().int().min(0).max(14).optional(),weeklyRunKm:z.number().min(0).max(300).optional(),
+    longestComfortableRunKm:z.number().min(0).max(100).optional(),comfortableRunPaceMinKm:z.number().min(2).max(20).optional(),
+    walkingMinutes:z.number().min(0).max(240).optional(),pushUps:z.number().int().min(0).max(200).optional(),sitToStand30s:z.number().int().min(0).max(100).optional(),
+    restingHeartRate:z.number().min(35).max(180).optional(),perceivedFitness:z.number().int().min(1).max(10).optional(),
+    activityMinutesPerWeek:z.number().min(0).max(2000).optional(),sleepHours:z.number().min(0).max(16).optional(),recovery:z.number().int().min(1).max(10).optional()
+  }).optional(),
+  trainingContext:z.object({strengthDays:z.number().int().min(0).max(7).optional(),cardioDays:z.number().int().min(0).max(7).optional(),recentBreakWeeks:z.number().min(0).max(520).optional(),confidence:z.number().int().min(1).max(10).optional(),preferredReassessmentWeeks:z.number().int().min(2).max(24).optional()}).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   sessionMinutes: z.number().int().min(20).max(120).optional(),
   preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
@@ -152,9 +162,20 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     await db.prepare('INSERT INTO assessments(user_id,data,created_at) VALUES(?,?,?)').run(req.user!.id, JSON.stringify(b), now());
     const safety = screenSafety(b as AssessmentInput);
     if (safety.status === 'refer') { await audit(req.user!.id, req.user!.id, 'assessment:referral'); return { referral: true, reasons: safety.reasons }; }
+    const current = await latestPlan(req.user!.id);
+    if (current?.source.startsWith('pro:')) {
+      await audit(req.user!.id, req.user!.id, 'assessment:professional_plan_preserved');
+      return { referral:false, professionalPlanPreserved:true, planVersion:current.version };
+    }
     const plan = generatePlan(b as AssessmentInput);
     const version = await savePlan(req.user!.id, plan, 'engine');
+    await audit(req.user!.id, req.user!.id, 'assessment:completed');
     return { referral: false, planVersion: version, plan };
+  });
+
+  app.get('/api/assessments', { preHandler: athleteOnly }, async(req)=>{
+    const rows=await db.prepare('SELECT data,created_at FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 24').all(req.user!.id) as {data:string;created_at:string}[];
+    return rows.map(r=>({date:r.created_at,assessment:JSON.parse(r.data)}));
   });
 
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
