@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {api} from '../api';
 type Block={name:string;kind:'calisthenics'|'strength'|'functional'|'walk';minutes:number;intensity:'light'|'moderate'|'vigorous'};
 export function CustomBlocks({onSaved}:{onSaved?:()=>void}){
@@ -24,8 +24,7 @@ export function EnergyCalendar(){
  const [data,setData]=useState<{days:Day[];baselineKcal:number}|null>(null),[selected,setSelected]=useState(d.toLocaleDateString('sv-SE'));
  const [error,setError]=useState('');
  const fetchMonth=async()=>{try{const r=await api('GET','/api/energy/calendar?month='+month+'&timezoneOffset='+new Date().getTimezoneOffset()) as {days:Day[];baselineKcal:number};setData(r);setError('');}catch{setError('No se pudo cargar el calendario.');}};
- importEffect();
- function importEffect(){/* Rendered explicitly through refresh button; avoid invoking effects conditionally. */}
+ useEffect(()=>{void fetchMonth();},[month]);
  return <div className="card"><h3>Calendario de energía y actividad</h3><label>Mes<input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></label><button onClick={()=>void fetchMonth()}>Mostrar calendario</button>{error&&<p role="alert">{error}</p>}
  {data&&<><div className="energy-dates">{data.days.map(day=><button key={day.date} className={'energy-date '+day.band} onClick={()=>setSelected(day.date)}>{day.date.slice(-2)}</button>)}</div><div className="energy-legend">{Object.entries(labels).filter(([key])=>key!=='unknown').map(([key,value])=><span key={key}><i className={key}/>{value}</span>)}</div>
  {data.days.filter(day=>day.date===selected).map(day=><section key={day.date}><h4>{day.date}</h4><p>{labels[day.band]} · Consumidas {Math.round(day.intake)} kcal · Actividad ≈{Math.round(day.exerciseKcal)} kcal · Gasto estimado ≈{day.expense} kcal · Balance {day.balance===null?'sin datos':day.balance+' kcal'}</p>{day.meals.map((m,i)=><p key={i}>{m.name} · {m.kcal} kcal</p>)}{day.sessions.map((a,i)=><p key={i}>{a}</p>)}</section>)}</>}
