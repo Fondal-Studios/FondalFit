@@ -105,3 +105,14 @@ nav.tabs button.on {background:#22372c;color:var(--accent);font-weight:700}
 .gps-touch-lock button {min-height:70px;min-width:220px;}
 textarea {display:block;width:100%;min-height:92px;background:#0f1317;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit;resize:vertical}
 .coach-answer {white-space:pre-wrap;margin-top:16px;padding:16px;background:#183128;border:1px solid #3a6946;border-radius:14px;line-height:1.6}
+
+/* Learning and nutrition beta */
+.coach-modal {position:fixed;z-index:60;inset:0;overflow:auto;background:#0b1013;padding:18px max(18px,calc((100vw - 740px)/2));}
+.coach-modal .card{margin-bottom:50px}
+.learning-tips details,.target-editor{border-top:1px solid var(--line);padding:12px 0}
+.learning-tips summary,.card summary{cursor:pointer;font-weight:650;color:var(--accent);padding:8px 0}
+.learning-tips p{line-height:1.6;color:var(--muted)}
+.nutrition-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.nutrition-fields label{margin:0}
+.nutrition-fields input{margin-top:6px}
+@media(max-width:380px){.nutrition-fields{grid-template-columns:1fr}}
