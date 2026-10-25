@@ -99,3 +99,15 @@ nav.tabs button span { display:block; font-size:1.2rem; line-height:1 }
 .pro-template,.ranking-entry{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:12px 0}
 .ranking-entry.self{background:#163b28;border-radius:10px;padding:12px}
 @media(max-width:420px){.pro-input-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Dual-mode header and professional-first navigation */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mode-label{display:block;color:var(--muted);font-size:.72rem}
+.mode-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.mode-switch{background:#1c3d2c;border:1px solid #65b884;color:#e9fff0;font-weight:700;min-height:42px}
+.pro-workflow-intro{position:relative}
+.pro-workflow-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:13px}
+.pro-workflow-tabs button{padding:10px 5px;font-size:.83rem;min-width:0}
+.pro-workflow-tabs button.on,.professional-hub button.on{background:#22583b;border-color:#70d5a0;color:#eaffef}
+.linked-plan{border-color:#548c67;background:#172b20}
+@media(max-width:420px){.top h1{font-size:1.15rem}.mode-switch{font-size:.75rem;padding:8px}.pro-workflow-tabs button{font-size:.75rem}}
