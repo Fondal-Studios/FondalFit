@@ -1,13 +1,13 @@
 export type Goal = 'hypertrophy' | 'strength' | 'recomposition' | 'fat_loss' | 'endurance' | 'vo2max' | 'general' | 'mobility';
 export type Equipment = 'none' | 'dumbbells' | 'barbell' | 'machines' | 'bands' | 'bar';
 export type Area = 'knee' | 'shoulder' | 'lower_back' | 'hip' | 'ankle' | 'wrist' | 'neck';
-export type Muscle = 'quads' | 'hamstrings' | 'glutes' | 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'core' | 'calves';
+export type Muscle = 'quads' | 'hamstrings' | 'glutes' | 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'core' | 'calves' | 'full';
 export type CardioModality = 'run' | 'bike';
 export type Experience = 'beginner' | 'intermediate' | 'advanced';
 
 export interface Exercise {
   id: string;
-  pattern: 'squat' | 'hinge' | 'push' | 'pull' | 'core' | 'lunge' | 'mobility' | 'carry' | 'isolation';
+  pattern: 'squat' | 'hinge' | 'push' | 'pull' | 'core' | 'lunge' | 'mobility' | 'carry' | 'isolation' | 'conditioning';
   /** primary muscle trained; drives weekly volume accounting */
   muscle: Muscle;
   equipment: Equipment[];
@@ -15,6 +15,11 @@ export interface Exercise {
   stresses: Area[];
   /** load increment in kg for external-load exercises; 0 = bodyweight */
   increment: number;
+  /** 1 = beginner-friendly, 2 = intermediate, 3 = advanced/skill */
+  level: 1 | 2 | 3;
+  secondary?: Muscle[];
+  /** performed for time: the rep numbers are seconds (planks, holds, stretches) */
+  timed?: boolean;
 }
 
 export interface Prescription {
@@ -35,8 +40,17 @@ export interface CardioSession {
   intervals?: { reps: number; workSec: number; restSec: number };
 }
 
-export interface PlanDay { name: string; kind?: 'strength' | 'cardio'; items: Prescription[]; cardio?: CardioSession }
-export interface Plan { engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number }
+export interface PlanDay { name: string; kind?: 'strength' | 'cardio' | 'hiit' | 'mobility'; items: Prescription[]; cardio?: CardioSession; /** free text shown with the session (e.g. a run/walk pattern) */ note?: string }
+export interface Ramp { startedAt: string; weeks: number; setsMult: number; loadMult: number }
+export interface Plan {
+  engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number;
+  /** 4-week mesocycle applied over `days` (base, build, peak, deload) from `startedAt` */
+  meso?: { startedAt: string };
+  /** explicit multi-week program (e.g. couch-to-5K): `days` is week 1, `weeks[i]` is week i+1 */
+  program?: { routineId: string; startedAt: string; weeks: PlanDay[][] };
+  /** temporary reduced load after a break */
+  ramp?: Ramp;
+}
 
 export interface AssessmentInput {
   goal: Goal;

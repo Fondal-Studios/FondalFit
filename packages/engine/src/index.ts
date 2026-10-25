@@ -8,3 +8,7 @@ export * from './gps';
 export * from './supplements';
 export * from './foods';
 export * from './mealparse';
+export * from './routines';
+export * from './periodization';
+export * from './challenges';
+export * from './devices';

@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS daily_active(user_id INTEGER NOT NULL REFERENCES user
 CREATE TABLE IF NOT EXISTS pro_templates(id @ID, pro_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS measurements(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS coach_memory(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(user_id, key));
+CREATE TABLE IF NOT EXISTS coach_messages(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS ranking(user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, alias TEXT NOT NULL, zone TEXT NOT NULL, enabled INTEGER NOT NULL, updated_at TEXT NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ranking_alias ON ranking(alias);
 CREATE INDEX IF NOT EXISTS idx_workouts_user ON workouts(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON plans(user_id, version);
 CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens(user_id);

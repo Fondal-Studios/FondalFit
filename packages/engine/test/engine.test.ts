@@ -33,7 +33,7 @@ describe('generatePlan', () => {
     }
     expect(p.days).toHaveLength(3);
   });
-  it('is deterministic', () => { expect(generatePlan(base)).toEqual(generatePlan(base)); });
+  it('is deterministic', () => { const t = new Date('2026-01-01T00:00:00Z'); expect(generatePlan(base, t)).toEqual(generatePlan(base, t)); });
   it('bodyweight only when no equipment', () => {
     expect(allowedExercises({ equipment: [], restrictions: [] }).every((e) => e.equipment.includes('none'))).toBe(true);
   });
@@ -132,7 +132,8 @@ describe('exercise selection', () => {
   });
   it('advanced lifters start on free weights', () => {
     const ids = generatePlan({ ...gym, experience: 'advanced', restrictions: [] }).days.flatMap((d) => d.items.map((i) => i.exerciseId));
-    expect(ids).toContain('back_squat');
+    expect(['front_squat', 'back_squat'].some((x) => ids.includes(x))).toBe(true);
+    expect(ids).not.toContain('goblet_squat');
   });
 });
 

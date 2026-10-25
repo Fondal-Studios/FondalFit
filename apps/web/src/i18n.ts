@@ -111,8 +111,10 @@ const pt: Record<Key, string> = {
 };
 
 import { T } from './i18n2';
+import { EXINFO } from './exinfo';
 const withNew = (i: 0 | 1 | 2, base: Record<string, string>): Record<string, string> => ({ ...base, ...Object.fromEntries(Object.entries(T).map(([k, v]) => [k, v[i]])) });
-export const dict: Record<Lang, Record<string, string>> = { en: withNew(0, en), es: withNew(1, es), pt: withNew(2, pt) };
+const withInfo = (i: 0 | 1 | 2, base: Record<string, string>): Record<string, string> => ({ ...base, ...Object.fromEntries(Object.entries(EXINFO).flatMap(([id, x]) => (x.n ? [['ex_' + id, x.n[i]] as const] : []))) });
+export const dict: Record<Lang, Record<string, string>> = { en: withInfo(0, withNew(0, en)), es: withInfo(1, withNew(1, es)), pt: withInfo(2, withNew(2, pt)) };
 export const translate = (lang: Lang, key: string, vars?: Record<string, string | number>): string => {
   const s = dict[lang][key] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? '')) : s;

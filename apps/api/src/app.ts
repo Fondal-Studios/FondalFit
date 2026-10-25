@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
   menusForDay, dayNumberOf, supplementAdvice, simplifyRoute, type DietFlag,
-  gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
+  materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
@@ -14,6 +14,10 @@ import { COACH_SYSTEM, type CoachFn } from './coach';
 import { registerAdmin } from './admin';
 import { registerFood } from './food';
 import { registerPro } from './pro';
+import { registerPlans } from './plans';
+import { registerProgress } from './progress';
+import { registerSocial } from './social';
+import { registerMemory, loadMemory, saveMemory, extractMemoryTags, TONE_PROMPT } from './memory';
 
 const now = () => new Date().toISOString();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -186,7 +190,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   };
 
   /* ---------------- Assessment & plan ---------------- */
-  const latestPlan = async (uid: number) => await db.prepare('SELECT * FROM plans WHERE user_id=? ORDER BY version DESC LIMIT 1').get(uid) as { version: number; data: string; source: string } | undefined;
+  const latestPlan = async (uid: number) => await db.prepare('SELECT * FROM plans WHERE user_id=? ORDER BY version DESC LIMIT 1').get(uid) as { version: number; data: string; source: string; created_at: string } | undefined;
   const savePlan = async (uid: number, plan: Plan, source: string) => {
     const v = ((await latestPlan(uid))?.version ?? 0) + 1;
     await db.prepare('INSERT INTO plans(user_id,version,data,source,created_at) VALUES(?,?,?,?,?)').run(uid, v, JSON.stringify(plan), source, now());
@@ -237,14 +241,6 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return saveTarget(uid, a);
   });
 
-  app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
-    const p = await latestPlan(req.user!.id);
-    if (!p) return { plan: null };
-    const proId = p.source.startsWith('pro:') ? Number(p.source.slice(4)) : 0;
-    const pro = proId ? await db.prepare('SELECT name FROM users WHERE id=?').get(proId) as { name: string } | undefined : undefined;
-    return { version: p.version, source: p.source, proName: pro?.name ?? null, plan: JSON.parse(p.data) as Plan };
-  });
-
   /* ---------------- Sessions & adaptation ---------------- */
   const activeLink = async (athleteId: number) =>
     await db.prepare("SELECT * FROM links WHERE athlete_id=? AND status='active'").get(athleteId) as { id: number; pro_id: number; limits: string } | undefined;
@@ -266,6 +262,10 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
     if (day.kind === 'cardio') return reply.code(400).send({ error: 'cardio_day_use_activities' });
+    // Deload weeks, post-break ramps and fixed programs log the work but do not change loads.
+    const exp = ((JSON.parse((await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined)?.data ?? '{}') as { experience?: 'beginner' | 'intermediate' | 'advanced' }).experience) ?? 'intermediate';
+    const mat = materialize(plan, new Date(), exp);
+    if (plan.program || mat.label === 'deload' || mat.ramp) return { applied: true, planVersion: cur.version, decisions: {}, deloadSuggested: false, adaptation: 'paused' };
     const next: Plan = structuredClone(plan);
     let maxIncPct = 0;
     const decisions: Record<string, string> = {};
@@ -517,20 +517,36 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const uid = req.user!.id;
     const used = (await db.prepare("SELECT CAST(COUNT(*) AS INTEGER) c FROM audit WHERE actor_id=? AND action='coach:msg' AND created_at>=?").get(uid, now().slice(0, 10)) as { c: number }).c;
     if (used >= 30) return reply.code(429).send({ error: 'coach_daily_limit' });
-    // personal context is shared with the model ONLY with the explicit ai_memory consent
+    const memory = await loadMemory(db, uid);
+    const tone = memory.find((m) => m.key === 'coach_tone')?.value as keyof typeof TONE_PROMPT | undefined;
+    const consent = await hasConsent(uid, 'ai_memory');
+    // personal context and remembered facts reach the model ONLY with the explicit ai_memory consent; the chosen tone is a setting, not personal data
     let ctx = 'The user has not shared personal data with the coach.';
-    if (await hasConsent(uid, 'ai_memory')) {
+    let msgs = b.history;
+    if (consent) {
       const a = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
       const t = await latestTarget(uid);
       const rec = await db.prepare('SELECT data,score FROM recovery WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string; score: number } | undefined;
       if (a) { const x = JSON.parse(a.data); ctx = `User data: goal=${x.goal}; experience=${x.experience}; strength days=${x.strengthDays}; cardio days=${x.cardioDays} (${x.cardioModalities.join(',')}); equipment=${x.equipment.join(',')}; restrictions=${x.restrictions.join(',') || 'none'}; sex=${x.profile.sex}; age=${x.profile.age}; weight=${x.profile.weightKg}kg; height=${x.profile.heightCm}cm; diet=${x.profile.diet.join(',') || 'no restrictions'}.`; }
       if (t) ctx += ` Daily target: ${t.kcal} kcal, protein ${t.proteinG} g, carbs ${t.carbsG} g, fat ${t.fatG} g.`;
       if (rec) ctx += ` Latest recovery score: ${rec.score}/100.`;
+      const facts = memory.filter((m) => m.key !== 'coach_tone');
+      if (facts.length) ctx += `\nKnown decisions and preferences (do NOT ask about these again): ${facts.map((m) => `${m.key}=${m.value}`).join('; ')}.`;
+      ctx += '\nWhen the user states a stable preference or decision (injury history, schedule, dislikes, goals), append at the very end of your reply a tag like [[memory: key=value]] (key in snake_case, value short). Never put medical diagnoses in memory.';
+      // persistent conversation: the server, not the browser, supplies the recent turns
+      const past = (await db.prepare('SELECT role,content FROM coach_messages WHERE user_id=? ORDER BY id DESC LIMIT 8').all(uid) as { role: 'user' | 'assistant'; content: string }[]).reverse();
+      msgs = past;
     }
     await audit(uid, null, 'coach:msg');
     try {
-      const reply_ = await opts.coach(`${COACH_SYSTEM}\n\n${ctx}\nUI language: ${req.user!.lang}`, [...b.history, { role: 'user', content: b.message }]);
-      return { reply: reply_ };
+      const raw = await opts.coach(`${COACH_SYSTEM}\n${tone && TONE_PROMPT[tone] ? TONE_PROMPT[tone] : TONE_PROMPT.friendly}\n\n${ctx}\nUI language: ${req.user!.lang}`, [...msgs, { role: 'user', content: b.message }]);
+      const { text, facts } = extractMemoryTags(raw);
+      if (consent) {
+        for (const f of facts) await saveMemory(db, uid, f.key, f.value, now());
+        await db.prepare('INSERT INTO coach_messages(user_id,role,content,created_at) VALUES(?,?,?,?)').run(uid, 'user', b.message, now());
+        await db.prepare('INSERT INTO coach_messages(user_id,role,content,created_at) VALUES(?,?,?,?)').run(uid, 'assistant', text, now());
+      }
+      return { reply: text, remembered: consent ? facts.map((f) => f.key) : [] };
     } catch { return reply.code(502).send({ error: 'coach_unavailable' }); }
   });
 
@@ -545,6 +561,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const rec = (await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM recovery WHERE user_id=?').get(uid) as { c: number }).c;
     return gamification([...byDay.values()], rec);
   });
+
 
   /* ---------------- Professional links ---------------- */
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {
@@ -649,6 +666,10 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.get('/api/health', async () => ({ ok: true }));
 
   registerAdmin({ app, db, adminOnly, parse, audit, now });
+  registerProgress({ app, db, parse, audit, now, athleteOnly, needHealth });
+  registerSocial({ app, db, parse, audit, now, athleteOnly, hasConsent });
+  registerMemory({ app, db, parse, audit, now, athleteOnly });
+  registerPlans({ app, db, parse, audit, now, athleteOnly, needHealth, latestPlan, savePlan });
   registerPro({ app, db, parse, audit, now, proOnly, athleteOnly, hasConsent, savePlan });
   registerFood({ app, db, parse, audit, now, athleteOnly, needHealth, profileWeight, activityEnergy });
 

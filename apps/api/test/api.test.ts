@@ -430,6 +430,179 @@ describe('professional studio: codes, routines for students, feedback', () => {
   });
 });
 
+describe('routine library, mesocycle and returning after a break', () => {
+  it('generated plans carry a 4-week block that starts in the base week', async () => {
+    const { t } = await athleteWithPlan();
+    const p = (await call('GET', '/api/plan', t)).body;
+    expect(p.current).toMatchObject({ label: 'base', weekIndex: 0, weekCount: 4, ramp: false });
+    expect(p.away.gapDays).toBe(0);
+  });
+  it('adopting a multi-week routine creates a program plan; strength routines get a mesocycle', async () => {
+    const { t } = await athleteWithPlan();
+    expect((await call('POST', '/api/plan/adopt', t, { routineId: 'nope' })).status).toBe(404);
+    const r = await call('POST', '/api/plan/adopt', t, { routineId: 'c25k_9w' });
+    expect(r.body.planVersion).toBe(2);
+    const p = (await call('GET', '/api/plan', t)).body;
+    expect(p.routineId).toBe('c25k_9w');
+    expect(p.current).toMatchObject({ label: 'program', weekIndex: 0, weekCount: 9 });
+    expect(p.plan.days).toHaveLength(3);
+    expect(p.plan.days[0].kind).toBe('cardio');
+    await call('POST', '/api/plan/adopt', t, { routineId: 'ul4_gym' });
+    const p2 = (await call('GET', '/api/plan', t)).body;
+    expect(p2.plan.days).toHaveLength(4);
+    expect(p2.current.label).toBe('base');
+    // logging against a routine plan works, and the first session seeds loads
+    const s = await call('POST', '/api/workouts', t, { dayIndex: 0, fatigue: 5, items: [{ exerciseId: 'bench_press', sets: [{ weight: 60, reps: 7, rir: 2 }] }] });
+    expect(s.body.applied).toBe(true);
+  });
+  it('after a break the athlete can resume, ramp back gently, or restart', async () => {
+    const { t } = await athleteWithPlan();
+    // age the plan 30 days to simulate time away
+    await db.prepare('UPDATE plans SET created_at=?').run(new Date(Date.now() - 30 * 864e5).toISOString());
+    const p = (await call('GET', '/api/plan', t)).body;
+    expect(p.away.gapDays).toBeGreaterThanOrEqual(29);
+    expect(p.away.options).toMatchObject({ weeks: 2, setsMult: 0.7 });
+    const r = await call('POST', '/api/plan/return', t, { mode: 'adapted' });
+    expect(r.body.planVersion).toBe(2);
+    const p2 = (await call('GET', '/api/plan', t)).body;
+    expect(p2.current.ramp).toBe(true);
+    expect(p2.source).toBe('return:adapted');
+    // while the ramp is active, sessions are logged but loads are not changed
+    const s = await call('POST', '/api/workouts', t, sessionFor(p2.plan, 12, 3));
+    expect(s.body.adaptation).toBe('paused');
+    expect((await call('POST', '/api/plan/return', t, { mode: 'restart' })).status).toBe(200);
+    expect((await call('GET', '/api/plan', t)).body.current.ramp).toBe(false);
+    expect((await call('POST', '/api/plan/return', t, { mode: 'resume' })).status).toBe(200);
+    expect((await call('POST', '/api/plan/return', t, { mode: 'bogus' })).status).toBe(400);
+  });
+  it('same-day advice follows a fresh recovery check-in', async () => {
+    const { t } = await athleteWithPlan();
+    expect((await call('GET', '/api/plan', t)).body.advice).toBeNull();
+    await call('POST', '/api/recovery', t, { sleepHours: 4, fatigue: 9, stress: 8, pain: 2 });
+    expect((await call('GET', '/api/plan', t)).body.advice).toMatchObject({ mode: 'light' });
+    await call('POST', '/api/recovery', t, { sleepHours: 8, fatigue: 2, stress: 2, pain: 8 });
+    expect((await call('GET', '/api/plan', t)).body.advice).toMatchObject({ mode: 'rest', reason: 'pain' });
+  });
+});
+
+describe('progress: lifts, running, body measurements', () => {
+  it('builds per-exercise series with estimated 1RM', async () => {
+    const { t, plan } = await athleteWithPlan();
+    const ex = plan.days[0].items[0].exerciseId;
+    for (const w of [40, 45]) await call('POST', '/api/workouts', t, { dayIndex: 0, fatigue: 5, items: [{ exerciseId: ex, sets: [{ weight: w, reps: 8, rir: 2 }, { weight: w, reps: 7, rir: 1 }] }] });
+    const list = (await call('GET', '/api/progress/exercises', t)).body.exercises;
+    expect(list[0]).toMatchObject({ id: ex, sessions: 2 });
+    const s = (await call('GET', `/api/progress/exercise/${ex}`, t)).body.series;
+    expect(s).toHaveLength(2);
+    expect(s[1].topWeight).toBe(45);
+    expect(s[1].e1rm).toBeGreaterThan(s[0].e1rm);
+    expect(s[0].volume).toBe(40 * 8 + 40 * 7);
+  });
+  it('summarises running by week', async () => {
+    const { t } = await athleteWithPlan();
+    const base = { sport: 'run', startedAt: new Date().toISOString(), movingSec: 1800, elevGainM: 0, route: [] as number[][] };
+    await call('POST', '/api/activities', t, { ...base, durationSec: 1800, distanceM: 5000, avgPaceSecKm: 360 });
+    await call('POST', '/api/activities', t, { ...base, durationSec: 3300, distanceM: 10000, avgPaceSecKm: 330 });
+    const r = (await call('GET', '/api/progress/running', t)).body;
+    expect(r.series).toHaveLength(1);
+    expect(r.series[0]).toMatchObject({ runKm: 15, runs: 2 });
+    expect(r.series[0].avgPaceSecKm).toBe(Math.round((1800 + 3300) / 15));
+    expect(r.longestRunKm).toBe(10);
+    expect(r.fastestPaceSecKm).toBe(330);
+  });
+  it('stores measurements, rejects empties, imports weights without duplicates, and can refresh calorie targets', async () => {
+    const { t } = await athleteWithPlan();
+    expect((await call('POST', '/api/measurements', t, {})).status).toBe(400);
+    expect((await call('POST', '/api/measurements', t, { weightKg: 5 })).status).toBe(400);
+    const before = (await call('GET', '/api/day', t)).body.target.kcal;
+    const r = await call('POST', '/api/measurements', t, { weightKg: 95, waistCm: 90, source: 'scale', applyToProfile: true });
+    expect(r.body.targetUpdated).toBe(true);
+    expect((await call('GET', '/api/day', t)).body.target.kcal).toBeGreaterThan(before);
+    const bulk = await call('POST', '/api/measurements/bulk', t, { rows: [{ day: '2026-09-01', weightKg: 80 }, { day: '2026-09-02', weightKg: 79.5 }] });
+    expect(bulk.body).toEqual({ added: 2, skipped: 0 });
+    expect((await call('POST', '/api/measurements/bulk', t, { rows: [{ day: '2026-09-01', weightKg: 80 }] })).body).toEqual({ added: 0, skipped: 1 });
+    const m = (await call('GET', '/api/measurements', t)).body;
+    expect(m.entries.map((e: any) => e.day).slice(0, 2)).toEqual(['2026-09-01', '2026-09-02']);
+    expect(m.latest).toMatchObject({ weightKg: 95, waistCm: 90 });
+    const other = await athleteWithPlan('o1@x.com');
+    expect((await call('DELETE', `/api/measurements/${m.entries[0].id}`, other.t)).status).toBe(404);
+    expect((await call('DELETE', `/api/measurements/${m.entries[0].id}`, t)).status).toBe(200);
+  });
+});
+
+describe('weekly challenges and opt-in zone ranking', () => {
+  it('serves 3 challenges anchored on 150 active minutes, with live progress', async () => {
+    const { t } = await athleteWithPlan();
+    await call('POST', '/api/activities', t, { sport: 'run', startedAt: new Date().toISOString(), durationSec: 3600, movingSec: 3600, distanceM: 10000, avgPaceSecKm: 360, elevGainM: 0, route: [] });
+    const c = (await call('GET', '/api/challenges', t)).body;
+    expect(c.challenges).toHaveLength(3);
+    expect(c.challenges[0]).toMatchObject({ id: 'move_150', value: 60, pct: 40, done: false });
+    expect(c.metrics.runKm).toBe(10);
+    expect(c.points).toBeGreaterThan(0);
+  });
+  it('is off by default, needs an alias and zone, never exposes emails, and waits for a minimum zone size', async () => {
+    const mk = async (email: string, alias: string, zone = 'Villa Crespo') => { const { t } = await athleteWithPlan(email); const r = await call('PUT', '/api/ranking', t, { enabled: true, alias, zone }); return { t, r }; };
+    const { t } = await athleteWithPlan('r0@x.com');
+    expect((await call('GET', '/api/ranking', t)).body.enabled).toBe(false);
+    expect((await call('PUT', '/api/ranking', t, { enabled: true, alias: 'ab', zone: 'x' })).status).toBe(400);
+    expect((await call('PUT', '/api/ranking', t, { enabled: true, alias: 'a@b.com', zone: 'Palermo' })).status).toBe(400);
+    const a = await mk('r1@x.com', 'corredor_1'), b = await mk('r2@x.com', 'runner-2', 'villa  crespo');
+    expect((await call('GET', '/api/ranking', a.t)).body.leaderboard).toBeNull();
+    const dup = await mk('r3@x.com', 'corredor_1');
+    expect(dup.r.status).toBe(409);
+    const c3 = await mk('r4@x.com', 'tercero');
+    const lb = (await call('GET', '/api/ranking', c3.t)).body;
+    expect(lb.zoneSize).toBe(3);
+    expect(lb.leaderboard).toHaveLength(3);
+    expect(lb.leaderboard.some((x: any) => x.me)).toBe(true);
+    expect(JSON.stringify(lb)).not.toMatch(/@|r[0-9]@x|weight|kcal/i);
+    expect((await call('PUT', '/api/ranking', b.t, { enabled: false })).body.enabled).toBe(false);
+    expect((await call('GET', '/api/ranking', b.t)).body.enabled).toBe(false);
+    expect((await call('GET', '/api/ranking', c3.t)).body.leaderboard).toBeNull();
+  });
+});
+
+describe('coach memory and personality', () => {
+  const tagged = async (sys: string) => (sys.includes('Tone: concise') ? 'Directo. ' : 'Hola. ') + '[[memory: lesion=rodilla izquierda operada]]';
+  it('stores preferences, validates tone, and is editable and deletable by the user', async () => {
+    const { t } = await athleteWithPlan();
+    expect((await call('PUT', '/api/coach/memory', t, { key: 'coach_tone', value: 'sarcastic' })).status).toBe(400);
+    expect((await call('PUT', '/api/coach/memory', t, { key: 'Bad Key', value: 'x' })).status).toBe(400);
+    expect((await call('PUT', '/api/coach/memory', t, { key: 'coach_tone', value: 'direct' })).status).toBe(200);
+    await call('PUT', '/api/coach/memory', t, { key: 'dias_libres', value: 'martes y jueves' });
+    const m = (await call('GET', '/api/coach/memory', t)).body;
+    expect(m.memory.map((x: any) => x.key).sort()).toEqual(['coach_tone', 'dias_libres']);
+    expect((await call('DELETE', '/api/coach/memory/dias_libres', t)).status).toBe(200);
+    expect((await call('DELETE', '/api/coach/memory/dias_libres', t)).status).toBe(404);
+  });
+  it('the coach adapts tone, learns facts only with consent, remembers across messages and never re-asks decisions', async () => {
+    const seen: { sys: string; n: number }[] = [];
+    app = buildApp({ db, rateLimitMax: 100000, coach: async (sys, msgs) => { seen.push({ sys, n: msgs.length }); return tagged(sys); } });
+    const { t } = await athleteWithPlan();
+    await call('PUT', '/api/coach/memory', t, { key: 'coach_tone', value: 'direct' });
+    // without ai_memory: tone applies, nothing is stored or shared
+    const r1 = (await call('POST', '/api/coach', t, { message: 'hola' })).body;
+    expect(r1.reply).toBe('Directo.');
+    expect(r1.remembered).toEqual([]);
+    expect((await call('GET', '/api/coach/history', t)).body.messages).toHaveLength(0);
+    expect(seen[0]!.sys).toContain('Tone: concise');
+    expect(seen[0]!.sys).not.toContain('Known decisions');
+    // with consent: fact saved, messages persisted, and fed back next time
+    await call('PUT', '/api/consents', t, { ai_memory: true });
+    const r2 = (await call('POST', '/api/coach', t, { message: 'me operaron la rodilla' })).body;
+    expect(r2.remembered).toEqual(['lesion']);
+    expect(r2.reply).not.toContain('[[');
+    await call('POST', '/api/coach', t, { message: 'qué entreno hoy?' });
+    expect(seen[2]!.sys).toContain('lesion=rodilla izquierda operada');
+    expect(seen[2]!.sys).toContain('do NOT ask');
+    expect(seen[2]!.n).toBe(3); // 2 persisted turns + the new message
+    expect((await call('GET', '/api/coach/history', t)).body.messages.length).toBe(4);
+    expect((await call('DELETE', '/api/coach/memory', t)).status).toBe(200);
+    expect((await call('GET', '/api/coach/memory', t)).body.memory).toEqual([]);
+    expect((await call('GET', '/api/coach/history', t)).body.messages).toEqual([]);
+  });
+});
+
 describe('dual mode: one account, athlete and professional', () => {
   it('a professional can switch to athlete mode and back, with permissions following the mode', async () => {
     const t = await reg('dual@x.com', 'pro');

@@ -43,8 +43,11 @@ export function splitFor(n: number): Template[] {
 const RANK_BEGINNER: Record<string, number> = { machines: 0, dumbbells: 1, bands: 2, bar: 3, none: 3, barbell: 4 };
 const RANK_OTHER: Record<string, number> = { barbell: 0, dumbbells: 1, machines: 2, bar: 3, bands: 4, none: 5 };
 // compounds before isolation, except for small muscles (arms, calves) where isolation is the exercise
-const rank = (e: Exercise, beginner: boolean) =>
-  ((beginner ? RANK_BEGINNER : RANK_OTHER)[e.equipment[0]!] ?? 9) + (e.pattern === 'isolation' && !['biceps', 'triceps', 'calves'].includes(e.muscle) ? 10 : 0);
+const rank = (e: Exercise, beginner: boolean, exp: Experience = 'beginner') =>
+  ((beginner ? RANK_BEGINNER : RANK_OTHER)[e.equipment[0]!] ?? 9)
+  + (e.pattern === 'isolation' && !['biceps', 'triceps', 'calves'].includes(e.muscle) ? 10 : 0)
+  // technical difficulty: beginners get the simplest versions first, advanced lifters the demanding ones
+  + (exp === 'beginner' ? (e.level - 1) * 20 : exp === 'intermediate' ? Math.abs(e.level - 2) * 6 : (3 - e.level) * 6);
 
 const ISOLATION_MUSCLES = new Set<Muscle>(['biceps', 'triceps', 'calves']);
 const LOWER_MUSCLES = new Set<Muscle>(['quads', 'hamstrings', 'glutes']);
@@ -62,7 +65,7 @@ function buildStrengthDay(name: string, tpl: Template, pool: Exercise[], a: Asse
     const c = pool.filter((x) => x.muscle === m && !inDay.has(x.id) && x.pattern !== 'mobility');
     if (!c.length) continue;
     // conservative-first for beginners, heavier/loadable first otherwise; rotate across days for variety
-    c.sort((x, y) => rank(x, beginner) - rank(y, beginner) || x.id.localeCompare(y.id));
+    c.sort((x, y) => rank(x, beginner, a.experience) - rank(y, beginner, a.experience) || x.id.localeCompare(y.id));
     const occ = muscleUses.get(m) ?? 0;
     const ex = c[occ % c.length]!;
     muscleUses.set(m, occ + 1);
@@ -124,7 +127,7 @@ function enforceInterference(days: PlanDay[], goal: Goal, exp: Experience) {
   });
 }
 
-export function generatePlan(a: AssessmentInput): Plan {
+export function generatePlan(a: AssessmentInput, now: Date = new Date()): Plan {
   const safety = screenSafety(a);
   if (safety.status === 'refer') throw new Error('REFERRAL_REQUIRED:' + safety.reasons.join(','));
   const S = Math.max(0, Math.min(6, Math.round(a.strengthDays)));
@@ -150,7 +153,7 @@ export function generatePlan(a: AssessmentInput): Plan {
   }
   enforceInterference(days, a.goal, a.experience);
   days.forEach((d, i) => { d.name = `D${i + 1}`; });
-  return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
+  return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0, meso: { startedAt: now.toISOString() } };
 }
 
 export interface VolumeRow { muscle: Muscle; sets: number; status: 'low' | 'ok' | 'high' }
