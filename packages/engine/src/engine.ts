@@ -201,7 +201,7 @@ export function gamification(days: ActivityDay[], recoveryLogs: number) {
     unique.set(key,{sessions:previous.sessions+Math.max(0,d.sessions),runs:previous.runs+Math.max(0,d.runs)});
   }
   const active=[...unique].filter(([,d])=>d.sessions+d.runs>0).sort(([a],[b])=>a.localeCompare(b));
-  const xp=active.length*50+Math.min(100,Math.max(0,recoveryLogs))*5;
+  const xp=active.length*50;
   const level=Math.floor(Math.sqrt(xp/50))+1;
   const weeks=new Set(active.map(([date])=>isoWeek(date)));
   let streak=0;
