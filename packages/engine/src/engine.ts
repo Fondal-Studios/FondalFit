@@ -79,7 +79,10 @@ export function generatePlan(a: AssessmentInput): Plan {
         load: 0,
       });
     }
-    days.push({ name: a.goal === 'hybrid' ? `Sesión híbrida ${d + 1}` : `Sesión ${d + 1}`, items });
+    const hybridRun = a.goal === 'hybrid' && d % 2 === 1;
+    const enduranceRun = a.goal === 'endurance' && a.preferredActivities?.includes('running');
+    const run = (hybridRun || enduranceRun) ? { minutes: Math.max(15, Math.min(50, Math.round(sessionMinutes * (hybridRun ? 0.45 : 0.75)))), intensity: 'easy' as const, note: 'Ritmo conversacional; ajustá según el esfuerzo percibido.' } : undefined;
+    days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza y carrera ${d + 1}` : `Fuerza ${d + 1}`) : `Sesión ${d + 1}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
   }
   return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
 }
