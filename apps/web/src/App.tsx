@@ -524,7 +524,7 @@ function Running() {
   const fmt = (p: number) => `${Math.floor(p)}:${String(Math.round((p % 1) * 60)).padStart(2, '0')}`;
   return (
     <>
-      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),minutes:String(minutes)}))}/>
+      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
         <p className="muted">Registro manual: ingresá kilómetros y velocidad promedio. El tiempo, ritmo y calorías se calculan aproximadamente.</p>
