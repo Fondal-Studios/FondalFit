@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { acceptPoint, simplifyRoute, trackStats, type GeoPoint, type Sport } from '@fondal/engine';
 import { Loading, Chips, useLoad, useT } from '../ctx';
+import { TrackMap,plausibleGap } from './TrackMap';
 
 const KEY = 'ff_track';
 type Status = 'idle' | 'waiting' | 'running' | 'paused';
@@ -18,7 +19,13 @@ export function Cardio() {
   const [now, setNow] = useState(Date.now());
   const [startedAt, setStartedAt] = useState(0);
   const [msg, setMsg] = useState('');
-  const [saved, setSaved] = useState<{ id: number } | null>(null);
+  const [saved, setSaved] = useState<{ id: number;estimatedKcal:number|null } | null>(null);
+  const [gapMeters,setGapMeters]=useState(0);
+  const [gapCandidate,setGapCandidate]=useState<{meters:number;seconds:number}|null>(null);
+  const [locked,setLocked]=useState(false);
+  const [unlock,setUnlock]=useState(0);
+  const profile=useLoad<{assessment:{profile:{weightKg:number}}|null}>('/api/assessment');
+  const weightKg=profile.data?.assessment?.profile?.weightKg??null;
   const watch = useRef<number | null>(null);
   const wake = useRef<{ release: () => Promise<void> } | null>(null);
   const last = useRef<GeoPoint | undefined>(undefined);
@@ -26,6 +33,7 @@ export function Cardio() {
   const [unfinished, setUnfinished] = useState<{ sport: Sport; startedAt: number; points: GeoPoint[] } | null>(null);
 
   useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) setUnfinished(JSON.parse(s)); } catch { /* ignore */ } }, []);
+  useEffect(()=>{if(!locked)return;const prev=document.body.style.overflow;document.body.style.overflow='hidden';return()=>{document.body.style.overflow=prev;};},[locked]);
   useEffect(() => { if (status !== 'running') return; const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, [status]);
   useEffect(() => () => stopWatch(), []); // eslint-disable-line
 
@@ -38,16 +46,21 @@ export function Cardio() {
   const begin = useCallback((sp: Sport, st: number, initial: GeoPoint[]) => {
     if (!('geolocation' in navigator)) { setMsg(t('gpsUnsupported')); return; }
     if (!window.isSecureContext) { setMsg(t('needHttps')); return; }
-    setMsg(''); setSaved(null); setSport(sp); setStartedAt(st); setPoints(initial); last.current = initial[initial.length - 1];
+    setMsg(''); setSaved(null); setSport(sp); setStartedAt(st); setPoints(initial); last.current = initial[initial.length - 1];setGapCandidate(null);
     setStatus(initial.length ? 'running' : 'waiting');
     (navigator as any).wakeLock?.request('screen').then((w: any) => { wake.current = w; }).catch(() => {});
     watch.current = navigator.geolocation.watchPosition(
       (pos) => {
         const p: GeoPoint = { lat: pos.coords.latitude, lon: pos.coords.longitude, t: pos.timestamp, acc: pos.coords.accuracy, alt: pos.coords.altitude ?? undefined };
         setStatus((s) => (s === 'waiting' ? 'running' : s));
-        if (!acceptPoint(last.current, p, sp)) return;
-        last.current = p; setMsg('');
-        setPoints((prev) => { const next = [...prev, p]; if (next.length % 10 === 0) persist(next, sp, st); return next; });
+        if(!acceptPoint(last.current,p,sp))return;
+        const prior=last.current;
+        if(prior&&p.t-prior.t>30000){
+          const missing=plausibleGap(prior,p,sp);
+          if(missing.allowed)setGapCandidate({meters:missing.meters,seconds:missing.seconds});
+        }
+        last.current=p;setMsg('');
+        setPoints(prev=>{const next=[...prev,p];persist(next,sp,st);return next;});
       },
       (e) => { setMsg(e.code === 1 ? t('gpsDenied') : t('gpsWait')); if (e.code === 1) { stopWatch(); setStatus('idle'); } },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 },
@@ -56,27 +69,30 @@ export function Cardio() {
 
   const pause = () => { stopWatch(); setStatus('paused'); persist(points, sport, startedAt); };
   const resume = () => begin(sport, startedAt, points);
-  const discard = () => { stopWatch(); try { localStorage.removeItem(KEY); } catch { /* ignore */ } setPoints([]); setStatus('idle'); setUnfinished(null); };
+  const discard = () => { stopWatch();setLocked(false);setGapCandidate(null);setGapMeters(0); try { localStorage.removeItem(KEY); } catch { /* ignore */ } setPoints([]); setStatus('idle'); setUnfinished(null); };
 
   const s = trackStats(points);
+  const totalDistance=s.distanceM+gapMeters;
   const elapsed = startedAt ? Math.round(((status === 'running' ? now : points[points.length - 1]?.t ?? now) - startedAt) / 1000) : 0;
 
   const finish = async () => {
     stopWatch();
-    if (s.distanceM < 50 || s.movingSec < 30) { setMsg(t('tooShort')); discard(); return; }
+    if (totalDistance < 50 || s.movingSec < 30) { setMsg(t('tooShort')); discard(); return; }
     try {
-      const r = await api('POST', '/api/activities', { sport, startedAt: new Date(startedAt).toISOString(), durationSec: Math.max(elapsed, s.movingSec), movingSec: s.movingSec, distanceM: s.distanceM, avgPaceSecKm: s.avgPaceSecKm, elevGainM: s.elevGainM, route: simplifyRoute(points) });
+      const r = await api('POST', '/api/activities', { sport, startedAt: new Date(startedAt).toISOString(), durationSec: Math.max(elapsed, s.movingSec), movingSec: s.movingSec, distanceM: Math.round(totalDistance), avgPaceSecKm: totalDistance>0?Math.round(elapsed*1000/totalDistance):0, elevGainM: s.elevGainM, route: simplifyRoute(points),recoveredGapM:Math.round(gapMeters) });
       setSaved(r); setMsg(t('actSaved')); try { localStorage.removeItem(KEY); } catch { /* ignore */ }
-      setStatus('idle'); setPoints([]); hist.reload();
+      setStatus('idle'); setPoints([]);setGapMeters(0);setGapCandidate(null);setLocked(false); hist.reload();
     } catch { setMsg(t('netError')); setStatus('paused'); persist(points, sport, startedAt); }
   };
 
   const bike = sport === 'bike';
+  const paceAvg=totalDistance>0?Math.round(elapsed*1000/totalDistance):0;
+  const kcal=weightKg?Math.round((totalDistance/1000)*weightKg*(sport==='run'?1:sport==='walk'?.55:.6)):null;
   return (
     <>
       {unfinished && status === 'idle' && (
         <div className="card"><p>{t('unfinished')}</p>
-          <div className="row"><button className="primary" onClick={() => { setUnfinished(null); begin(unfinished.sport, unfinished.startedAt, unfinished.points); setStatus('paused'); }}>{t('resumeTrack')}</button><button className="danger" onClick={discard}>{t('discard')}</button></div></div>
+          <div className="row"><button className="primary" onClick={() => { setUnfinished(null); begin(unfinished.sport, unfinished.startedAt, unfinished.points); }}>{t('resumeTrack')}</button><button className="danger" onClick={discard}>{t('discard')}</button></div></div>
       )}
       <div className="card">
         {status === 'idle' && <><Chips options={['run', 'bike', 'walk']} value={[sport]} onChange={(v) => setSport(v[0] as Sport)} />
@@ -84,14 +100,17 @@ export function Cardio() {
         {status !== 'idle' && <>
           <div className="metrics">
             <div><span>{t('time')}</span><b>{fmtTime(elapsed)}</b></div>
-            <div><span>{t('distance')}</span><b>{(s.distanceM / 1000).toFixed(2)} km</b></div>
+            <div><span>{t('distance')}</span><b>{(totalDistance / 1000).toFixed(2)} km</b></div>
             <div><span>{bike ? t('speedNow') : t('paceNow')}</span><b>{bike ? (s.currentPaceSecKm ? (3600 / s.currentPaceSecKm).toFixed(1) + ' km/h' : '–') : fmtPace(s.currentPaceSecKm)}</b></div>
-            <div><span>{bike ? t('speedNow') + ' Ø' : t('paceAvg')}</span><b>{bike ? s.avgSpeedKmh + ' km/h' : fmtPace(s.avgPaceSecKm)}</b></div>
+            <div><span>{bike ? t('speedNow') + ' Ø' : t('paceAvg')}</span><b>{bike ? s.avgSpeedKmh + ' km/h' : fmtPace(paceAvg)}</b></div>
             <div><span>{t('elev')}</span><b>{s.elevGainM} m</b></div>
+            <div><span>Calorías estimadas</span><b>{kcal===null?'Ingresá tu peso':`≈${kcal} kcal`}</b></div>
           </div>
           {status === 'waiting' && <p className="muted" role="status">{t('gpsWait')}</p>}
-          <Route points={points} />
+          <TrackMap points={points} />
+          {gapCandidate&&<div className="card"><strong>Tramo sin GPS</strong><p>Pasaron {Math.round(gapCandidate.seconds/60)} min y hay al menos {(gapCandidate.meters/1000).toFixed(2)} km entre ubicaciones. El camino real es desconocido.</p><button onClick={()=>{setGapMeters(v=>v+gapCandidate.meters);setGapCandidate(null);}}>Sumar distancia recta mínima</button><button onClick={()=>setGapCandidate(null)}>No sumar</button></div>}
           <div className="row">
+            {status === 'running' && <button onClick={()=>setLocked(true)}>Congelar pantalla</button>}
             {status === 'running' && <button onClick={pause}>{t('pauseTrack')}</button>}
             {status === 'paused' && <button className="primary" onClick={resume}>{t('resumeTrack')}</button>}
             <button className="primary" onClick={finish} disabled={status === 'waiting'}>{t('stopSave')}</button>
@@ -99,7 +118,7 @@ export function Cardio() {
           </div>
         </>}
         {msg && <p className="warn" role="status">{msg}</p>}
-        {saved && <p className="ok">{t('actSaved')}</p>}
+        {saved && <p className="ok">{t('actSaved')} · {saved.estimatedKcal===null?'Sin peso registrado para estimar calorías':`≈${saved.estimatedKcal} kcal`}. Aparecerá en Inicio.</p>}
       </div>
       <div className="card"><h3>{t('history')}</h3>
         {!hist.data ? <Loading err={hist.err} retry={hist.reload} /> : <>
@@ -108,6 +127,13 @@ export function Cardio() {
           {!hist.data.activities.length && <p className="muted">{t('noActivities')}</p>}
           {hist.data.activities.map((a) => <p key={a.id} className="muted">{String(a.started_at).slice(0, 10)} · {t(a.sport)} · {(a.distance_m / 1000).toFixed(2)} km · {fmtTime(a.moving_sec)} · {a.sport === 'bike' ? (a.moving_sec ? ((a.distance_m / a.moving_sec) * 3.6).toFixed(1) + ' km/h' : '–') : fmtPace(a.avg_pace_sec_km) + ' /km'}</p>)}</>}
       </div>
+      {locked&&<div className="cardio-lock" role="dialog" aria-modal="true" aria-label="Pantalla de carrera congelada">
+       <h2>Corrida activa · pantalla bloqueada</h2>
+       <div className="metrics"><div><span>Tiempo</span><b>{fmtTime(elapsed)}</b></div><div><span>Distancia</span><b>{(totalDistance/1000).toFixed(2)} km</b></div><div><span>Ritmo promedio</span><b>{fmtPace(paceAvg)} /km</b></div><div><span>Calorías</span><b>{kcal===null?'—':`≈${kcal}`}</b></div></div>
+       <p>Deslizá el control hasta el extremo derecho para desbloquear. Otros toques no detienen la corrida.</p>
+       <label htmlFor="cardio-unlock">Deslizar para desbloquear</label>
+       <input id="cardio-unlock" type="range" min={0} max={100} value={unlock} onChange={e=>{const value=Number(e.target.value);if(value>=95){setLocked(false);setUnlock(0);}else setUnlock(value);}} onTouchEnd={()=>setUnlock(0)} onPointerUp={()=>setUnlock(0)}/>
+       </div>}
     </>
   );
 }
