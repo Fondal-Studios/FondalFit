@@ -338,15 +338,17 @@ function RestTimer() {
 // Geolocation remains foreground-only on PWAs; explicit permission and manual save.
 type RunSplit = { km: number; seconds: number; pace: number };
 type RunSummary = { date: string; km: number; minutes: number; avgPace: number; kcal: number; weightKg: number; splits: RunSplit[]; tips: string[] };
-function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void }) {
+function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: number) => void }) {
   const [active, setActive] = useState(false);
   const [touchLocked, setTouchLocked] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [meters, setMeters] = useState(0);
   const [pace, setPace] = useState<number | null>(null);
   const [weightKg, setWeightKg] = useState(70);
+  const [gpsVisible,setGpsVisible]=useState(true);
+  const [gpsInterrupted,setGpsInterrupted]=useState(false);
   const [status, setStatus] = useState('Necesita permiso de ubicación y HTTPS.');
-  const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [summary, setSummary] = useState<RunSummary | null>(()=>{try{const saved=localStorage.getItem('ff_last_run_summary');return saved?JSON.parse(saved) as RunSummary:null;}catch{return null;}});
   const [splits, setSplits] = useState<RunSplit[]>([]);
   const [unlocked, setUnlocked] = useState(0);
   const watchId = useRef<number | null>(null);
@@ -372,6 +374,11 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
     if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     void wake.current?.release().catch(()=>{});
   }, []);
+  useEffect(()=>{
+    const visibility=()=>{setGpsVisible(document.visibilityState==='visible');if(running.current&&document.visibilityState!=='visible')setGpsInterrupted(true);};
+    document.addEventListener('visibilitychange',visibility);
+    return ()=>document.removeEventListener('visibilitychange',visibility);
+  },[]);
   useEffect(() => {
     if (!active) return;
     const id = window.setInterval(()=>setElapsed(Math.max(0,Math.floor((Date.now()-startedAt.current)/1000))),1000);
@@ -381,7 +388,7 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
   const start = async () => {
     if (!navigator.geolocation) { setStatus('Este navegador no ofrece GPS.'); return; }
     if (!window.isSecureContext) { setStatus('El GPS requiere HTTPS.'); return; }
-    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);
+    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);setGpsInterrupted(false);
     splitsRef.current=[];lastPaces.current=[];distanceRef.current=0;splitAt.current=0;
     lastPoint.current=null;startedAt.current=Date.now();running.current=true;setActive(true);setStatus('Buscando señal GPS…');
     try {
@@ -444,7 +451,7 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
       'Compará tu ritmo con sesiones de distancia similar, no solamente con tu carrera más rápida.'];
     const result:RunSummary={date:new Date().toISOString(),km:Number(km.toFixed(2)),minutes:Number(mins.toFixed(2)),avgPace:km>0?mins/km:0,kcal,weightKg,splits:allSplits,tips};
     stop();setSummary(result);
-    if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)));
+    if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)),weightKg);
     try {localStorage.setItem('ff_last_run_summary',JSON.stringify(result));} catch {/* optional device storage */}
   };
   const paceGroups=splits.reduce((out,split)=>{const k=split.pace<5?'Rápido (<5:00)':split.pace<6.5?'Medio (5:00–6:30)':'Suave (>6:30)';out[k]=(out[k]||0)+1;return out;},{} as Record<string,number>);
@@ -458,16 +465,21 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
       <div><strong>{fmt(meters>50?elapsed/60/(meters/1000):null)}</strong><small>ritmo promedio min/km</small></div>
     </div>
     <p role="status" className="muted">{status}</p>
+    {!gpsVisible&&<p className="warn">La aplicación está en segundo plano: el GPS puede interrumpirse.</p>}
+    {gpsInterrupted&&<p className="warn">La app pasó a segundo plano durante la sesión. Revisá la distancia: puede estar incompleta.</p>}
+    {active&&<p className="live-kcal" aria-live="off">≈{Math.round((meters/1000)*weightKg)} kcal de carrera estimadas · {weightKg} kg</p>}
     {!active ? <><label htmlFor="gps-weight">Peso para estimar energía (kg)</label><input id="gps-weight" type="number" min={30} max={250} value={weightKg} onChange={e=>setWeightKg(Number(e.target.value)||70)}/>
       <button className="primary action-full" onClick={()=>void start()}>Iniciar carrera con GPS</button></> :
       <div className="gps-actions"><button onClick={()=>setTouchLocked(true)}>Congelar pantalla</button><button onClick={finish}>Terminar carrera</button></div>}
     {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla congelada">
-      <strong>Running activo</strong>
+      <strong>Running activo · pantalla congelada</strong>
       <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div><div><strong>{fmt(pace)}</strong><small>min/km</small></div></div>
-      <p className="muted">Para evitar toques involuntarios, deslizá el control hasta el final.</p>
+      <p className="muted">Solo el deslizador permite salir del bloqueo. La corrida sigue registrándose en primer plano.</p>
       <label htmlFor="unlock-slide">Deslizar para desbloquear</label>
       <input id="unlock-slide" aria-label="Deslizar para desbloquear" className="unlock-slider" type="range" min={0} max={100} value={unlocked}
-        onChange={e=>{const value=Number(e.target.value);if(value>=95){setTouchLocked(false);setUnlocked(0);}else setUnlocked(value);}}/>
+        onChange={e=>{const value=Number(e.target.value);if(value>=95){setTouchLocked(false);setUnlocked(0);}else setUnlocked(value);}}
+        onPointerUp={()=>setUnlocked(v=>v>=95?0:0)}
+        onTouchEnd={()=>setUnlocked(0)}/> 
       <span className="muted">Deslizá de izquierda a derecha →</span>
       <small>El botón físico de suspensión no controla esta función.</small>
     </div>}
@@ -599,6 +611,43 @@ function Development({ isAdmin }: { isAdmin: boolean }) {
   </section>;
 }
 
+type EnergyDay={date:string;intake:number;runKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];provisional:boolean};
+type EnergyCalendar={month:string;target:{kcal?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
+const ENERGY_LABELS:Record<string,string>={red:'Superávit alto',orange:'Superávit leve',yellow:'Cerca del mantenimiento',green:'Déficit moderado estimado',blue:'Déficit alto: revisar',violet:'Déficit muy alto: atención',unknown:'Sin estimación'};
+function DailyEnergyCalendar(){
+ const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+ const [month,setMonth]=useState(today.slice(0,7));
+ const [selected,setSelected]=useState(today);
+ const [result,setResult]=useState<EnergyCalendar|null>(null);
+ const [error,setError]=useState('');
+ const refresh=useCallback(()=>{setError('');api<EnergyCalendar>('GET',`/api/energy/calendar?month=${encodeURIComponent(month)}&timezoneOffset=${new Date().getTimezoneOffset()}`).then(setResult).catch(()=>setError('No se pudo cargar el calendario del balance energético.'));},[month]);
+ useEffect(()=>{refresh();},[refresh]);
+ const days=result?.days??[],byDate=new Map(days.map(d=>[d.date,d]));
+ const parts=month.split('-').map(Number);const year=parts[0]??now.getFullYear(),m=parts[1]??now.getMonth()+1;
+ const daysInMonth=new Date(year,m,0).getDate(),firstOffset=(new Date(year,m-1,1).getDay()+6)%7;
+ const entries=Array.from({length:firstOffset+daysInMonth},(_,i)=>i<firstOffset?'':month+'-'+String(i-firstOffset+1).padStart(2,'0'));
+ const chosen=byDate.get(selected);
+ const move=(n:number)=>{const next=new Date(year,m-1+n,1);const value=[next.getFullYear(),String(next.getMonth()+1).padStart(2,'0')].join('-');setMonth(value);setSelected(value+'-01');};
+ return <section className="card energy-calendar">
+   <div className="eyebrow">ENERGÍA Y ACTIVIDAD</div><h2>Mi balance diario</h2>
+   <p className="muted">Sumá comidas y carreras. Los colores representan estimaciones provisionales, nunca un diagnóstico ni una meta de restricción.</p>
+   <div className="energy-month"><button onClick={()=>move(-1)} aria-label="Mes anterior">←</button><strong>{new Date(year,m-1,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'})}</strong><button onClick={()=>move(1)} aria-label="Mes siguiente">→</button></div>
+   <div className="energy-calendar-grid">{['L','M','M','J','V','S','D'].map((d,i)=><span className="weekday" key={i}>{d}</span>)}
+     {entries.map((date,i)=>date?<button key={date} className={'energy-day '+(byDate.get(date)?.band??'empty')+(selected===date?' selected':'')} aria-pressed={selected===date} onClick={()=>setSelected(date)}><span>{Number(date.slice(-2))}</span>{byDate.has(date)&&<span className="day-dot" aria-hidden="true"/>}</button>:<span key={'blank-'+i}/>)}</div>
+   {error&&<p role="alert" className="warn">{error}</p>}
+   {!result?.target&&<p className="warn">Configurá tu objetivo de calorías en Nutrición para ver el balance estimado.</p>}
+   <div className="energy-legend">{[['red','Superávit'],['orange','Superávit leve'],['yellow','Equilibrio'],['green','Déficit moderado'],['blue','Déficit alto'],['violet','Déficit muy alto']].map(([color,label])=><span key={color}><i className={color}/>{label}</span>)}</div>
+   <div className="energy-day-summary"><h3>{new Date(selected+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</h3>
+    {chosen?<><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
+      <div className="energy-figures"><div><strong>{chosen.intake}</strong><small>kcal ingeridas</small></div><div><strong>{chosen.runKcal}</strong><small>kcal por carreras (aprox.)</small></div><div><strong>{chosen.balance===null?'—':(chosen.balance>0?'+':'')+chosen.balance}</strong><small>balance diario estimado, kcal</small></div></div>
+      <h4>Comidas</h4>{chosen.meals.length?chosen.meals.map((meal,i)=><p key={i}>{meal.name} · ≈{Math.round(meal.kcal)} kcal</p>):<p className="muted">No se registraron comidas.</p>}
+      <h4>Carreras</h4>{chosen.runs.length?chosen.runs.map((run,i)=><p key={i}>{run.km.toFixed(2)} km · ≈{Math.round(run.kcal)} kcal</p>):<p className="muted">No hay carreras con peso registrado para estimar energía.</p>}
+      <p className="muted">Balance provisional: no asumas que el registro representa todas las comidas del día.</p>
+     </>:<p className="muted">Todavía no hay registros para esta fecha.</p>}
+   </div><details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Comparación orientativa entre alimentos registrados y gasto diario estimado, sumando la carrera. El cálculo puede contar dos veces parte del ejercicio si tu factor de actividad ya lo incluye. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
+ </section>;
+}
+
 function Running() {
   const t = useT();
   const [d, setD] = useState<any>(null);
@@ -614,8 +663,8 @@ function Running() {
   return (
     <>
       <MusicCenter />
-      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
-      <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
+      <GpsRun onDraft={(km,minutes,weightKg)=>setF(prev=>({...prev,km:String(km),weightKg:String(weightKg),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
+      <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe,weightKg:+f.weightKg });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
         <p className="muted">Registro manual: ingresá kilómetros y velocidad promedio. El tiempo, ritmo y calorías se calculan aproximadamente.</p>
         <div className="manual-run-fields">
@@ -627,6 +676,7 @@ function Running() {
         {derivedMinutes>0&&<div className="manual-preview"><strong>{Math.round(derivedMinutes)} min · {fmt(paceFromSpeed)} min/km · ≈{Math.round(km*(Number(f.weightKg)||70))} kcal</strong>
           <p>{paceZone} (banda de velocidad, no zona de frecuencia cardíaca). Sin pulso medido no podemos determinar zonas fisiológicas.</p></div>}
         <p><button className="primary">{t('logRun')}</button></p></form>
+      <DailyEnergyCalendar />
       {manualResult&&<div className="card"><h3>Resumen del registro manual</h3><p>{manualResult.km} km · {manualResult.speed} km/h · {fmt(manualResult.pace)} min/km · ≈{manualResult.kcal} kcal</p><p className="muted">{manualResult.zone}. No son zonas cardíacas. Estimación energética aproximada por distancia y peso; no es una medición metabólica.</p></div>}
       {d && <div className="card"><p>{t('weekKm')}: <b>{d.weekKm}</b></p>
         {d.alerts.map((a: string) => <p key={a} className="warn" role="alert">{t('a_' + a)}</p>)}
@@ -795,6 +845,7 @@ function Nutrition() {
   const num=(k:'weightKg'|'heightCm'|'age')=><input type="number" value={p[k]} onChange={e=>setP({...p,[k]:Number(e.target.value)})}/>;
   const target=d?.target;
   return <section>
+    <DailyEnergyCalendar />
     <div className="card"><h2>Tu objetivo de energía</h2>
       {target&&<><p className="metric"><strong>{target.kcal}</strong><span>kcal por día (estimadas)</span></p>
         <p>Consumidas: {Math.round(d.today.kcal)} kcal · Restantes: {Math.round(target.kcal-d.today.kcal)} kcal</p>

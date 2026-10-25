@@ -196,3 +196,33 @@ nav.tabs{padding-bottom:calc(7px + env(safe-area-inset-bottom))}
 .music-center .quick-tabs{margin-bottom:16px}
 .music-center input{width:100%;margin:7px 0 12px}
 .music-center a{color:var(--accent)}
+
+/* Energy calendar and GPS touch shield */
+.energy-month{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}
+.energy-month strong{text-transform:capitalize}
+.energy-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.energy-calendar-grid .weekday{text-align:center;font-size:.75rem;color:var(--muted);padding:6px 0}
+.energy-day{min-width:0;min-height:47px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:2px;border:2px solid transparent;border-radius:11px;background:#182220;color:#e6eee9;font-variant-numeric:tabular-nums}
+.energy-day.selected{outline:2px solid var(--accent);outline-offset:1px}
+.energy-day.empty{background:#18211f;color:#82948a}
+.energy-day.red,.energy-legend .red,.energy-band .red{background:#a7444c}
+.energy-day.orange,.energy-legend .orange,.energy-band .orange{background:#b87537}
+.energy-day.yellow,.energy-legend .yellow,.energy-band .yellow{background:#a89b4d;color:#101814}
+.energy-day.green,.energy-legend .green,.energy-band .green{background:#408d67}
+.energy-day.blue,.energy-legend .blue,.energy-band .blue{background:#4573aa}
+.energy-day.violet,.energy-legend .violet,.energy-band .violet{background:#7556a2}
+.day-dot{height:3px;width:13px;border-radius:8px;background:#fff9}
+.energy-legend{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.energy-legend span{display:flex;align-items:center;gap:5px;font-size:.69rem;color:var(--muted)}
+.energy-legend i,.energy-band i{width:11px;height:11px;border-radius:4px;display:inline-block;flex:none}
+.energy-day-summary{padding:12px 0;border-top:1px solid var(--line)}
+.energy-day-summary h3{text-transform:capitalize}
+.energy-band{display:flex;align-items:center;gap:8px}
+.energy-figures{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.energy-figures div{background:#0d1b19;padding:11px;border-radius:11px;min-width:0}
+.energy-figures strong{display:block;font-size:1.12rem;color:var(--accent);word-break:break-word}
+.energy-figures small{color:var(--muted);font-size:.7rem}
+.gps-touch-lock{touch-action:none;user-select:none;-webkit-user-select:none;position:fixed;z-index:1000;inset:0;overscroll-behavior:contain}
+.gps-touch-lock .unlock-slider{touch-action:pan-x;min-height:62px;width:min(90vw,420px);accent-color:#9af1aa}
+.live-kcal{padding:10px 14px;border-radius:12px;background:#1a3927;border:1px solid #446a50;color:#baf6c7;font-weight:750}
+@media(max-width:420px){.energy-figures{grid-template-columns:1fr 1fr}.energy-figures div:last-child{grid-column:span 2}.energy-day{min-height:43px}}
