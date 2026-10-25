@@ -401,6 +401,49 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return {date:today,activities,totalKcal,estimated:weightKg!==null};
   });
 
+  /** Custom strength / calisthenics blocks: incremental active energy above resting baseline. */
+  app.post('/api/activity/blocks',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({blocks:z.array(z.object({name:z.string().trim().min(1).max(100),kind:z.enum(['calisthenics','strength','functional','walk']),minutes:z.number().min(1).max(240),intensity:z.enum(['light','moderate','vigorous'])})).min(1).max(12)}),req.body,reply);
+    if(!b)return;
+    const weight=await profileWeight(req.user!.id);
+    if(!weight)return reply.code(409).send({error:'weight_required'});
+    const met:Record<string,Record<string,number>>={calisthenics:{light:2.8,moderate:3.8,vigorous:6},strength:{light:3,moderate:3.5,vigorous:6},functional:{light:3.5,moderate:5,vigorous:7},walk:{light:2.5,moderate:3.5,vigorous:4.8}};
+    const blocks=b.blocks.map(item=>({...item,activeKcal:Math.round((met[item.kind]![item.intensity]!-1)*3.5*weight/200*item.minutes)}));
+    const kcal=blocks.reduce((n,item)=>n+item.activeKcal,0);
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'exercise',?,?)").run(req.user!.id,JSON.stringify({kind:'blocks',blocks,kcal}),now());
+    return {blocks,activeKcal:kcal};
+  });
+  app.get('/api/energy/calendar',{preHandler:athleteOnly},async(req,reply)=>{
+    const q=parse(z.object({month:z.string().regex(/^\d{4}-\d{2}$/),timezoneOffset:z.coerce.number().int().min(-840).max(840).default(0)}),req.query,reply);
+    if(!q)return;
+    const [y,m]=q.month.split('-').map(Number);const year=y??0,month=m??0;
+    if(year<2020||year>2100||month<1||month>12)return reply.code(400).send({error:'invalid_month'});
+    const start=new Date(Date.UTC(year,month-1,1)+q.timezoneOffset*60000).toISOString();
+    const end=new Date(Date.UTC(year,month,1)+q.timezoneOffset*60000).toISOString();
+    const rows=await db.prepare('SELECT kind,data,created_at FROM nutrition WHERE user_id=? AND created_at>=? AND created_at<? ORDER BY created_at').all(req.user!.id,start,end) as {kind:string;data:string;created_at:string}[];
+    const activities=await db.prepare('SELECT sport,started_at,duration_sec,distance_m FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(req.user!.id,start,end) as {sport:string;started_at:string;duration_sec:number;distance_m:number}[];
+    const targetRow=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
+    const target=targetRow?JSON.parse(targetRow.data) as {explain?:{bmr:number;lifeKcal:number;trainKcal:number;tdee:number};kcal?:number}:null;
+    const weight=await profileWeight(req.user!.id);
+    const days=new Map<string,{date:string;intake:number;exerciseKcal:number;meals:{name:string;kcal:number}[];sessions:string[]}>();
+    const get=(stamp:string)=>{const date=new Date(Date.parse(stamp)-q.timezoneOffset*60000).toISOString().slice(0,10);let item=days.get(date);if(!item){item={date,intake:0,exerciseKcal:0,meals:[],sessions:[]};days.set(date,item);}return item;};
+    for(const row of rows){
+      const data=JSON.parse(row.data) as {meal?:string;kcal?:number;kind?:string;blocks?:{name:string}[]};
+      const entry=get(row.created_at);
+      if(row.kind==='log'){entry.intake+=Number(data.kcal)||0;entry.meals.push({name:data.meal??'Comida',kcal:Number(data.kcal)||0});}
+      if(row.kind==='exercise'&&data.kind==='blocks'){entry.exerciseKcal+=Number(data.kcal)||0;entry.sessions.push(...(data.blocks??[]).map(x=>x.name));}
+    }
+    for(const a of activities){const entry=get(a.started_at);const kcal=weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0;entry.exerciseKcal+=kcal;entry.sessions.push(a.sport==='run'?'Corrida':a.sport==='bike'?'Bicicleta':'Caminata');}
+    const bmr=target?.explain?.bmr??0,base=bmr>0?bmr*1.2:0;
+    const summary=[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(item=>{
+      const expense=Math.round(base+item.exerciseKcal),balance=base>0?Math.round(item.intake-expense):null;
+      const ratio=balance!==null?balance/base:0;
+      const band=balance===null?'unknown':ratio>.05?'red':ratio>0?'orange':ratio>=-.05?'yellow':ratio>=-.15?'green':ratio>=-.25?'blue':'violet';
+      return {...item,expense,balance,band};
+    });
+    return {month:q.month,baselineKcal:Math.round(base),days:summary,note:'Calorías y balance provisionales. El NEAT no está medido, el ejercicio puede ser impreciso y el registro alimentario podría estar incompleto.'};
+  });
   /* ---------------- AI coach ---------------- */
   app.get('/api/coach/status', { preHandler: athleteOnly }, async () => ({ configured: !!opts.coach }));
   app.post('/api/coach', { preHandler: athleteOnly, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req, reply) => {
