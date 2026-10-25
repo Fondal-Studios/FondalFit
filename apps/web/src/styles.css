@@ -116,3 +116,14 @@ textarea {display:block;width:100%;min-height:92px;background:#0f1317;color:var(
 .nutrition-fields label{margin:0}
 .nutrition-fields input{margin-top:6px}
 @media(max-width:380px){.nutrition-fields{grid-template-columns:1fr}}
+
+/* Running recording: live metrics, slider touch lock, session review */
+.gps-metrics {grid-template-columns:repeat(2,minmax(0,1fr));}
+.gps-metrics strong {font-size:clamp(1.2rem,5vw,1.8rem);}
+.gps-touch-lock {overscroll-behavior:contain;}
+.gps-touch-lock .gps-metrics{width:min(100%,430px);}
+.gps-touch-lock .gps-metrics>div{background:#183329;}
+.unlock-slider {width:min(100%,420px);height:58px;accent-color:#9af1aa;cursor:ew-resize;touch-action:pan-x;}
+.run-summary {margin-top:20px;border-top:1px solid var(--line);padding-top:12px;}
+.run-summary h4 {margin:18px 0 8px;color:var(--accent);}
+.run-split {padding:9px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
