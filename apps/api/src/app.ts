@@ -603,6 +603,63 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   });
   app.get('/api/exercises',{preHandler:auth},async()=>CATALOG.map(e=>({id:e.id,name:e.id.replaceAll('_',' ')})));
 
+  /* ---------------- Verified professional directory ---------------- */
+  const directoryProfile=z.object({
+    category:z.enum(['doctor','trainer','gym']),
+    specialty:z.string().trim().min(3).max(90),
+    description:z.string().trim().min(20).max(700),
+    city:z.string().trim().min(2).max(90),
+    region:z.string().trim().min(2).max(90),
+    country:z.string().trim().min(2).max(90).default('Argentina'),
+    latitude:z.number().min(-90).max(90).nullable().default(null),
+    longitude:z.number().min(-180).max(180).nullable().default(null),
+    whatsapp:z.string().regex(/^[1-9][0-9]{7,14}$/),
+    remote:z.boolean().default(false)
+  });
+  app.get('/api/directory',{preHandler:auth},async(req,reply)=>{
+    const q=parse(z.object({category:z.enum(['all','doctor','trainer','gym']).default('all'),query:z.string().max(90).default('')}),req.query,reply);
+    if(!q)return;
+    const rows=await db.prepare("SELECT d.user_id,u.name,d.category,d.specialty,d.description,d.city,d.region,d.country,d.latitude,d.longitude,d.whatsapp,d.remote FROM professional_directory d JOIN users u ON u.id=d.user_id WHERE d.published=1 AND d.verified=1 ORDER BY u.name LIMIT 200").all() as {user_id:number;name:string;category:string;specialty:string;description:string;city:string;region:string;country:string;latitude:number|null;longitude:number|null;whatsapp:string;remote:number}[];
+    const term=q.query.toLocaleLowerCase('es').trim();
+    return rows.filter(row=>(q.category==='all'||row.category===q.category)&&(!term||[row.name,row.specialty,row.city,row.region].some(x=>x.toLocaleLowerCase('es').includes(term))))
+      .map(row=>({...row,latitude:row.latitude===null?null:Math.round(row.latitude*100)/100,longitude:row.longitude===null?null:Math.round(row.longitude*100)/100,remote:!!row.remote}));
+  });
+  app.get('/api/directory/me',{preHandler:auth},async(req)=>{
+    const row=await db.prepare('SELECT * FROM professional_directory WHERE user_id=?').get(req.user!.id);
+    return {profile:row??null};
+  });
+  app.put('/api/directory/me',{preHandler:proOnly},async(req,reply)=>{
+    const b=parse(directoryProfile,req.body,reply);
+    if(!b)return;
+    const existing=await db.prepare('SELECT user_id FROM professional_directory WHERE user_id=?').get(req.user!.id);
+    const data=[b.category,b.specialty,b.description,b.city,b.region,b.country,b.latitude,b.longitude,b.whatsapp,b.remote?1:0,now(),req.user!.id];
+    if(existing){
+      await db.prepare('UPDATE professional_directory SET category=?,specialty=?,description=?,city=?,region=?,country=?,latitude=?,longitude=?,whatsapp=?,remote=?,verified=0,published=0,updated_at=? WHERE user_id=?').run(...data);
+    }else{
+      await db.prepare('INSERT INTO professional_directory(category,specialty,description,city,region,country,latitude,longitude,whatsapp,remote,verified,published,updated_at,user_id) VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?)').run(...data);
+    }
+    await audit(req.user!.id,req.user!.id,'directory:submitted');
+    return {status:'pending_review',message:'Perfil enviado. No aparecerá públicamente hasta ser verificado.'};
+  });
+  app.delete('/api/directory/me',{preHandler:auth},async(req)=>{
+    await db.prepare('UPDATE professional_directory SET published=0 WHERE user_id=?').run(req.user!.id);
+    await audit(req.user!.id,req.user!.id,'directory:unpublished');
+    return {ok:true};
+  });
+  app.get('/api/directory/review',{preHandler:adminOnly},async()=>{
+    return db.prepare('SELECT d.*,u.name,u.email FROM professional_directory d JOIN users u ON u.id=d.user_id WHERE d.verified=0 ORDER BY d.updated_at DESC LIMIT 100').all();
+  });
+  app.post('/api/directory/review/:id',{preHandler:adminOnly},async(req,reply)=>{
+    const id=Number((req.params as {id:string}).id);
+    if(!Number.isSafeInteger(id)||id<=0)return reply.code(400).send({error:'invalid_id'});
+    const b=parse(z.object({approved:z.boolean()}),req.body,reply);
+    if(!b)return;
+    const result=await db.prepare('UPDATE professional_directory SET verified=?,published=?,updated_at=? WHERE user_id=? AND verified=0').run(b.approved?1:0,b.approved?1:0,now(),id);
+    if(!result.changes)return reply.code(404).send({error:'pending_profile_not_found'});
+    await audit(req.user!.id,id,b.approved?'directory:approved':'directory:rejected');
+    return {ok:true};
+  });
+
   /* ---------------- Professional links ---------------- */
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {
     const b = parse(z.object({ email: z.string().email(), limits: limitsSchema.optional() }), req.body, reply);
