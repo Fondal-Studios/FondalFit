@@ -20,3 +20,50 @@ nav.tabs button { flex:1; border:0; border-radius:0; background:none; color:var(
 .set { display:grid; grid-template-columns:1.4rem 1fr 1fr 1fr; gap:6px; align-items:center; margin:4px 0 } .set span { color:var(--muted) }
 .bar { height:8px; background:#0f1317; border-radius:6px; overflow:hidden } .bar > i { display:block; height:100%; background:var(--accent) }
 header.top { display:flex; justify-content:space-between; align-items:center } header.top button { flex:none; min-height:40px }
+
+/* Fondal Fit · B1: simple, touch-first navigation and visual hierarchy */
+:root { --bg:#0b1013; --panel:#151d20; --line:#29363a; --text:#f0f6f4; --muted:#a7b8b7; --accent:#9af1aa; }
+body { background: radial-gradient(ellipse at top,#182b25 0,#0b1013 38%); }
+main { max-width:800px; padding:18px 18px 112px; }
+header.top { padding:4px 0 20px; border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:center; gap:12px; letter-spacing:.12em; font-size:.85rem; }
+.brand div {display:flex; flex-direction:column; gap:2px}
+.brand small {color:var(--muted); font-size:.65rem; letter-spacing:.08em; text-transform:uppercase}
+.brandmark { width:38px; height:38px; border:1px solid #51765c; background:#223b2a; color:var(--accent); border-radius:12px; display:grid; place-items:center; font-size:1.5rem; font-weight:800; }
+.header-action {flex:none; background:transparent; border:1px solid var(--line); width:44px; padding:0; }
+.screen-heading {margin:20px 0 14px}
+.screen-heading h1 {font-size:clamp(1.6rem,5vw,2.1rem);font-weight:750;letter-spacing:-.04em;margin:0}
+.screen-subtitle {font-size:.95rem;color:var(--muted);margin:8px 0 0}
+.back-button {background:transparent;border:0;padding:4px 0 10px;min-height:42px;color:var(--accent);font-size:.94rem;}
+.hero {padding:24px; border:1px solid #375747; background:linear-gradient(140deg,#203e2d,#152723 70%,#111a1c); box-shadow:0 16px 40px #0003;}
+.hero .eyebrow {font-size:.7rem;letter-spacing:.16em;color:var(--accent);font-weight:700}
+.hero h2 {font-size:1.65rem;margin:12px 0 8px;letter-spacing:-.035em;line-height:1.2}
+.hero p {font-size:.95rem;color:#d2e2d9;line-height:1.5}
+.hero-note {display:inline-block;border-radius:50px;padding:10px 14px;background:#ffffff12;color:#e3fbe4;font-size:.85rem}
+.card {box-shadow:0 3px 15px #0002;border-radius:18px;padding:18px;margin:14px 0}
+.card h3 {font-size:1.08rem}
+.card .primary {font-weight:750}
+.feature-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.feature-card {min-width:0;text-align:left;padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:17px;display:flex;flex-direction:column;align-items:flex-start;gap:13px;min-height:210px;}
+.feature-card strong {font-size:1.1rem;color:var(--text)}
+.feature-card small {line-height:1.4;color:var(--muted);font-size:.85rem}
+.feature-card > span:last-child {margin-top:auto;color:var(--accent);font-size:.83rem}
+.feature-icon {font-size:1.4rem;width:42px;height:42px;display:grid;place-items:center;background:#263b30;border-radius:12px;color:var(--accent)}
+.quick-tabs {display:flex;gap:8px;margin:15px 0}
+.quick-tabs button {flex:1}
+.quick-tabs button.selected {background:#28503b;color:var(--accent);border-color:#456c51}
+.metric {display:flex;gap:12px;align-items:baseline}.metric strong {font-size:2.5rem;color:var(--accent);font-variant-numeric:tabular-nums}.metric span {color:var(--muted)}
+nav.tabs {z-index:10;justify-content:center;gap:3px;padding:7px max(12px, env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));background:#10181bef;backdrop-filter:blur(18px);box-shadow:0 -8px 30px #0005}
+nav.tabs button {max-width:180px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;font-size:.71rem;border-radius:12px;min-height:58px;line-height:1.25}
+nav.tabs button.on {background:#22372c;color:var(--accent);font-weight:700}
+.nav-icon {font-size:1.35rem;line-height:1.25}
+@media (max-width:420px) {
+  main {padding:14px 14px 112px}
+  .feature-grid {grid-template-columns:1fr}
+  .feature-card {min-height:140px}
+  .hero {padding:19px}
+  .card .row > h3 {flex-basis:100%}
+  .set {grid-template-columns:1.25rem repeat(3,minmax(0,1fr))}
+  .set input {min-width:0;padding:8px 6px}
+}
+@media (prefers-reduced-motion: reduce) { * {scroll-behavior:auto!important;transition:none!important} }
