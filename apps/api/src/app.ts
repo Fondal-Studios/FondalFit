@@ -521,6 +521,19 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return { ok: true };
   });
 
+  /* Admin beta: restart the initial assessment for every athlete without deleting accounts or history. */
+  app.post('/api/admin/reset-onboarding', { preHandler: auth }, async (req, reply) => {
+    if (req.user!.role !== 'admin') return reply.code(403).send({ error: 'admin_only' });
+    const body = parse(z.object({ confirmation: z.literal('REINICIAR EVALUACIONES') }), req.body, reply);
+    if (!body) return;
+    const count = await db.prepare("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM users WHERE role='athlete'").get() as { n: number };
+    // Existing workout and running history, accounts and professional links are intentionally preserved.
+    await db.prepare("DELETE FROM plans WHERE user_id IN (SELECT id FROM users WHERE role='athlete')").run();
+    await db.prepare("DELETE FROM assessments WHERE user_id IN (SELECT id FROM users WHERE role='athlete')").run();
+    await audit(req.user!.id, null, 'admin:reset_onboarding_all');
+    return { ok: true, affectedAthletes: count.n, retained: ['accounts','workouts','runs','links'] };
+  });
+
   /* ---------------- Subscription ---------------- */
   app.post('/api/subscription/cancel', { preHandler: auth }, async (req) => {
     await db.prepare('UPDATE users SET canceled_at=? WHERE id=?').run(now(), req.user!.id);

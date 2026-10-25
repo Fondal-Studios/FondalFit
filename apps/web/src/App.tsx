@@ -90,6 +90,7 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
   const isPro = me.role === 'pro';
+  const isAdmin = me.role === 'admin';
   const [tab, setTab] = useState('today');
   const [wellness, setWellness] = useState<'running' | 'nutrition' | 'recovery' | null>(null);
   const [proView, setProView] = useState<'athletes' | 'approvals'>('athletes');
@@ -110,10 +111,11 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           </div>
           {isPro ? <>
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
-            {tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
+            {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
             {tab === 'today' && <><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
+            {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
               <button className="feature-card" onClick={() => setWellness('running')}><span className="feature-icon">↗</span><strong>{t('running')}</strong><small>Distancia, ritmos y registro de carreras</small><span>Ver actividad →</span></button>
               <button className="feature-card" onClick={() => setWellness('nutrition')}><span className="feature-icon">◉</span><strong>{t('nutrition')}</strong><small>Comidas, energía y proteínas diarias</small><span>Ver alimentación →</span></button>
@@ -123,7 +125,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
           </>}
           <nav className="tabs" aria-label="Navegación principal">
-            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
+            {((isPro ? [['today', 'Inicio', '⌂'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']] : [['today', 'Hoy', '⌂'], ['progress', 'Progreso', '▥'], ['wellness', 'Bienestar', '♡'], ['settings', 'Perfil', '◎'], ['development', 'Desarrollo', '◫']]) as [string, string, string][]).map(([key, label, symbol]) => <button key={key} className={tab === key ? 'on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => navigate(key)}><span className="nav-icon" aria-hidden="true">{symbol}</span><span>{label}</span></button>)}
           </nav>
         </>
       )}
@@ -472,22 +474,70 @@ function BetaCoach() {
   </section>;
 }
 
+function Development({ isAdmin }: { isAdmin: boolean }) {
+  const [confirmation,setConfirmation]=useState('');
+  const [status,setStatus]=useState('');
+  const [working,setWorking]=useState(false);
+  const reset=async()=>{
+    if(confirmation!=='REINICIAR EVALUACIONES')return;
+    if(!window.confirm('¿Reiniciar las evaluaciones y planes de TODOS los deportistas? Las cuentas, vínculos y registros históricos se conservarán.'))return;
+    setWorking(true);
+    try{const r=await api<{affectedAthletes:number}>('POST','/api/admin/reset-onboarding',{confirmation});setStatus('Evaluación inicial reiniciada para '+r.affectedAthletes+' deportistas. Volverán a completar el cuestionario al entrar.');setConfirmation('');}
+    catch{setStatus('No se pudo reiniciar. Verificá tu sesión y permisos de administrador.');}
+    finally{setWorking(false);}
+  };
+  return <section className="card"><div className="eyebrow">FONDAL FIT · BETA</div><h2>Desarrollo y pruebas</h2>
+    <p className="muted">Estado de funciones implementadas en el código. No equivale a verificación del despliegue ni a una auditoría en dispositivos reales.</p>
+    <div className="development-list">
+      {[
+        ['Entrenamientos por objetivos','Implementado · beta'],
+        ['Rutinas de profesionales y códigos','Implementado · beta'],
+        ['Running GPS en primer plano','Implementado · limitación PWA'],
+        ['Registro manual de distancia y velocidad','Implementado · estimaciones'],
+        ['Biblioteca de 150 combinaciones de menús','Implementado · datos aproximados'],
+        ['Tutor Gemini','Requiere clave del servidor'],
+        ['Zonas cardíacas con sensores','Pendiente de integración'],
+        ['App nativa y GPS en segundo plano','Pendiente']
+      ].map(([name,state])=><div key={name}><strong>{name}</strong><span>{state}</span></div>)}
+    </div>
+    {isAdmin&&<div className="admin-reset"><h3>Herramienta de pruebas — administrador</h3>
+      <p>Reiniciar la entrevista inicial para todas las cuentas de deportistas. Se eliminan evaluaciones y planes existentes, incluso los asignados por profesionales. Se conservan las cuentas, contraseñas, vínculos, carreras y registros de entrenamiento. Esta acción no se puede deshacer sin respaldo.</p>
+      <label htmlFor="reset-confirm">Escribí REINICIAR EVALUACIONES</label>
+      <input id="reset-confirm" value={confirmation} onChange={e=>setConfirmation(e.target.value)}/>
+      <button className="danger action-full" disabled={working||confirmation!=='REINICIAR EVALUACIONES'} onClick={()=>void reset()}>{working?'Reiniciando…':'Reiniciar evaluaciones de todos'}</button>
+      {status&&<p role="status">{status}</p>}
+    </div>}
+  </section>;
+}
+
 function Running() {
   const t = useT();
   const [d, setD] = useState<any>(null);
-  const [f, setF] = useState({ km: '', minutes: '', rpe: '5' });
+  const [f, setF] = useState({ km: '', minutes: '', speed: '', weightKg: '70', rpe: '5' });
+  const [manualResult,setManualResult]=useState<{km:number;speed:number;kcal:number;pace:number;zone:string}|null>(null);
+  const speed=Number(f.speed),km=Number(f.km);
+  const derivedMinutes=km>0&&speed>0?km/speed*60:0;
+  const paceFromSpeed=speed>0?60/speed:0;
+  const paceZone=speed>=12?'Ritmo rápido':speed>=9?'Ritmo moderado':'Ritmo suave';
   const load = () => api('GET', '/api/runs').then(setD).catch(() => {});
   useEffect(() => { load(); }, []);
   const fmt = (p: number) => `${Math.floor(p)}:${String(Math.round((p % 1) * 60)).padStart(2, '0')}`;
   return (
     <>
-      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),minutes:String(minutes)}))}/>
-      <form className="card" onSubmit={async (e) => { e.preventDefault(); await api('POST', '/api/runs', { km: +f.km, minutes: +f.minutes, rpe: +f.rpe }); setF({ km: '', minutes: '', rpe: '5' }); load(); }}>
+      <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
+      <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
-        <div className="row"><input required aria-label={t('distanceKm')} placeholder={t('distanceKm')} inputMode="decimal" value={f.km} onChange={(e) => setF({ ...f, km: e.target.value })} />
-          <input required aria-label={t('minutes')} placeholder={t('minutes')} inputMode="decimal" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
-          <input required aria-label={t('rpe')} placeholder={t('rpe')} type="number" min={1} max={10} value={f.rpe} onChange={(e) => setF({ ...f, rpe: e.target.value })} /></div>
+        <p className="muted">Registro manual: ingresá kilómetros y velocidad promedio. El tiempo, ritmo y calorías se calculan aproximadamente.</p>
+        <div className="manual-run-fields">
+          <label>Distancia (km)<input required type="number" step="0.01" min="0.1" max="250" value={f.km} onChange={e=>setF({...f,km:e.target.value})}/></label>
+          <label>Velocidad promedio (km/h)<input required type="number" step="0.1" min="1" max="30" value={f.speed} onChange={e=>setF({...f,speed:e.target.value})}/></label>
+          <label>Peso para estimar calorías (kg)<input required type="number" min="30" max="250" value={f.weightKg} onChange={e=>setF({...f,weightKg:e.target.value})}/></label>
+          <label>Esfuerzo percibido (1–10)<input required type="number" min="1" max="10" value={f.rpe} onChange={e=>setF({...f,rpe:e.target.value})}/></label>
+        </div>
+        {derivedMinutes>0&&<div className="manual-preview"><strong>{Math.round(derivedMinutes)} min · {fmt(paceFromSpeed)} min/km · ≈{Math.round(km*(Number(f.weightKg)||70))} kcal</strong>
+          <p>{paceZone} (banda de velocidad, no zona de frecuencia cardíaca). Sin pulso medido no podemos determinar zonas fisiológicas.</p></div>}
         <p><button className="primary">{t('logRun')}</button></p></form>
+      {manualResult&&<div className="card"><h3>Resumen del registro manual</h3><p>{manualResult.km} km · {manualResult.speed} km/h · {fmt(manualResult.pace)} min/km · ≈{manualResult.kcal} kcal</p><p className="muted">{manualResult.zone}. No son zonas cardíacas. Estimación energética aproximada por distancia y peso; no es una medición metabólica.</p></div>}
       {d && <div className="card"><p>{t('weekKm')}: <b>{d.weekKm}</b></p>
         {d.alerts.map((a: string) => <p key={a} className="warn" role="alert">{t('a_' + a)}</p>)}
         {d.runs.map((r: any, i: number) => <p key={i} className="muted">{r.created_at.slice(0, 10)} · {r.km} km · {fmt(r.pace)} /km · RPE {r.rpe}</p>)}</div>}
