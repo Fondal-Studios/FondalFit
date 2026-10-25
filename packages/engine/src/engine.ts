@@ -35,6 +35,7 @@ const SCHEME: Record<Goal, { sets: number; repMin: number; repMax: number; rir: 
   fat_loss: { sets: 3, repMin: 10, repMax: 15, rir: 2 },
   mobility: { sets: 2, repMin: 8, repMax: 12, rir: 4 },
   general: { sets: 3, repMin: 8, repMax: 12, rir: 3 },
+  hybrid: { sets: 3, repMin: 6, repMax: 12, rir: 3 },
 };
 
 const DAY_PATTERNS: Exercise['pattern'][][] = [
@@ -57,11 +58,14 @@ export function generatePlan(a: AssessmentInput): Plan {
   const pool = allowedExercises(a);
   const s = SCHEME[a.goal];
   const beginner = a.experience === 'beginner';
+  const sessionMinutes = Math.min(120, Math.max(20, a.sessionMinutes ?? 60));
+  const maxExercises = sessionMinutes <= 30 ? 3 : sessionMinutes <= 45 ? 4 : sessionMinutes <= 60 ? 5 : 6;
   const days: PlanDay[] = [];
   for (let d = 0; d < nDays; d++) {
     const used = new Set<string>();
     const items: Prescription[] = [];
     for (const p of DAY_PATTERNS[d % DAY_PATTERNS.length]!) {
+      if (items.length >= maxExercises) break;
       const ex = pick(pool, p, beginner, used);
       if (!ex) continue;
       used.add(ex.id);
@@ -75,7 +79,7 @@ export function generatePlan(a: AssessmentInput): Plan {
         load: 0,
       });
     }
-    days.push({ name: `D${d + 1}`, items });
+    days.push({ name: a.goal === 'hybrid' ? `Sesión híbrida ${d + 1}` : `Sesión ${d + 1}`, items });
   }
   return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
 }
