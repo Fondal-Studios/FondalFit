@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
   gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
-  type AssessmentInput, type AutonomyLimits, type Plan,
+  CATALOG, type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
 
@@ -396,6 +396,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const rec = (await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM recovery WHERE user_id=?').get(uid) as { c: number }).c;
     return gamification([...byDay.values()], rec);
   });
+
+  app.get('/api/exercises', { preHandler: auth }, async () => CATALOG.map(e=>({id:e.id,name:e.nameEs??e.id,level:e.level??1,skill:e.skill??null,equipment:e.equipment,holdSeconds:!!e.holdSeconds})));
 
   /* Professional-designed plans: strength and cardio are independent on every day. */
   const professionalDay = z.object({
