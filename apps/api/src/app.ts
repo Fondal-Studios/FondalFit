@@ -262,14 +262,14 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   /* ---------------- Beta coach: Gemini free-tier, opt-in, server-side only ---------------- */
   const coachDaily = new Map<number, { day: string; count: number }>();
-  app.get('/api/coach/status', { preHandler: athleteOnly }, async (req) => {
+  app.get('/api/coach/status', { preHandler: auth }, async (req) => {
     const day = now().slice(0,10);
     const usage = coachDaily.get(req.user!.id);
     return { available: !!process.env.GEMINI_API_KEY, provider: 'gemini', dailyLimit: 8, remaining: 8 - (usage?.day === day ? usage.count : 0), mode: 'beta' };
   });
-  app.post('/api/coach/chat', { preHandler: athleteOnly }, async (req, reply) => {
-    if (!await needHealth(req, reply)) return;
-    if (!await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({ error: 'ai_consent_required' });
+  app.post('/api/coach/chat', { preHandler: auth }, async (req, reply) => {
+    if (req.user!.role === 'athlete' && !await needHealth(req, reply)) return;
+    if (req.user!.role === 'athlete' && !await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({ error: 'ai_consent_required' });
     const parsed = parse(z.object({ message: z.string().trim().min(1).max(450) }),req.body,reply);
     if (!parsed) return;
     const key = process.env.GEMINI_API_KEY;
@@ -282,7 +282,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const assessment = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
     const workout = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(uid) as { n: number };
     const profile = assessment ? JSON.parse(assessment.data) as AssessmentInput : null;
-    const context = { primaryGoal: profile?.goal ?? 'general', secondaryGoals: profile?.secondaryGoals ?? [], target: profile?.targetDescription ?? '', availabilityDays: profile?.daysPerWeek ?? 3, sessionMinutes: profile?.sessionMinutes ?? 60, completedSessions: Number(workout.n) };
+    const context = req.user!.role === 'pro' ? {role:'professional',notice:'No student information shared. Suggestions are educational and must be reviewed by the professional.'} : { primaryGoal: profile?.goal ?? 'general', secondaryGoals: profile?.secondaryGoals ?? [], target: profile?.targetDescription ?? '', availabilityDays: profile?.daysPerWeek ?? 3, sessionMinutes: profile?.sessionMinutes ?? 60, completedSessions: Number(workout.n) };
     try {
       const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
       if (!/^[a-zA-Z0-9._-]+$/.test(model)) return reply.code(500).send({ error: 'invalid_coach_model' });
@@ -290,7 +290,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
         method:'POST',
         headers:{ 'content-type':'application/json', 'x-goog-api-key':key },
         body:JSON.stringify({
-          systemInstruction:{ parts:[{text:'Sos Fondal Coach, asistente educativo de ejercicio físico basado en evidencia. Contestá en español claro, breve y con incertidumbre explícita. Personalizá según la meta y los registros; no inventes historial ni cites estudios inexistentes. No indiques esteroides, dosis ni tratamientos. Ante dolor torácico, síncope, síntomas de alarma o lesión grave recomendá suspender actividad y consultar. No generes diagnósticos. Nunca modifiques directamente el plan: solo sugerencias.'}] },
+          systemInstruction:{ parts:[{text:'Sos Fondal Coach, asistente educativo de ejercicio físico basado en evidencia. Podés orientar a entrenadores profesionales, pero no afirmes que modificaste rutinas, no prometas un gasto calórico exacto por ejercicio y pedí datos faltantes. Contestá en español claro, breve y con incertidumbre explícita. Personalizá según la meta y los registros; no inventes historial ni cites estudios inexistentes. No indiques esteroides, dosis ni tratamientos. Ante dolor torácico, síncope, síntomas de alarma o lesión grave recomendá suspender actividad y consultar. No generes diagnósticos. Nunca modifiques directamente el plan: solo sugerencias.'}] },
           contents:[{role:'user',parts:[{text:'Contexto limitado: '+JSON.stringify(context)+'\\nConsulta: '+parsed.message}]}],
           generationConfig:{temperature:0.3,maxOutputTokens:420}
         }),
@@ -410,6 +410,32 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     run: z.object({minutes:z.number().min(5).max(240),intensity:z.enum(['easy','moderate']),note:z.string().max(300)}).optional(),
   }).refine(d=>d.items.length>0 || !!d.run);
   const professionalTemplate = z.object({name:z.string().trim().min(2).max(100),days:z.array(professionalDay).min(1).max(14)});
+  app.post('/api/pro/ai-plan-draft',{preHandler:proOnly},async(req,reply)=>{
+    const b=parse(z.object({instruction:z.string().trim().min(10).max(1500)}),req.body,reply);
+    if(!b)return;
+    const key=process.env.GEMINI_API_KEY;
+    if(!key)return reply.code(503).send({error:'coach_unconfigured'});
+    const model=process.env.GEMINI_MODEL||'gemini-2.5-flash-lite';
+    if(!/^[a-zA-Z0-9._-]+$/.test(model))return reply.code(500).send({error:'invalid_coach_model'});
+    const exerciseList=CATALOG.map(e=>({id:e.id,name:e.nameEs??e.id,pattern:e.pattern,level:e.level??1}));
+    try{
+      const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',{
+        method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},
+        body:JSON.stringify({
+          systemInstruction:{parts:[{text:'Sos un asistente de planificación de entrenamiento para un profesor. Creá un BORRADOR editable, nunca un plan aprobado. Usá solamente exerciseId de la lista. Respondé exclusivamente JSON: {"name":"...","days":[{"name":"...","items":[{"exerciseId":"...","sets":3,"repMin":8,"repMax":12,"rirTarget":3,"load":0}],"run":{"minutes":30,"intensity":"easy","note":"..."}}]}. El campo run es opcional; si no hay fuerza items puede ser []. Máximo 7 jornadas. Respetá descansos y volumen inicial prudente; nunca garantices calorías quemadas (depende de peso, intensidad y tiempo). Si el usuario pide 600 kcal, explicá en las notas que no puede garantizarse. No inventes condiciones clínicas. Solo borrador que debe aprobar el profesional.'}]},
+          contents:[{role:'user',parts:[{text:'Ejercicios permitidos: '+JSON.stringify(exerciseList)+'\nSolicitud del entrenador: '+b.instruction}]}],
+          generationConfig:{temperature:0.2,maxOutputTokens:2100,responseMimeType:'application/json'}
+        }),signal:AbortSignal.timeout(16000)
+      });
+      if(!response.ok)return reply.code(502).send({error:'coach_provider_unavailable'});
+      const data=await response.json() as {candidates?:{content?:{parts?:{text?:string}[]}}[]};
+      const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text??'').join('')??'';
+      const parsed=professionalTemplate.safeParse(JSON.parse(raw));
+      if(!parsed.success)return reply.code(502).send({error:'draft_invalid'});
+      if(parsed.data.days.some(d=>d.items.some(i=>!CATALOG.some(e=>e.id===i.exerciseId))))return reply.code(502).send({error:'unknown_exercise'});
+      return {draft:parsed.data,disclaimer:'Borrador generado por IA. Revisá volumen, progresiones, técnica y objetivos antes de guardar o asignar. El gasto calórico por sesión no puede garantizarse.'};
+    }catch{return reply.code(503).send({error:'coach_timeout'});}
+  });
   app.get('/api/pro/code',{preHandler:proOnly},async(req)=>{
     const uid=req.user!.id;
     let row=await db.prepare('SELECT code FROM pro_codes WHERE pro_id=?').get(uid) as {code:string}|undefined;

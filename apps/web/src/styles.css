@@ -188,3 +188,11 @@ textarea {display:block;width:100%;min-height:92px;background:#0f1317;color:var(
 .game-progress h4{margin:20px 0 9px}
 nav.tabs{padding-bottom:calc(7px + env(safe-area-inset-bottom))}
 @media(max-width:420px){.floating-coach{right:8px;bottom:calc(90px + env(safe-area-inset-bottom));font-size:.72rem;max-width:150px}}
+
+/* Voice coaching and music for workouts */
+.voice-input {display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px}
+.voice-input button {min-height:44px;background:#224632;color:#eaffec;border:1px solid #609b70}
+.music-center iframe{display:block;margin-top:16px;max-width:100%}
+.music-center .quick-tabs{margin-bottom:16px}
+.music-center input{width:100%;margin:7px 0 12px}
+.music-center a{color:var(--accent)}
