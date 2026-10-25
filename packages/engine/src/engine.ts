@@ -46,8 +46,8 @@ const DAY_PATTERNS: Exercise['pattern'][][] = [
 
 /** Picks the most conservative variant first (fewest stressed areas, bodyweight first for beginners). */
 function pick(pool: Exercise[], pattern: Exercise['pattern'], beginner: boolean, used: Set<string>) {
-  const c = pool.filter((e) => e.pattern === pattern);
-  c.sort((a, b) => (beginner ? a.increment - b.increment : b.increment - a.increment));
+  const c = pool.filter((e) => e.pattern === pattern && (e.level??1) <= (beginner?2:4));
+  c.sort((a, b) => (beginner ? (a.level??1)-(b.level??1) : (b.level??1)-(a.level??1)) || (beginner ? a.increment-b.increment : b.increment-a.increment));
   return c.find((e) => !used.has(e.id)) ?? c[0];
 }
 
@@ -81,10 +81,12 @@ export function generatePlan(a: AssessmentInput): Plan {
         load: 0,
       });
     }
+    // Three distinct emphasis patterns: avoid repeating an identical full-body session every day.
     const hybridRun = a.goal === 'hybrid' && d % 2 === 1;
     const enduranceRun = a.goal === 'endurance' && a.preferredActivities?.includes('running');
     const run = (hybridRun || enduranceRun) ? { minutes: Math.max(15, Math.min(50, Math.round(sessionMinutes * (hybridRun ? 0.45 : 0.75)))), intensity: 'easy' as const, note: 'Ritmo conversacional; ajustá según el esfuerzo percibido.' } : undefined;
-    days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza y carrera ${d + 1}` : `Fuerza ${d + 1}`) : `Sesión ${d + 1}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
+    const emphasis=['Empuje y sentadilla','Tracción y bisagra','Piernas y estabilidad'][d%3];
+    days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza + carrera · ${emphasis}` : `Fuerza · ${emphasis}`) : `Sesión ${d+1} · ${emphasis}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
   }
   return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
 }
