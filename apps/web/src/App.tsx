@@ -867,6 +867,20 @@ function ProfessionalProgram({ athletes }: { athletes:{id:number;name:string}[] 
   const [templates,setTemplates]=useState<{id:number;name:string;days:ProDay[]}[]>([]);
   const [exerciseCatalog,setExerciseCatalog]=useState<{id:string;name:string;level:number;skill:string|null}[]>([]);
   const [name,setName]=useState('Mi programa personalizado');
+  const [aiInstruction,setAiInstruction]=useState('');
+  const [aiWorking,setAiWorking]=useState(false);
+  const [aiMessage,setAiMessage]=useState('');
+  const generateDraft=async()=>{
+    if(aiInstruction.trim().length<10)return;
+    setAiWorking(true);setAiMessage('');
+    try{
+      const result=await api<{draft:{name:string;days:ProDay[]};disclaimer:string}>('POST','/api/pro/ai-plan-draft',{instruction:aiInstruction});
+      setName(result.draft.name);setDays(result.draft.days);setAiMessage(result.disclaimer);
+    }catch(e){
+      const code=e instanceof ApiError?e.body?.error:'';
+      setAiMessage(code==='coach_unconfigured'?'Gemini no está configurado en el servidor. Podés seguir creando la rutina manualmente.':'No se pudo generar el borrador. Probá con una instrucción más concreta.');
+    }finally{setAiWorking(false);}
+  };
   const [days,setDays]=useState<ProDay[]>([{name:'Día 1',items:[{exerciseId:'goblet_squat',sets:3,repMin:8,repMax:12,rirTarget:2,load:0}]}]);
   const [athleteId,setAthleteId]=useState(0);
   const [result,setResult]=useState('');
@@ -879,6 +893,15 @@ function ProfessionalProgram({ athletes }: { athletes:{id:number;name:string}[] 
   const getFeedback=async(id:number)=>{try{const data=await api<typeof feedback>('GET',`/api/pro/athletes/${id}/training-feedback`);setFeedback(data);}catch{setResult('No se pudo consultar el seguimiento.');}};
   return <section className="card pro-program">
     <h2>Mi estudio de entrenamiento</h2><p className="muted">Armá sesiones de fuerza y cardio independientemente. Una jornada puede tener ambos; no hay límite semanal de seis días en las rutinas del profesional.</p>
+    <div className="ai-builder">
+      <h3>Crear rutina hablando con la IA</h3>
+      <p className="muted">Describí el objetivo, días disponibles, ejercicios, músculos y equipamiento. La IA prepara un borrador que podés revisar y modificar antes de guardarlo.</p>
+      <VoiceDictation onTranscript={text=>setAiInstruction(prev=>(prev?prev+' ':'')+text)}/>
+      <textarea rows={4} maxLength={1500} value={aiInstruction} onChange={e=>setAiInstruction(e.target.value)} placeholder="Ej.: armá 4 días de fuerza y 2 de running, prioridad glúteos y tren posterior, con un día de descanso. Explicá la progresión."/>
+      <button className="primary action-full" disabled={aiWorking||aiInstruction.trim().length<10} onClick={()=>void generateDraft()}>{aiWorking?'Preparando borrador…':'Proponer rutina con IA'}</button>
+      {aiMessage&&<p className="muted" role="status">{aiMessage}</p>}
+      <p className="muted">Las calorías por sesión son estimaciones, no objetivos garantizados. No se guarda ni asigna nada sin tu confirmación.</p>
+    </div>
     <div className="pro-code"><span>Código para alumnos</span><strong>{code||'Cargando…'}</strong>{code&&<button onClick={()=>navigator.clipboard?.writeText(code)}>Copiar</button>}</div>
     <label>Nombre del programa</label><input value={name} maxLength={100} onChange={e=>setName(e.target.value)}/>
     {days.map((day,i)=><div className="pro-day" key={i}>
