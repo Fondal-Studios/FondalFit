@@ -81,3 +81,21 @@ nav.tabs button span { display:block; font-size:1.2rem; line-height:1 }
 .home-energy-goal{padding:12px;border-radius:12px;background:#172720}
 .home-energy details{margin-top:12px}
 @media(max-width:370px){.home-energy .energy-hero{grid-template-columns:1fr}}
+
+/* Professional dashboard and sports rankings */
+.pro-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:15px 0}
+.pro-kpis div{padding:13px 7px;text-align:center;border-radius:12px;background:#17281f}
+.pro-kpis strong{display:block;font-size:1.5rem;color:#5fe39c}
+.pro-kpis small{font-size:.72rem;color:var(--muted)}
+.pro-enrollment-code{letter-spacing:.16em;font-size:1.2rem;color:#72e9a0}
+.pro-athlete-row{display:flex;flex-direction:column;align-items:flex-start;width:100%;text-align:left;gap:4px;margin:8px 0;padding:13px;border:1px solid var(--line);border-radius:12px}
+.pro-athlete-row.selected{border-color:#6add91;background:#183628}
+.pro-athlete-row span{font-size:.82rem;color:var(--muted)}
+.pro-feedback{margin:16px 0;padding:13px;background:#13251e;border-radius:12px}
+.pro-plan-day{padding:15px;border:1px solid var(--line);border-radius:14px;margin:14px 0}
+.pro-plan-exercise{padding:10px 0;border-top:1px solid var(--line)}
+.pro-input-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pro-input-grid input{min-width:0;width:100%}
+.pro-template,.ranking-entry{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:12px 0}
+.ranking-entry.self{background:#163b28;border-radius:10px;padding:12px}
+@media(max-width:420px){.pro-input-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
