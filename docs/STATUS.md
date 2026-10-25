@@ -1,15 +1,14 @@
 # Estado y reanudación
 
 ## Hecho (con tests)
-- Motor determinista (20 tests): plan por objetivo/equipo/restricciones, doble progresión, límites de autonomía, nutrición con piso seguro, recuperación, banderas rojas.
-- API (18 tests de integración): auth, roles, consentimientos, plan/sesiones, adaptación, aprobaciones, vínculos revocables, nutrición, recuperación, exportar/borrar.
-- Web: PWA ES/PT/EN (2 tests de paridad). Humo en navegador móvil: alta → consentimiento → evaluación → plan → sesión → plan adaptado (`docs/screenshot-session-mobile.png`).
+- **Motor** (41 tests): plan híbrido fuerza+cardio, reglas de interferencia, 8 objetivos, volumen por músculo, doble progresión, nutrición explicada, 30 menús con filtros, GPS (filtros de precisión y velocidad), suplementos con evidencia, FC estimada.
+- **API** (26 tests, en SQLite y PostgreSQL): auth, roles, consentimientos, evaluación editable, perfil, menús, suplementos, actividades GPS, coach IA (con modelo simulado), aprobaciones, vínculos revocables, exportar/borrar.
+- **Web** (3 tests + E2E en navegador): asistente de 6 pasos con Atrás, Inicio/Entrenar/Cardio GPS/Comida/Más, Coach, Ciencia. E2E verificó GPS simulado (0,11 km, ritmo 6:27) y menús vegetarianos.
 
 ## No hecho / honesto
-- Auditoría de repos hermanos (sin acceso). CleanKEA sin identificar.
-- LLM, cámara, voz/avatar, wearables, pagos reales, running, academia, agenda.
-- No probado en Safari iPhone ni Android real. Sin cifrado en reposo ni backups.
-- Base: PostgreSQL soportada y probada; faltan migraciones versionadas, backups y cifrado en reposo.
-
-## Próximo bloque
-Reset de contraseña, ADR de proveedor de pagos y Sprint 3 (coach LLM con herramientas de permisos limitados).
+- El coach con IA **no se probó contra la API real de Anthropic** (no hay clave en esta sesión). Se activa al definir `ANTHROPIC_API_KEY`.
+- GPS: solo con la app abierta y pantalla encendida (límite de las PWA). Fondo/pantalla apagada requiere app nativa. No probado en iPhone/Android reales.
+- Los macros de los 34 platos son aproximados (porciones típicas), no de una base nutricional oficial.
+- Cámara, voz/avatar, wearables, pagos, academia, agenda: sin hacer.
+- Backups, migraciones versionadas, cifrado en reposo, reseteo de contraseña.
+- Plan gratuito de Render: se duerme tras 15 min (primer acceso lento).

@@ -5,10 +5,12 @@ import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypt
 import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
+  menusForDay, dayNumberOf, supplementAdvice, simplifyRoute, type DietFlag,
   gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
+import { COACH_SYSTEM, type CoachFn } from './coach';
 
 const now = () => new Date().toISOString();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -24,16 +26,26 @@ const limitsSchema = z.object({
   maxSessionsPerWeek: z.number().int().min(1).max(7),
   allowAutoDeload: z.boolean(),
 });
+const DIET_FLAGS = ['vegetarian', 'vegan', 'gluten_free', 'lactose_free', 'nut_free', 'egg_free', 'fish_free'] as const;
+const profileSchema = z.object({
+  sex: z.enum(['f', 'm']), age: z.number().int().min(16).max(90), weightKg: z.number().min(30).max(300), heightCm: z.number().min(120).max(230),
+  bodyFatPct: z.number().min(3).max(60).optional(), waistCm: z.number().min(40).max(200).optional(),
+  lifeFactor: z.union([z.literal(1.2), z.literal(1.3), z.literal(1.4)]), diet: z.array(z.enum(DIET_FLAGS)).default([]),
+});
 const assessmentSchema = z.object({
-  goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general']),
-  daysPerWeek: z.number().int().min(1).max(6),
+  profile: profileSchema,
+  goal: z.enum(['hypertrophy', 'strength', 'recomposition', 'fat_loss', 'endurance', 'vo2max', 'general', 'mobility']),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
+  strengthDays: z.number().int().min(0).max(6),
+  cardioDays: z.number().int().min(0).max(6),
+  cardioModalities: z.array(z.enum(['run', 'bike'])),
   equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar'])),
   restrictions: z.array(z.enum(['knee', 'shoulder', 'lower_back', 'hip', 'ankle', 'wrist', 'neck'])),
   redFlags: z.object({ chestPain: z.boolean(), dizziness: z.boolean(), recentSurgery: z.boolean(), pregnancy: z.boolean(), medication: z.boolean() }),
-});
+}).refine((a) => a.strengthDays + a.cardioDays >= 1 && a.strengthDays + a.cardioDays <= 6, { message: 'days' })
+  .refine((a) => a.cardioDays === 0 || a.cardioModalities.length > 0, { message: 'cardio_modality' });
 
-export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: string }) {
+export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: string; coach?: CoachFn }) {
   const db = opts.db;
   const app = Fastify({ logger: false, trustProxy: true });
   app.register(rateLimit, { max: opts.rateLimitMax ?? 300, timeWindow: '1 minute' });
@@ -140,16 +152,48 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return v;
   };
 
+  const latestTarget = async (uid: number) => {
+    const r = await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(uid) as { data: string } | undefined;
+    return r ? JSON.parse(r.data) as ReturnType<typeof nutritionTarget> & { diet?: DietFlag[] } : null;
+  };
+  const saveTarget = async (uid: number, a: z.infer<typeof assessmentSchema>) => {
+    const t = nutritionTarget({ ...a.profile, strengthDays: a.strengthDays, cardioDays: a.cardioDays, goal: a.goal });
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'target',?,?)").run(uid, JSON.stringify({ ...t, diet: a.profile.diet }), now());
+    return t;
+  };
+
   app.post('/api/assessment', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
     const b = parse(assessmentSchema, req.body, reply);
     if (!b) return;
-    await db.prepare('INSERT INTO assessments(user_id,data,created_at) VALUES(?,?,?)').run(req.user!.id, JSON.stringify(b), now());
-    const safety = screenSafety(b as AssessmentInput);
-    if (safety.status === 'refer') { await audit(req.user!.id, req.user!.id, 'assessment:referral'); return { referral: true, reasons: safety.reasons }; }
-    const plan = generatePlan(b as AssessmentInput);
-    const version = await savePlan(req.user!.id, plan, 'engine');
-    return { referral: false, planVersion: version, plan };
+    const uid = req.user!.id;
+    await db.prepare('INSERT INTO assessments(user_id,data,created_at) VALUES(?,?,?)').run(uid, JSON.stringify(b), now());
+    await db.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at').run(uid, JSON.stringify(b.profile), now());
+    const safety = screenSafety(b as unknown as AssessmentInput);
+    if (safety.status === 'refer') { await audit(uid, uid, 'assessment:referral'); return { referral: true, reasons: safety.reasons }; }
+    const plan = generatePlan(b as unknown as AssessmentInput);
+    const version = await savePlan(uid, plan, 'engine');
+    const target = await saveTarget(uid, b);
+    return { referral: false, planVersion: version, plan, target };
+  });
+
+  /** Latest answers, to edit the plan without starting over. */
+  app.get('/api/assessment', { preHandler: athleteOnly }, async (req) => {
+    const r = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as { data: string } | undefined;
+    return { assessment: r ? JSON.parse(r.data) : null };
+  });
+
+  /** Update weight/body data and recompute calorie targets without regenerating the plan. */
+  app.put('/api/profile', { preHandler: athleteOnly }, async (req, reply) => {
+    const b = parse(profileSchema, req.body, reply);
+    if (!b) return;
+    const uid = req.user!.id;
+    const r = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
+    if (!r) return reply.code(409).send({ error: 'no_assessment' });
+    const a = { ...JSON.parse(r.data), profile: b } as z.infer<typeof assessmentSchema>;
+    await db.prepare('INSERT INTO assessments(user_id,data,created_at) VALUES(?,?,?)').run(uid, JSON.stringify(a), now());
+    await db.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at').run(uid, JSON.stringify(b), now());
+    return saveTarget(uid, a);
   });
 
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
@@ -177,6 +221,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const plan = JSON.parse(cur.data) as Plan;
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
+    if (day.kind === 'cardio') return reply.code(400).send({ error: 'cardio_day_use_activities' });
     const next: Plan = structuredClone(plan);
     let maxIncPct = 0;
     const decisions: Record<string, string> = {};
@@ -220,15 +265,31 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   });
 
   /* ---------------- Nutrition ---------------- */
-  app.post('/api/nutrition/target', { preHandler: athleteOnly }, async (req, reply) => {
-    if (!await needHealth(req, reply)) return;
-    const b = parse(z.object({ sex: z.enum(['f', 'm']), weightKg: z.number().min(30).max(300), heightCm: z.number().min(120).max(230), age: z.number().int().min(16).max(90), activity: z.union([z.literal(1.2), z.literal(1.375), z.literal(1.55), z.literal(1.725)]), goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general']), allergies: z.array(z.string()).default([]) }), req.body, reply);
-    if (!b) return;
-    const { allergies, ...input } = b;
-    const t = nutritionTarget(input);
-    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'target',?,?)").run(req.user!.id, JSON.stringify({ ...t, allergies }), now());
-    return t;
+  /** Three menus for the day (30 rotate every 10 days), portions scaled to the saved calorie target and diet. */
+  app.get('/api/nutrition/menus', { preHandler: athleteOnly }, async (req, reply) => {
+    const q = parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), req.query, reply);
+    if (!q) return;
+    const t = await latestTarget(req.user!.id);
+    if (!t) return reply.code(409).send({ error: 'no_target' });
+    const day = dayNumberOf(new Date((q.date ?? now().slice(0, 10)) + 'T12:00:00Z'));
+    return { kcal: t.kcal, menus: menusForDay(day, t.kcal, t.diet ?? []) };
   });
+
+  /** Rule-based, evidence-ranked supplement advice (works without the AI key). */
+  app.get('/api/supplements', { preHandler: athleteOnly }, async (req, reply) => {
+    const uid = req.user!.id;
+    const r = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
+    const t = await latestTarget(uid);
+    if (!r || !t) return reply.code(409).send({ error: 'no_assessment' });
+    const a = JSON.parse(r.data) as z.infer<typeof assessmentSchema>;
+    const since = new Date(Date.now() - 7 * 864e5).toISOString();
+    const logs = (await db.prepare("SELECT data,created_at FROM nutrition WHERE user_id=? AND kind='log' AND created_at>?").all(uid, since) as { data: string; created_at: string }[]).map((x) => ({ ...JSON.parse(x.data), day: x.created_at.slice(0, 10) }));
+    const days = new Set(logs.map((l) => l.day)).size;
+    const avgProtein = days ? logs.reduce((s, l) => s + (l.proteinG ?? 0), 0) / days : null;
+    const gap = avgProtein === null ? 0 : Math.max(0, Math.round(t.proteinG - avgProtein));
+    return { supplements: supplementAdvice({ goal: a.goal, cardioDays: a.cardioDays, strengthDays: a.strengthDays, diet: a.profile.diet, proteinGapG: gap }), proteinGapG: gap, basedOnLogs: avgProtein !== null };
+  });
+
   app.post('/api/nutrition/log', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
     const b = parse(z.object({ meal: z.string().min(1), kcal: z.number().min(0).max(5000), proteinG: z.number().min(0).max(500), carbsG: z.number().min(0).max(1000), fatG: z.number().min(0).max(500), waterMl: z.number().min(0).max(10000).default(0) }), req.body, reply);
@@ -276,6 +337,58 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return { runs, weekKm: Math.round(thisWeek * 10) / 10, prevWeekKm: Math.round(prev * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
   });
 
+  /* ---------------- GPS activities (run / bike / walk) ---------------- */
+  app.post('/api/activities', { preHandler: athleteOnly }, async (req, reply) => {
+    if (!await needHealth(req, reply)) return;
+    const b = parse(z.object({
+      sport: z.enum(['run', 'bike', 'walk']), startedAt: z.string().max(40), durationSec: z.number().int().min(1).max(86400), movingSec: z.number().int().min(0).max(86400),
+      distanceM: z.number().int().min(0).max(400000), avgPaceSecKm: z.number().int().min(0).max(3600), elevGainM: z.number().int().min(0).max(10000),
+      route: z.array(z.tuple([z.number().min(-90).max(90), z.number().min(-180).max(180)])).max(600).default([]),
+    }), req.body, reply);
+    if (!b) return;
+    const r = await db.prepare('INSERT INTO activities(user_id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m,route,created_at) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id').get(req.user!.id, b.sport, b.startedAt, b.durationSec, b.movingSec, b.distanceM, b.avgPaceSecKm, b.elevGainM, JSON.stringify(b.route), now()) as { id: number };
+    return { id: r.id };
+  });
+  app.get('/api/activities', { preHandler: athleteOnly }, async (req) => {
+    const uid = req.user!.id;
+    const rows = await db.prepare('SELECT id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m FROM activities WHERE user_id=? ORDER BY id DESC LIMIT 30').all(uid) as Record<string, number | string>[];
+    const km = async (from: string, to: string) => ((await db.prepare("SELECT CAST(COALESCE(SUM(distance_m),0) AS DOUBLE PRECISION) k FROM activities WHERE user_id=? AND sport='run' AND created_at>=? AND created_at<?").get(uid, from, to) as { k: number }).k) / 1000;
+    const thisWeek = await km(weekStart(0), '9999'), prev = await km(weekStart(1), weekStart(0));
+    return { activities: rows, weekRunKm: Math.round(thisWeek * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
+  });
+  app.get('/api/activities/:id', { preHandler: athleteOnly }, async (req, reply) => {
+    const r = await db.prepare('SELECT * FROM activities WHERE id=? AND user_id=?').get(Number((req.params as { id: string }).id), req.user!.id) as { route: string } | undefined;
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { ...r, route: JSON.parse(r.route) };
+  });
+
+  /* ---------------- AI coach ---------------- */
+  app.get('/api/coach/status', { preHandler: athleteOnly }, async () => ({ configured: !!opts.coach }));
+  app.post('/api/coach', { preHandler: athleteOnly, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req, reply) => {
+    if (!await needHealth(req, reply)) return;
+    if (!opts.coach) return reply.code(503).send({ error: 'coach_not_configured' });
+    const b = parse(z.object({ message: z.string().min(1).max(1200), history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(2000) })).max(10).default([]) }), req.body, reply);
+    if (!b) return;
+    const uid = req.user!.id;
+    const used = (await db.prepare("SELECT CAST(COUNT(*) AS INTEGER) c FROM audit WHERE actor_id=? AND action='coach:msg' AND created_at>=?").get(uid, now().slice(0, 10)) as { c: number }).c;
+    if (used >= 30) return reply.code(429).send({ error: 'coach_daily_limit' });
+    // personal context is shared with the model ONLY with the explicit ai_memory consent
+    let ctx = 'The user has not shared personal data with the coach.';
+    if (await hasConsent(uid, 'ai_memory')) {
+      const a = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
+      const t = await latestTarget(uid);
+      const rec = await db.prepare('SELECT data,score FROM recovery WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string; score: number } | undefined;
+      if (a) { const x = JSON.parse(a.data); ctx = `User data: goal=${x.goal}; experience=${x.experience}; strength days=${x.strengthDays}; cardio days=${x.cardioDays} (${x.cardioModalities.join(',')}); equipment=${x.equipment.join(',')}; restrictions=${x.restrictions.join(',') || 'none'}; sex=${x.profile.sex}; age=${x.profile.age}; weight=${x.profile.weightKg}kg; height=${x.profile.heightCm}cm; diet=${x.profile.diet.join(',') || 'no restrictions'}.`; }
+      if (t) ctx += ` Daily target: ${t.kcal} kcal, protein ${t.proteinG} g, carbs ${t.carbsG} g, fat ${t.fatG} g.`;
+      if (rec) ctx += ` Latest recovery score: ${rec.score}/100.`;
+    }
+    await audit(uid, null, 'coach:msg');
+    try {
+      const reply_ = await opts.coach(`${COACH_SYSTEM}\n\n${ctx}\nUI language: ${req.user!.lang}`, [...b.history, { role: 'user', content: b.message }]);
+      return { reply: reply_ };
+    } catch { return reply.code(502).send({ error: 'coach_unavailable' }); }
+  });
+
   /* ---------------- Gamification ---------------- */
   app.get('/api/gamification', { preHandler: athleteOnly }, async (req) => {
     const uid = req.user!.id;
@@ -283,6 +396,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const bump = (d: string, k: 'sessions' | 'runs') => { const day = d.slice(0, 10); const e = byDay.get(day) ?? { date: day, sessions: 0, runs: 0 }; e[k]++; byDay.set(day, e); };
     for (const r of await db.prepare('SELECT created_at FROM workouts WHERE user_id=?').all(uid) as { created_at: string }[]) bump(r.created_at, 'sessions');
     for (const r of await db.prepare('SELECT created_at FROM runs WHERE user_id=?').all(uid) as { created_at: string }[]) bump(r.created_at, 'runs');
+    for (const r of await db.prepare('SELECT created_at FROM activities WHERE user_id=?').all(uid) as { created_at: string }[]) bump(r.created_at, 'runs');
     const rec = (await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM recovery WHERE user_id=?').get(uid) as { c: number }).c;
     return gamification([...byDay.values()], rec);
   });

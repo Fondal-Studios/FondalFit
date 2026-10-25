@@ -26,7 +26,8 @@ async function reg(email: string, role: 'athlete' | 'pro') {
   return r.body.token as string;
 }
 const allConsents = { terms: true, health_data: true, share_with_pro: true, ai_memory: false, camera_video: false };
-const assessment = { goal: 'hypertrophy', daysPerWeek: 3, experience: 'intermediate', equipment: ['dumbbells'], restrictions: ['knee'], redFlags: { chestPain: false, dizziness: false, recentSurgery: false, pregnancy: false, medication: false } };
+const profile = { sex: 'f', age: 30, weightKg: 62, heightCm: 165, lifeFactor: 1.3, diet: [] as string[] };
+const assessment = { profile, goal: 'hypertrophy', strengthDays: 3, cardioDays: 0, cardioModalities: [] as string[], experience: 'intermediate', equipment: ['dumbbells'], restrictions: ['knee'], redFlags: { chestPain: false, dizziness: false, recentSurgery: false, pregnancy: false, medication: false } };
 
 async function athleteWithPlan(email = 'ana@x.com') {
   const t = await reg(email, 'athlete');
@@ -90,14 +91,43 @@ describe('athlete flow', () => {
 });
 
 describe('nutrition & recovery', () => {
-  it('computes safe target and aggregates logs', async () => {
+  it('assessment saves an explained calorie target; logs aggregate', async () => {
     const { t } = await athleteWithPlan();
-    const tg = await call('POST', '/api/nutrition/target', t, { sex: 'f', weightKg: 55, heightCm: 160, age: 30, activity: 1.2, goal: 'fat_loss' });
-    expect(tg.body.kcal).toBeGreaterThanOrEqual(1200);
+    const n0 = (await call('GET', '/api/nutrition', t)).body;
+    expect(n0.target.kcal).toBeGreaterThanOrEqual(1200);
+    expect(n0.target.explain.formula).toBe('mifflin_st_jeor');
     await call('POST', '/api/nutrition/log', t, { meal: 'x', kcal: 500, proteinG: 30, carbsG: 50, fatG: 10, waterMl: 300 });
     await call('POST', '/api/nutrition/log', t, { meal: 'y', kcal: 300, proteinG: 20, carbsG: 30, fatG: 5, waterMl: 200 });
     const n = (await call('GET', '/api/nutrition', t)).body;
     expect(n.today).toMatchObject({ kcal: 800, waterMl: 500 });
+  });
+  it('serves 3 rotating menus that respect the diet', async () => {
+    const t = await reg('v@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    await call('POST', '/api/assessment', t, { ...assessment, profile: { ...profile, diet: ['vegan', 'gluten_free'] } });
+    const d1 = (await call('GET', '/api/nutrition/menus?date=2026-10-25', t)).body;
+    const d2 = (await call('GET', '/api/nutrition/menus?date=2026-10-26', t)).body;
+    expect(d1.menus).toHaveLength(3);
+    expect(d1.menus.map((m: any) => m.index)).not.toEqual(d2.menus.map((m: any) => m.index));
+    const text = JSON.stringify(d1.menus);
+    for (const banned of ['chicken', 'beef', 'tuna', 'salmon', 'egg', 'yogurt', 'whey', 'pasta', 'toast', 'oats']) expect(text).not.toContain(banned);
+    expect((await call('GET', '/api/nutrition/menus', await reg('nt@x.com', 'athlete'))).status).toBe(409);
+  });
+  it('updating the profile recomputes targets', async () => {
+    const { t } = await athleteWithPlan();
+    const before = (await call('GET', '/api/nutrition', t)).body.target.kcal;
+    const r = await call('PUT', '/api/profile', t, { ...profile, weightKg: 90 });
+    expect(r.body.kcal).toBeGreaterThan(before);
+  });
+  it('supplement advice is rule-based and conditional on logs', async () => {
+    const { t } = await athleteWithPlan();
+    const s0 = (await call('GET', '/api/supplements', t)).body;
+    expect(s0.supplements.map((x: any) => x.id)).toContain('creatine');
+    expect(s0.basedOnLogs).toBe(false);
+    await call('POST', '/api/nutrition/log', t, { meal: 'x', kcal: 1500, proteinG: 40, carbsG: 150, fatG: 40 });
+    const s1 = (await call('GET', '/api/supplements', t)).body;
+    expect(s1.proteinGapG).toBeGreaterThan(20);
+    expect(s1.supplements.map((x: any) => x.id)).toContain('whey_or_plant_protein');
   });
   it('recovery alerts', async () => {
     const { t } = await athleteWithPlan();
@@ -171,15 +201,16 @@ describe('professional supervision', () => {
   });
 });
 
-describe('running & gamification', () => {
-  it('logs runs, computes pace, warns on jumps, awards capped XP', async () => {
+describe('GPS activities & gamification', () => {
+  const act = (km: number) => ({ sport: 'run', startedAt: new Date().toISOString(), durationSec: km * 360, movingSec: km * 360, distanceM: km * 1000, avgPaceSecKm: 360, elevGainM: 10, route: [[-34.6, -58.4], [-34.61, -58.41]] });
+  it('stores activities with route, warns on volume jumps, awards capped XP', async () => {
     const { t } = await athleteWithPlan();
-    const r = await call('POST', '/api/runs', t, { km: 10, minutes: 55, rpe: 6 });
-    expect(r.body.pace).toBe(5.5);
-    await call('POST', '/api/runs', t, { km: 20, minutes: 120, rpe: 7 });
-    const list = (await call('GET', '/api/runs', t)).body;
-    expect(list.runs).toHaveLength(2);
+    const r = await call('POST', '/api/activities', t, act(10));
+    await call('POST', '/api/activities', t, act(20));
+    const list = (await call('GET', '/api/activities', t)).body;
+    expect(list.activities).toHaveLength(2);
     expect(list.alerts).toEqual(['run_volume_jump']);
+    expect((await call('GET', `/api/activities/${r.body.id}`, t)).body.route).toHaveLength(2);
     const plan = (await call('GET', '/api/plan', t)).body.plan;
     await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
     await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
@@ -187,9 +218,64 @@ describe('running & gamification', () => {
     expect(g.xp).toBe(50); // same day: one rewarded activity only
     expect(g.achievements).toEqual(expect.arrayContaining(['first_session', 'first_run']));
   });
-  it('requires consent', async () => {
+  it('requires consent and isolates users', async () => {
     const t = await reg('b@x.com', 'athlete');
-    expect((await call('POST', '/api/runs', t, { km: 5, minutes: 30, rpe: 5 })).status).toBe(403);
+    expect((await call('POST', '/api/activities', t, act(5))).status).toBe(403);
+    const a = await athleteWithPlan('c@x.com');
+    const id = (await call('POST', '/api/activities', a.t, act(5))).body.id;
+    const other = await athleteWithPlan('d@x.com');
+    expect((await call('GET', `/api/activities/${id}`, other.t)).status).toBe(404);
+  });
+});
+
+describe('hybrid plan, editing and cardio days', () => {
+  it('builds a hybrid week, lets the athlete read & change answers, and guards cardio days', async () => {
+    const t = await reg('h@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    const hy = { ...assessment, strengthDays: 3, cardioDays: 2, cardioModalities: ['run', 'bike'] };
+    const r = await call('POST', '/api/assessment', t, hy);
+    expect(r.body.plan.days).toHaveLength(5);
+    const cardioIdx = r.body.plan.days.findIndex((d: any) => d.kind === 'cardio');
+    expect((await call('POST', '/api/workouts', t, { dayIndex: cardioIdx, items: [{ exerciseId: 'x', sets: [{ weight: 0, reps: 1, rir: 1 }] }] })).body.error).toBe('cardio_day_use_activities');
+    // change mind: 5 strength days instead
+    expect((await call('GET', '/api/assessment', t)).body.assessment.cardioDays).toBe(2);
+    const r2 = await call('POST', '/api/assessment', t, { ...assessment, strengthDays: 5, cardioDays: 0 });
+    expect(r2.body.plan.days).toHaveLength(5);
+    expect(r2.body.planVersion).toBe(2);
+  });
+  it('validates days and anthropometrics', async () => {
+    const t = await reg('i@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    expect((await call('POST', '/api/assessment', t, { ...assessment, strengthDays: 6, cardioDays: 3 })).status).toBe(400);
+    expect((await call('POST', '/api/assessment', t, { ...assessment, profile: { ...profile, weightKg: 5 } })).status).toBe(400);
+    expect((await call('POST', '/api/assessment', t, { ...assessment, strengthDays: 0, cardioDays: 2, cardioModalities: [] })).status).toBe(400);
+  });
+});
+
+describe('AI coach', () => {
+  const body = { message: 'qué suplementos?' };
+  it('is clearly unavailable without a configured model', async () => {
+    const { t } = await athleteWithPlan();
+    expect((await call('GET', '/api/coach/status', t)).body.configured).toBe(false);
+    expect((await call('POST', '/api/coach', t, body)).status).toBe(503);
+  });
+  it('shares personal context only with ai_memory consent, and limits daily use', async () => {
+    const seen: string[] = [];
+    app = buildApp({ db, rateLimitMax: 100000, coach: async (sys, msgs) => { seen.push(sys); return 'ok:' + msgs.length; } });
+    const { t } = await athleteWithPlan();
+    expect((await call('POST', '/api/coach', t, body)).body.reply).toBe('ok:1');
+    expect(seen[0]).toContain('has not shared personal data');
+    await call('PUT', '/api/consents', t, { ai_memory: true });
+    await call('POST', '/api/coach', t, { ...body, history: [{ role: 'user', content: 'hola' }, { role: 'assistant', content: 'hi' }] });
+    expect(seen[1]).toContain('goal=hypertrophy');
+    expect(seen[1]).toContain('kcal');
+    for (let i = 0; i < 28; i++) await call('POST', '/api/coach', t, body);
+    expect((await call('POST', '/api/coach', t, body)).status).toBe(429);
+  });
+  it('degrades gracefully when the model fails', async () => {
+    app = buildApp({ db, rateLimitMax: 100000, coach: async () => { throw new Error('boom'); } });
+    const { t } = await athleteWithPlan();
+    expect((await call('POST', '/api/coach', t, body)).status).toBe(502);
   });
 });
 

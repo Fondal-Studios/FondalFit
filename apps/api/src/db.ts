@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS approvals(id @ID, link_id INTEGER NOT NULL REFERENCES
 CREATE TABLE IF NOT EXISTS nutrition(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS recovery(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL, score INTEGER NOT NULL, alerts TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS runs(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, km @REAL NOT NULL, minutes @REAL NOT NULL, rpe @REAL NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS profiles(user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS activities(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, sport TEXT NOT NULL, started_at TEXT NOT NULL, duration_sec INTEGER NOT NULL, moving_sec INTEGER NOT NULL, distance_m INTEGER NOT NULL, avg_pace_sec_km INTEGER NOT NULL, elev_gain_m INTEGER NOT NULL, route TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_activities_user ON activities(user_id);
 CREATE TABLE IF NOT EXISTS audit(id @ID, actor_id INTEGER, subject_id INTEGER, action TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_workouts_user ON workouts(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON plans(user_id, version);

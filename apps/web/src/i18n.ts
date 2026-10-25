@@ -110,5 +110,10 @@ const pt: Record<Key, string> = {
   ex_reverse_lunge: 'Avanço reverso', ex_step_up_low: 'Subida em degrau baixo', ex_plank: 'Prancha', ex_dead_bug: 'Dead bug', ex_farmer_carry: 'Caminhada do fazendeiro', ex_hip_flow: 'Fluxo de mobilidade do quadril', ex_thoracic_rotation: 'Rotação torácica',
 };
 
-export const dict: Record<Lang, Record<Key, string>> = { en, es, pt };
-export const translate = (lang: Lang, key: string): string => (dict[lang] as Record<string, string>)[key] ?? key;
+import { T } from './i18n2';
+const withNew = (i: 0 | 1 | 2, base: Record<string, string>): Record<string, string> => ({ ...base, ...Object.fromEntries(Object.entries(T).map(([k, v]) => [k, v[i]])) });
+export const dict: Record<Lang, Record<string, string>> = { en: withNew(0, en), es: withNew(1, es), pt: withNew(2, pt) };
+export const translate = (lang: Lang, key: string, vars?: Record<string, string | number>): string => {
+  const s = dict[lang][key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? '')) : s;
+};

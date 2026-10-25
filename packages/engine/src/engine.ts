@@ -1,7 +1,7 @@
 import { CATALOG, byId } from './catalog';
-import type { AssessmentInput, AutonomyLimits, Exercise, Goal, Plan, PlanDay, Prescription, SetResult } from './types';
+import type { AssessmentInput, AutonomyLimits, Exercise, Prescription, SetResult } from './types';
 
-export const ENGINE_VERSION = '1.0.0';
+export const ENGINE_VERSION = '2.0.0';
 
 /** Epley estimated 1RM. Estimate only: never presented as a measured value. */
 export function estimate1RM(weight: number, reps: number): number {
@@ -26,58 +26,6 @@ export function allowedExercises(a: Pick<AssessmentInput, 'equipment' | 'restric
   return CATALOG.filter(
     (e) => e.equipment.some((q) => eq.has(q)) && !e.stresses.some((s) => a.restrictions.includes(s)),
   );
-}
-
-const SCHEME: Record<Goal, { sets: number; repMin: number; repMax: number; rir: number }> = {
-  strength: { sets: 4, repMin: 3, repMax: 6, rir: 2 },
-  hypertrophy: { sets: 3, repMin: 8, repMax: 12, rir: 2 },
-  endurance: { sets: 2, repMin: 15, repMax: 20, rir: 3 },
-  fat_loss: { sets: 3, repMin: 10, repMax: 15, rir: 2 },
-  mobility: { sets: 2, repMin: 8, repMax: 12, rir: 4 },
-  general: { sets: 3, repMin: 8, repMax: 12, rir: 3 },
-};
-
-const DAY_PATTERNS: Exercise['pattern'][][] = [
-  ['squat', 'push', 'pull', 'core'],
-  ['hinge', 'pull', 'push', 'mobility'],
-  ['lunge', 'push', 'pull', 'carry', 'core'],
-];
-
-/** Picks the most conservative variant first (fewest stressed areas, bodyweight first for beginners). */
-function pick(pool: Exercise[], pattern: Exercise['pattern'], beginner: boolean, used: Set<string>) {
-  const c = pool.filter((e) => e.pattern === pattern);
-  c.sort((a, b) => (beginner ? a.increment - b.increment : b.increment - a.increment));
-  return c.find((e) => !used.has(e.id)) ?? c[0];
-}
-
-export function generatePlan(a: AssessmentInput): Plan {
-  const safety = screenSafety(a);
-  if (safety.status === 'refer') throw new Error('REFERRAL_REQUIRED:' + safety.reasons.join(','));
-  const nDays = Math.min(6, Math.max(1, Math.round(a.daysPerWeek)));
-  const pool = allowedExercises(a);
-  const s = SCHEME[a.goal];
-  const beginner = a.experience === 'beginner';
-  const days: PlanDay[] = [];
-  for (let d = 0; d < nDays; d++) {
-    const used = new Set<string>();
-    const items: Prescription[] = [];
-    for (const p of DAY_PATTERNS[d % DAY_PATTERNS.length]!) {
-      const ex = pick(pool, p, beginner, used);
-      if (!ex) continue;
-      used.add(ex.id);
-      const isCore = p === 'core' || p === 'mobility';
-      items.push({
-        exerciseId: ex.id,
-        sets: isCore ? 2 : beginner ? Math.min(s.sets, 3) : s.sets,
-        repMin: s.repMin,
-        repMax: s.repMax,
-        rirTarget: beginner ? Math.max(s.rir, 3) : s.rir,
-        load: 0,
-      });
-    }
-    days.push({ name: `D${d + 1}`, items });
-  }
-  return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
 }
 
 export type Decision = { action: 'increase' | 'hold' | 'decrease'; load: number; reason: string };
@@ -131,24 +79,6 @@ export function checkAutonomy(limits: AutonomyLimits, c: PlanChange): Autonomy {
 }
 
 export const DEFAULT_LIMITS: AutonomyLimits = { maxLoadIncreasePct: 5, maxWeeklyVolumeDeltaPct: 10, maxSessionsPerWeek: 5, allowAutoDeload: true };
-
-/* ---------- Nutrition (conservative) ---------- */
-export interface NutritionInput { sex: 'f' | 'm'; weightKg: number; heightCm: number; age: number; activity: 1.2 | 1.375 | 1.55 | 1.725; goal: Goal }
-export interface NutritionTarget { kcal: number; proteinG: number; fatG: number; carbsG: number; waterMl: number; floored: boolean }
-
-export function nutritionTarget(n: NutritionInput): NutritionTarget {
-  const bmr = 10 * n.weightKg + 6.25 * n.heightCm - 5 * n.age + (n.sex === 'm' ? 5 : -161);
-  const tdee = bmr * n.activity;
-  const adj = n.goal === 'fat_loss' ? 0.85 : n.goal === 'hypertrophy' ? 1.08 : 1;
-  // never below BMR nor below an absolute floor: no extreme restriction
-  const floor = Math.max(bmr, n.sex === 'm' ? 1500 : 1200);
-  const raw = tdee * adj;
-  const kcal = Math.round(Math.max(raw, floor));
-  const proteinG = Math.round(n.weightKg * (n.goal === 'strength' || n.goal === 'hypertrophy' ? 1.8 : 1.6));
-  const fatG = Math.round((kcal * 0.27) / 9);
-  const carbsG = Math.max(0, Math.round((kcal - proteinG * 4 - fatG * 9) / 4));
-  return { kcal, proteinG, fatG, carbsG, waterMl: Math.round(n.weightKg * 35), floored: raw < floor };
-}
 
 /* ---------- Recovery ---------- */
 export interface RecoveryInput { sleepHours: number; fatigue: number; stress: number; pain: number /*0-10*/ }

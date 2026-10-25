@@ -20,3 +20,17 @@ nav.tabs button { flex:1; border:0; border-radius:0; background:none; color:var(
 .set { display:grid; grid-template-columns:1.4rem 1fr 1fr 1fr; gap:6px; align-items:center; margin:4px 0 } .set span { color:var(--muted) }
 .bar { height:8px; background:#0f1317; border-radius:6px; overflow:hidden } .bar > i { display:block; height:100%; background:var(--accent) }
 header.top { display:flex; justify-content:space-between; align-items:center } header.top button { flex:none; min-height:40px }
+.row.between { justify-content:space-between } .row.nav { margin-top:16px } .row.nav > * { flex:1 }
+button.link { background:none; border:0; color:var(--accent); padding:8px 0; min-height:44px; text-align:left }
+button.opt { display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; margin:6px 0; text-align:left; padding:12px } button.opt.on { border-color:var(--accent); background:#12241a }
+.small { font-size:.75rem } .big { font-size:1.6rem; font-weight:700; margin:.2rem 0 }
+button.big { width:100%; min-height:64px; font-size:1.25rem }
+ul.plain, ol.plain { padding-left:1.1rem; margin:.5rem 0 } ul.plain li, ol.plain li { margin:.3rem 0 }
+.metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px } .metrics div { background:#0f1317; border-radius:10px; padding:10px } .metrics span { display:block; color:var(--muted); font-size:.75rem } .metrics b { font-size:1.35rem; font-variant-numeric:tabular-nums }
+svg.route { width:100%; max-height:220px; background:#0f1317; border-radius:10px; margin:8px 0 }
+.menu { border-top:1px solid var(--line); padding:10px 0 } .menu .meal { padding:4px 0 } .menu .meal button { min-height:36px; padding:4px 12px; flex:none }
+.chat { max-height:50vh; overflow:auto; margin:10px 0 } .chat p { padding:8px 12px; border-radius:12px; margin:6px 0; max-width:90% } .chat .user { background:#1b2d22; margin-left:auto } .chat .assistant { background:#1b2128 }
+.supp { display:flex; gap:10px; align-items:flex-start; margin:8px 0 } .supp p { margin:0 } .badge.ev-strong { color:var(--accent); border-color:var(--accent) } .badge.ev-moderate { color:var(--warn); border-color:var(--warn) }
+.menu-list { display:flex; flex-direction:column; gap:8px } .menu-list button { text-align:left }
+nav.tabs button span { display:block; font-size:1.2rem; line-height:1 }
+@media (prefers-reduced-motion: no-preference) { .bar > i { transition: width .3s } }

@@ -10,6 +10,14 @@ GitHub guarda el **código**; no ejecuta la app. Si abrís el repo (o GitHub Pag
 
 Limitaciones del plan gratuito de Render: la app se duerme tras ~15 min sin uso (tarda en despertar) y **la base gratis se borra a los 30 días**. Sirve para probar. Para uso real: base paga o migrar a Neon (https://neon.tech, cambiando solo la variable `DATABASE_URL`).
 
+## Activar el coach con IA (opcional)
+1. Creá una clave en https://console.anthropic.com (la API se cobra por uso; el límite diario por usuario es 30 mensajes).
+2. En Render: tu servicio → *Environment* → agregá `ANTHROPIC_API_KEY` = tu clave. (Opcional `COACH_MODEL`.) Guardá: se redespliega.
+Sin clave, todo funciona menos el chat.
+
+## Velocidad
+En el plan gratuito la app se duerme tras ~15 min sin uso y el primer acceso tarda hasta un minuto. Para evitarlo: un monitor gratuito (p. ej. UptimeRobot) que visite `https://TU-URL/api/health` cada 5 minutos, o el plan pago de Render.
+
 ## Local
 ```bash
 npm install && npm run build && npm start      # SQLite local en ./fondal.db → http://localhost:3001
