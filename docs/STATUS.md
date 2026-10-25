@@ -9,7 +9,7 @@
 - Auditoría de repos hermanos (sin acceso). CleanKEA sin identificar.
 - LLM, cámara, voz/avatar, wearables, pagos reales, running, academia, agenda.
 - No probado en Safari iPhone ni Android real. Sin cifrado en reposo ni backups.
-- SQLite local: apto para desarrollo; producción requiere PostgreSQL (ADR-002).
+- Base: PostgreSQL soportada y probada; faltan migraciones versionadas, backups y cifrado en reposo.
 
 ## Próximo bloque
 Reset de contraseña, ADR de proveedor de pagos y Sprint 3 (coach LLM con herramientas de permisos limitados).

@@ -5,7 +5,7 @@ Base del dossier *FONDAL FIT IA* (23/10/2026). Estado: **Sprint 0 + base de los 
 
 ## Estructura
 - `packages/engine` – motor determinista y testeado (plan, progresión, límites de autonomía, nutrición, recuperación, filtro de seguridad). El LLM **no** calcula; solo explicará.
-- `apps/api` – API Fastify + zod + SQLite (`node:sqlite`). Roles, consentimientos granulares, vínculos profesional↔alumno revocables, aprobaciones.
+- `apps/api` – API Fastify + zod + PostgreSQL (producción) o SQLite (desarrollo). Roles, consentimientos granulares, vínculos profesional↔alumno revocables, aprobaciones.
 - `apps/web` – PWA React/Vite (instalable, service worker), ES/PT/EN.
 
 ## Uso

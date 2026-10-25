@@ -1,8 +1,21 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
+import { openDb, type DB } from '../src/db';
 
+// Runs against SQLite by default; set TEST_DATABASE_URL=postgres://… to run the same suite on PostgreSQL.
 let app: ReturnType<typeof buildApp>;
-beforeEach(() => { app = buildApp(); });
+let db: DB;
+beforeEach(async () => {
+  const url = process.env.TEST_DATABASE_URL;
+  if (url) {
+    const admin = await openDb(url);
+    await admin.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    await admin.close();
+  }
+  db = await openDb(url ?? ':memory:');
+  app = buildApp({ db, rateLimitMax: 100000 });
+});
+afterEach(async () => { await app.close(); await db.close(); });
 
 async function call(method: string, url: string, token?: string, payload?: unknown) {
   const r = await app.inject({ method: method as 'GET', url, payload: payload as object, headers: token ? { authorization: `Bearer ${token}` } : {} });

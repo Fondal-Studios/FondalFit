@@ -1,0 +1,12 @@
+# Render Blueprint: un solo servicio web (API + PWA) en el plan gratuito.
+# La base de datos es PostgreSQL externa gratuita (Neon): pegá su URL en DATABASE_URL al crear el servicio.
+services:
+  - type: web
+    name: fondal-fit
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false

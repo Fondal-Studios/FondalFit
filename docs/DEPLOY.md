@@ -1,31 +1,40 @@
-# Cómo desplegar Fondal Fit
+# Cómo poner Fondal Fit online (gratis)
 
-La app es **un solo servicio Node**: la API también sirve la PWA ya compilada. Necesita Node ≥ 22.13 y un disco persistente para la base (`DB_PATH`).
+## Por qué al entrar ves el README
+GitHub guarda el **código**; no ejecuta la app. Si abrís el repo (o GitHub Pages) ves el README. Fondal Fit necesita un servidor (la API) y una base de datos, y GitHub Pages solo sirve archivos estáticos. Hay que desplegarla en un hosting. Con los pasos de abajo obtenés un enlace tipo `https://fondal-fit.onrender.com`.
 
-## 1. Probar local
+## Piezas (todas con plan gratuito, sin tarjeta que yo sepa; verificá en cada sitio)
+| Pieza | Servicio | Nota |
+|---|---|---|
+| App (API + PWA) | **Render** (web service gratis) | Se "duerme" tras ~15 min sin uso y tarda ~30–60 s en despertar. |
+| Base de datos PostgreSQL | **Neon** (https://neon.tech) | La base gratis de Render **vence a los 30 días**, por eso uso Neon. |
+
+## Paso a paso
+**A. Crear la base (2 min)**
+1. Entrá a https://neon.tech y creá cuenta (podés usar GitHub).
+2. *Create project* → nombre `fondal-fit`, región la más cercana.
+3. En el panel, botón **Connect** → copiá la *connection string* (empieza con `postgresql://…`). Guardala, es secreta.
+
+**B. Crear la app en Render (5 min)**
+1. Entrá a https://render.com y creá cuenta con GitHub; autorizá el repo `arquitecto-`.
+2. *New +* → **Blueprint** → elegí el repo y la rama que contiene `render.yaml` (hoy `claude/fondal-feed-base`; tras fusionar a `main`, `main`).
+3. Cuando pida `DATABASE_URL`, pegá la cadena de Neon. *Apply*.
+4. Esperá el primer build (unos 3–6 min). Al terminar, Render muestra la URL pública. Abrila: ves la pantalla de Fondal Fit.
+5. Verificá `https://TU-URL/api/health` → `{"ok":true}`.
+
+Las tablas se crean solas al arrancar. En el celular, abrí la URL y usá *Agregar a pantalla de inicio* para instalar la PWA.
+
+## Local
 ```bash
-npm install
-npm run build          # compila la PWA en apps/web/dist
-npm start              # http://localhost:3001  (API + PWA)
+npm install && npm run build && npm start      # SQLite local en ./fondal.db → http://localhost:3001
+DATABASE_URL=postgres://… npm start            # contra PostgreSQL
+npm test                                       # SQLite
+TEST_DATABASE_URL=postgres://… npm -w @fondal/api run test   # misma suite sobre PostgreSQL
 ```
-Para desarrollar con recarga: `npm run dev:api` y `npm run dev:web` (http://localhost:5173).
+Docker: `docker build -t fondal-fit . && docker run -p 3001:3001 -e DATABASE_URL=… fondal-fit`
 
-## 2. Con Docker
-```bash
-docker build -t fondal-fit .
-docker run -p 3001:3001 -v fondal-data:/data fondal-fit
-```
-
-## 3. En un hosting (Render, Railway, Fly.io…)
-- Crear un *Web Service* desde este repositorio (usa el `Dockerfile`).
-- Agregar un **disco/volumen persistente** montado en `/data` (sin él, se pierden los datos en cada deploy).
-- Variables: `PORT` (la mayoría lo inyecta), `DB_PATH=/data/fondal.db`.
-- El hosting da HTTPS, necesario para instalar la PWA en el celular.
-
-## Antes de abrirla a usuarios reales (beta)
-Estos puntos NO están hechos todavía:
-- Pasar de SQLite a PostgreSQL gestionado, con backups y restauración probada.
-- Elegir proveedor de pagos (hoy solo hay prueba de 14 días y cancelación; no se cobra).
-- Cifrado en reposo, política de retención, términos y política de privacidad revisados por un abogado.
-- Probar en Safari iPhone y Android Chrome reales.
-- Un sistema de reseteo de contraseña y correo transaccional.
+## Antes de usuarios reales (pendiente)
+- Backups y restauración probada de la base (Neon ofrece restauración por tiempo; hay que verificar el plan).
+- Cifrado en reposo propio, reseteo de contraseña, correo transaccional, términos y privacidad revisados por un abogado.
+- Pagos: fuera de alcance por ahora (solo prueba de 14 días y cancelación, sin cobro).
+- Probar en Safari iPhone y Android reales.
