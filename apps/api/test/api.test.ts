@@ -216,6 +216,17 @@ describe('daily energy calendar', () => {
   });
 });
 
+describe('exercise blocks and calorie calendar',()=>{
+ it('saves custom strength blocks and includes energy in calendar',async()=>{
+  const {t}=await athleteWithPlan();
+  const a=await call('POST','/api/activity/blocks',t,{weightKg:75,blocks:[{name:'Dominadas',kind:'calisthenics',minutes:20,intensity:'moderate'}]});
+  expect(a.status).toBe(200);expect(a.body.activeKcal).toBeGreaterThan(0);
+  const month=new Date().toISOString().slice(0,7);
+  const c=await call('GET','/api/energy/calendar?month='+month+'&timezoneOffset=0',t);
+  expect(c.status).toBe(200);
+  expect(c.body.days.some((x:any)=>x.blocks?.some((y:any)=>y.name==='Dominadas'))).toBe(true);
+ });
+});
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();

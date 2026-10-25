@@ -1,3 +1,4 @@
+import {RunningMap, missingGPSGap, type GPSPoint} from './RunningMap';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, hasToken, setToken } from './api';
 import { LANGS, translate, type Lang } from './i18n';
@@ -119,7 +120,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
             {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
-            {tab === 'today' && <><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'today' && <><ActivityBlocks/><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
@@ -351,6 +352,22 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
   const [summary, setSummary] = useState<RunSummary | null>(()=>{try{const saved=localStorage.getItem('ff_last_run_summary');return saved?JSON.parse(saved) as RunSummary:null;}catch{return null;}});
   const [splits, setSplits] = useState<RunSplit[]>([]);
   const [unlocked, setUnlocked] = useState(0);
+  const [route,setRoute]=useState<GPSPoint[]>([]);
+  const routeRef=useRef<GPSPoint[]>([]);
+  const resumeFlag=useRef(false);
+  const [resumeSnapshot,setResumeSnapshot]=useState<{startedAt:number;meters:number;last:GPSPoint;route:GPSPoint[]}|null>(()=>{
+    try{
+      const raw=localStorage.getItem('ff_active_gps');
+      const val=raw?JSON.parse(raw) as {startedAt:number;meters:number;last:GPSPoint;route:GPSPoint[]}:null;
+      return val&&Date.now()-val.startedAt<21600000?val:null;
+    }catch{return null;}
+  });
+  const [gap,setGap]=useState<{from:GPSPoint;to:GPSPoint;meters:number;seconds:number}|null>(null);
+  const [estimatedGap,setEstimatedGap]=useState(0);
+  const saveCheckpoint=(point:GPSPoint)=>{
+    const arr=[...routeRef.current.slice(-499),point];routeRef.current=arr;setRoute(arr);
+    try{localStorage.setItem('ff_active_gps',JSON.stringify({startedAt:startedAt.current,meters:distanceRef.current,last:point,route:arr}));}catch{}
+  };
   const watchId = useRef<number | null>(null);
   const lastPoint = useRef<{lat:number;lon:number;at:number}|null>(null);
   const startedAt = useRef(0);
@@ -385,12 +402,20 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
     return ()=>clearInterval(id);
   },[active]);
   const fmt = (minutes:number|null) => minutes === null || !Number.isFinite(minutes) || minutes <= 0 ? '—:—' : Math.floor(minutes)+':'+String(Math.round((minutes%1)*60)).padStart(2,'0');
-  const start = async () => {
+  const start = async (resume=false) => {
     if (!navigator.geolocation) { setStatus('Este navegador no ofrece GPS.'); return; }
     if (!window.isSecureContext) { setStatus('El GPS requiere HTTPS.'); return; }
-    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);setGpsInterrupted(false);
-    splitsRef.current=[];lastPaces.current=[];distanceRef.current=0;splitAt.current=0;
-    lastPoint.current=null;startedAt.current=Date.now();running.current=true;setActive(true);setStatus('Buscando señal GPS…');
+    setSummary(null);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);setGpsInterrupted(false);setGap(null);
+    splitsRef.current=[];lastPaces.current=[];splitAt.current=0;setEstimatedGap(0);
+    if(resume&&resumeSnapshot){
+      distanceRef.current=resumeSnapshot.meters;setMeters(resumeSnapshot.meters);
+      lastPoint.current=resumeSnapshot.last;startedAt.current=resumeSnapshot.startedAt;
+      routeRef.current=resumeSnapshot.route;setRoute(resumeSnapshot.route);resumeFlag.current=true;
+    }else{
+      distanceRef.current=0;setMeters(0);
+      lastPoint.current=null;startedAt.current=Date.now();routeRef.current=[];setRoute([]);resumeFlag.current=false;
+    }
+    setResumeSnapshot(null);running.current=true;setActive(true);setStatus('Buscando señal GPS…');
     try {
       const n = navigator as Navigator & {wakeLock?:{request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
       if (n.wakeLock) wake.current=await n.wakeLock.request('screen');
@@ -401,6 +426,15 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
       const {latitude:lat,longitude:lon,accuracy,speed}=pos.coords;
       if(accuracy>40) {setStatus('Señal imprecisa; esperando una posición mejor…');return;}
       const at=pos.timestamp,prev=lastPoint.current;
+      const point:GPSPoint={lat,lon,at};
+      if(resumeFlag.current&&prev){
+        resumeFlag.current=false;
+        const missing=missingGPSGap(prev,point);
+        if(missing.plausible&&missing.meters>15)setGap({from:prev,to:point,...missing});
+        lastPoint.current=point;saveCheckpoint(point);
+        setStatus('Se recuperó la ubicación. Revisá el tramo sin GPS antes de sumarlo.');
+        return;
+      }
       if(prev) {
         const rad=Math.PI/180,dlat=(lat-prev.lat)*rad,dlon=(lon-prev.lon)*rad;
         const h=Math.sin(dlat/2)**2+Math.cos(prev.lat*rad)*Math.cos(lat*rad)*Math.sin(dlon/2)**2;
@@ -426,14 +460,14 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
               splitAt.current=since;
             }
           }
-          lastPoint.current={lat,lon,at};
+          lastPoint.current=point;saveCheckpoint(point);
           setStatus('GPS activo · distancia y ritmo aproximados');
         } else if(seconds>0 && distance/seconds>=8) {
           setStatus('Se ignoró un salto GPS poco probable.');
         } else if(seconds>=15 && distance<3) {
-          lastPoint.current={lat,lon,at};setPace(null);
+          lastPoint.current=point;saveCheckpoint(point);setPace(null);
         }
-      } else {lastPoint.current={lat,lon,at};setStatus('Señal GPS adquirida.');}
+      } else {lastPoint.current=point;saveCheckpoint(point);setStatus('Señal GPS adquirida.');}
     },e=>setStatus(e.code===1?'Ubicación denegada. Revisá los permisos.':'Sin señal GPS; la distancia puede ser incompleta.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   };
   const finish=()=>{
@@ -450,13 +484,17 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number, weightKg: 
       'El GPS y las calorías son estimaciones; sin pulsómetro no se pueden calcular zonas cardíacas reales.',
       'Compará tu ritmo con sesiones de distancia similar, no solamente con tu carrera más rápida.'];
     const result:RunSummary={date:new Date().toISOString(),km:Number(km.toFixed(2)),minutes:Number(mins.toFixed(2)),avgPace:km>0?mins/km:0,kcal,weightKg,splits:allSplits,tips};
-    stop();setSummary(result);
+    stop();setSummary(result);setResumeSnapshot(null);
+    try{localStorage.removeItem('ff_active_gps');}catch{}
     if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)),weightKg);
     try {localStorage.setItem('ff_last_run_summary',JSON.stringify(result));} catch {/* optional device storage */}
   };
   const paceGroups=splits.reduce((out,split)=>{const k=split.pace<5?'Rápido (<5:00)':split.pace<6.5?'Medio (5:00–6:30)':'Suave (>6:30)';out[k]=(out[k]||0)+1;return out;},{} as Record<string,number>);
   return <div className="card gps-run">
     <h3>Running GPS · beta</h3>
+    <RunningMap points={route} gap={gap}/>
+    {resumeSnapshot&&!active&&<div className="card"><p>Hay una corrida interrumpida a las {new Date(resumeSnapshot.startedAt).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}. Recuperamos {(resumeSnapshot.meters/1000).toFixed(2)} km medidos.</p><button className="primary" onClick={()=>void start(true)}>Retomar corrida interrumpida</button><button onClick={()=>{setResumeSnapshot(null);try{localStorage.removeItem('ff_active_gps');}catch{}}}>Descartar recuperación</button></div>}
+    {gap&&<div className="card"><h4>Tramo sin GPS</h4><p>Entre estos puntos transcurrieron {Math.round(gap.seconds/60)} minutos. Distancia mínima recta: {(gap.meters/1000).toFixed(2)} km. El recorrido real podría ser más largo.</p><button onClick={()=>{distanceRef.current+=gap.meters;setMeters(distanceRef.current);setEstimatedGap(g=>g+gap.meters);setGap(null);}}>Agregar estimación mínima</button><button onClick={()=>setGap(null)}>No sumar</button></div>}
     <p className="muted">Mantené abierta la pantalla. En iOS y Android la web no garantiza GPS cuando se bloquea el teléfono o queda en segundo plano.</p>
     <div className="gps-metrics">
       <div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div>
@@ -611,8 +649,8 @@ function Development({ isAdmin }: { isAdmin: boolean }) {
   </section>;
 }
 
-type EnergyDay={date:string;intake:number;runKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];provisional:boolean};
-type EnergyCalendar={month:string;target:{kcal?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
+type EnergyDay={date:string;intake:number;runKcal:number;blocksKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[];provisional:boolean};
+type EnergyCalendar={month:string;target:{kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
 const ENERGY_LABELS:Record<string,string>={red:'Superávit alto',orange:'Superávit leve',yellow:'Cerca del mantenimiento',green:'Déficit moderado estimado',blue:'Déficit alto: revisar',violet:'Déficit muy alto: atención',unknown:'Sin estimación'};
 function DailyEnergyCalendar(){
  const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
@@ -641,10 +679,35 @@ function DailyEnergyCalendar(){
     {chosen?<><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
       <div className="energy-figures"><div><strong>{chosen.intake}</strong><small>kcal ingeridas</small></div><div><strong>{chosen.runKcal}</strong><small>kcal por carreras (aprox.)</small></div><div><strong>{chosen.balance===null?'—':(chosen.balance>0?'+':'')+chosen.balance}</strong><small>balance diario estimado, kcal</small></div></div>
       <h4>Comidas</h4>{chosen.meals.length?chosen.meals.map((meal,i)=><p key={i}>{meal.name} · ≈{Math.round(meal.kcal)} kcal</p>):<p className="muted">No se registraron comidas.</p>}
+      <h4>Bloques de entrenamiento</h4>{chosen.blocks?.length?chosen.blocks.map((b,i)=><p key={i}>{b.name} · {b.minutes} min · ≈{b.kcal} kcal activas</p>):<p className="muted">No hay otros bloques registrados.</p>}
       <h4>Carreras</h4>{chosen.runs.length?chosen.runs.map((run,i)=><p key={i}>{run.km.toFixed(2)} km · ≈{Math.round(run.kcal)} kcal</p>):<p className="muted">No hay carreras con peso registrado para estimar energía.</p>}
-      <p className="muted">Balance provisional: no asumas que el registro representa todas las comidas del día.</p>
+      <p className="muted">Balance provisional: referencia sedentaria, ejercicio registrado y alimentos declarados. No presupongas que el registro representa todas las comidas del día.</p>
      </>:<p className="muted">Todavía no hay registros para esta fecha.</p>}
    </div><details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Comparación orientativa entre alimentos registrados y gasto diario estimado, sumando la carrera. El cálculo puede contar dos veces parte del ejercicio si tu factor de actividad ya lo incluye. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
+ </section>;
+}
+
+type FitnessBlock={name:string;kind:'calisthenics'|'strength'|'functional'|'walk';minutes:number;intensity:'light'|'moderate'|'vigorous'};
+function ActivityBlocks(){
+ const [blocks,setBlocks]=useState<FitnessBlock[]>([{name:'Dominadas y flexiones',kind:'calisthenics',minutes:15,intensity:'moderate'}]);
+ const [weight,setWeight]=useState(70),[saved,setSaved]=useState(''),[working,setWorking]=useState(false);
+ const met:Record<FitnessBlock['kind'],Record<FitnessBlock['intensity'],number>>={calisthenics:{light:2.8,moderate:3.8,vigorous:6},strength:{light:3,moderate:3.5,vigorous:6},functional:{light:3.5,moderate:5,vigorous:7},walk:{light:2.5,moderate:3.5,vigorous:4.8}};
+ const total=blocks.reduce((n,b)=>n+Math.round((met[b.kind][b.intensity]-1)*3.5*weight/200*b.minutes),0);
+ const save=async()=>{setWorking(true);try{const result=await api<{activeKcal:number}>('POST','/api/activity/blocks',{weightKg:weight,blocks});setSaved('Se guardaron '+result.activeKcal+' kcal activas aproximadas. Revisá Nutrición para ver el balance.');}catch{setSaved('No se pudieron guardar los bloques.');}finally{setWorking(false);}};
+ return <section className="card"><div className="eyebrow">SESIÓN PERSONALIZADA</div><h2>Armá tu entrenamiento por bloques</h2>
+   <p className="muted">Podés correr y después agregar dominadas, flexiones, caminata o fuerza. Estimación orientativa con MET y tiempo efectivo, excluyendo el gasto en reposo.</p>
+   <label>Peso corporal (kg)</label><input type="number" min={30} max={250} value={weight} onChange={e=>setWeight(Number(e.target.value)||70)}/>
+   {blocks.map((b,i)=><div className="fitness-block" key={i}>
+     <label>Nombre del bloque<input value={b.name} maxLength={100} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,name:e.target.value}:x))}/></label>
+     <div className="fitness-block-grid"><label>Actividad<select value={b.kind} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,kind:e.target.value as FitnessBlock['kind']}:x))}><option value="calisthenics">Calistenia</option><option value="strength">Fuerza</option><option value="functional">Funcional</option><option value="walk">Caminata</option></select></label>
+       <label>Minutos<input type="number" min={1} max={240} value={b.minutes} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,minutes:Number(e.target.value)}:x))}/></label>
+       <label>Intensidad<select value={b.intensity} onChange={e=>setBlocks(v=>v.map((x,j)=>i===j?{...x,intensity:e.target.value as FitnessBlock['intensity']}:x))}><option value="light">Suave</option><option value="moderate">Moderada</option><option value="vigorous">Alta</option></select></label>
+     </div><button type="button" disabled={blocks.length<=1} onClick={()=>setBlocks(v=>v.filter((_,j)=>i!==j))}>Quitar bloque</button>
+   </div>)}
+   <button type="button" disabled={blocks.length>=12} onClick={()=>setBlocks(v=>[...v,{name:'Nuevo bloque',kind:'calisthenics',minutes:15,intensity:'moderate'}])}>+ Agregar bloque</button>
+   <p className="live-kcal">≈{total} kcal activas estimadas en estos bloques</p>
+   <button className="primary action-full" disabled={working||!blocks.every(b=>b.name.trim()&&b.minutes>=1&&b.minutes<=240)} onClick={()=>void save()}>{working?'Guardando…':'Guardar bloques y sumar al día'}</button>
+   {saved&&<p role="status">{saved}</p>}
  </section>;
 }
 
@@ -663,6 +726,7 @@ function Running() {
   return (
     <>
       <MusicCenter />
+      <ActivityBlocks />
       <GpsRun onDraft={(km,minutes,weightKg)=>setF(prev=>({...prev,km:String(km),weightKg:String(weightKg),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe,weightKg:+f.weightKg });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
