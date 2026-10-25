@@ -218,6 +218,22 @@ describe('GPS activities & gamification', () => {
     expect(g.xp).toBe(50); // same day: one rewarded activity only
     expect(g.achievements).toEqual(expect.arrayContaining(['first_session', 'first_run']));
   });
+  it('corrects wrong average pace and makes a saved run appear on the daily home feed', async () => {
+    const { t }=await athleteWithPlan();
+    const r=await call('POST','/api/activities',t,{
+      sport:'run',startedAt:new Date().toISOString(),durationSec:1585,movingSec:1120,
+      distanceM:3270,avgPaceSecKm:348,elevGainM:92,route:[[-26.07,-65.97],[-26.075,-65.975]]
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.avgPaceSecKm).toBe(Math.round(1585*1000/3270));
+    expect(r.body.estimatedKcal).toBe(Math.round(profile.weightKg*3.27));
+    const offset=new Date().getTimezoneOffset();
+    const day=await call('GET','/api/activity/today?timezoneOffset='+offset,t);
+    expect(day.status).toBe(200);
+    expect(day.body.activities.some((x:any)=>x.id===r.body.id)).toBe(true);
+    expect(day.body.activities[0].avg_pace_sec_km).toBe(Math.round(1585*1000/3270));
+    expect(day.body.totalKcal).toBe(Math.round(profile.weightKg*3.27));
+  });
   it('requires consent and isolates users', async () => {
     const t = await reg('b@x.com', 'athlete');
     expect((await call('POST', '/api/activities', t, act(5))).status).toBe(403);

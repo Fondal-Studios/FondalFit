@@ -337,6 +337,21 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return { runs, weekKm: Math.round(thisWeek * 10) / 10, prevWeekKm: Math.round(prev * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
   });
 
+  const activityEnergy = (sport:string,meters:number,seconds:number,weightKg:number) => {
+    // Gross estimates, not sensor-measured energy. Running ~1 kcal/kg/km;
+    // walking ~0.55 kcal/kg/km; cycling speed-adjusted MET with broad uncertainty.
+    const km=meters/1000;
+    if(sport==='run')return Math.round(weightKg*km);
+    if(sport==='walk')return Math.round(0.55*weightKg*km);
+    const speed=seconds>0?meters/seconds*3.6:0;
+    const met=speed>=23?8:speed>=16?6.8:4;
+    return Math.round(met*3.5*weightKg/200*(seconds/60));
+  };
+  const profileWeight = async(uid:number) => {
+    const profile=await db.prepare('SELECT data FROM profiles WHERE user_id=?').get(uid) as {data:string}|undefined;
+    const weight=profile?Number((JSON.parse(profile.data) as {weightKg?:number}).weightKg):0;
+    return weight>=30&&weight<=300?weight:null;
+  };
   /* ---------------- GPS activities (run / bike / walk) ---------------- */
   app.post('/api/activities', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
@@ -344,22 +359,46 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       sport: z.enum(['run', 'bike', 'walk']), startedAt: z.string().max(40), durationSec: z.number().int().min(1).max(86400), movingSec: z.number().int().min(0).max(86400),
       distanceM: z.number().int().min(0).max(400000), avgPaceSecKm: z.number().int().min(0).max(3600), elevGainM: z.number().int().min(0).max(10000),
       route: z.array(z.tuple([z.number().min(-90).max(90), z.number().min(-180).max(180)])).max(600).default([]),
+      recoveredGapM:z.number().int().min(0).max(30000).default(0),
     }), req.body, reply);
     if (!b) return;
-    const r = await db.prepare('INSERT INTO activities(user_id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m,route,created_at) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id').get(req.user!.id, b.sport, b.startedAt, b.durationSec, b.movingSec, b.distanceM, b.avgPaceSecKm, b.elevGainM, JSON.stringify(b.route), now()) as { id: number };
-    return { id: r.id };
+    const durationPace=b.distanceM>0?Math.round(b.durationSec*1000/b.distanceM):0;
+    const weightKg=await profileWeight(req.user!.id);
+    const estimatedKcal=weightKg?activityEnergy(b.sport,b.distanceM,b.durationSec,weightKg):null;
+    const r = await db.prepare('INSERT INTO activities(user_id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m,route,created_at) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id').get(req.user!.id, b.sport, b.startedAt, b.durationSec, b.movingSec, b.distanceM, durationPace, b.elevGainM, JSON.stringify(b.route), now()) as { id: number };
+    if(estimatedKcal!==null)await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'exercise',?,?)").run(req.user!.id,JSON.stringify({kind:'gps',activityId:r.id,kcal:estimatedKcal,sport:b.sport}),now());
+    return { id:r.id,estimatedKcal,avgPaceSecKm:durationPace };
   });
   app.get('/api/activities', { preHandler: athleteOnly }, async (req) => {
     const uid = req.user!.id;
     const rows = await db.prepare('SELECT id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m FROM activities WHERE user_id=? ORDER BY id DESC LIMIT 30').all(uid) as Record<string, number | string>[];
+    const weightKg=await profileWeight(uid);
+    const activities=rows.map(r=>{
+      const meters=Number(r.distance_m)||0,seconds=Number(r.duration_sec)||0;
+      return {...r,avg_pace_sec_km:meters>0?Math.round(seconds*1000/meters):0,estimated_kcal:weightKg?activityEnergy(String(r.sport),meters,seconds,weightKg):null};
+    });
     const km = async (from: string, to: string) => ((await db.prepare("SELECT CAST(COALESCE(SUM(distance_m),0) AS DOUBLE PRECISION) k FROM activities WHERE user_id=? AND sport='run' AND created_at>=? AND created_at<?").get(uid, from, to) as { k: number }).k) / 1000;
     const thisWeek = await km(weekStart(0), '9999'), prev = await km(weekStart(1), weekStart(0));
-    return { activities: rows, weekRunKm: Math.round(thisWeek * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
+    return { activities, weekRunKm: Math.round(thisWeek * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
   });
   app.get('/api/activities/:id', { preHandler: athleteOnly }, async (req, reply) => {
     const r = await db.prepare('SELECT * FROM activities WHERE id=? AND user_id=?').get(Number((req.params as { id: string }).id), req.user!.id) as { route: string } | undefined;
     if (!r) return reply.code(404).send({ error: 'not_found' });
     return { ...r, route: JSON.parse(r.route) };
+  });
+
+  app.get('/api/activity/today',{preHandler:athleteOnly},async(req)=>{
+    const uid=req.user!.id;
+    const q=req.query as {timezoneOffset?:string};
+    const offset=Math.max(-840,Math.min(840,Number(q.timezoneOffset)||0));
+    const nowLocal=new Date(Date.now()-offset*60000),today=nowLocal.toISOString().slice(0,10);
+    const start=new Date(Date.parse(today+'T00:00:00Z')+offset*60000).toISOString();
+    const end=new Date(Date.parse(today+'T00:00:00Z')+offset*60000+86400000).toISOString();
+    const rows=await db.prepare('SELECT id,sport,started_at,duration_sec,distance_m,moving_sec,elev_gain_m FROM activities WHERE user_id=? AND started_at>=? AND started_at<? ORDER BY id DESC').all(uid,start,end) as {id:number;sport:string;started_at:string;duration_sec:number;distance_m:number;moving_sec:number;elev_gain_m:number}[];
+    const weightKg=await profileWeight(uid);
+    const activities=rows.map(r=>({...r,avg_pace_sec_km:r.distance_m?Math.round(r.duration_sec*1000/r.distance_m):0,estimated_kcal:weightKg?activityEnergy(r.sport,r.distance_m,r.duration_sec,weightKg):null}));
+    const totalKcal=activities.reduce((n,r)=>n+(r.estimated_kcal??0),0);
+    return {date:today,activities,totalKcal,estimated:weightKg!==null};
   });
 
   /* ---------------- AI coach ---------------- */
