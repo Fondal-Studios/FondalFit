@@ -288,12 +288,35 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   /* ---------------- Nutrition ---------------- */
   app.post('/api/nutrition/target', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
-    const b = parse(z.object({ sex: z.enum(['f', 'm']), weightKg: z.number().min(30).max(300), heightCm: z.number().min(120).max(230), age: z.number().int().min(16).max(90), activity: z.union([z.literal(1.2), z.literal(1.375), z.literal(1.55), z.literal(1.725)]), goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general']), allergies: z.array(z.string()).default([]) }), req.body, reply);
+    const b = parse(z.object({ sex: z.enum(['f', 'm']), weightKg: z.number().min(30).max(300), heightCm: z.number().min(120).max(230), age: z.number().int().min(16).max(90), activity: z.union([z.literal(1.2), z.literal(1.375), z.literal(1.55), z.literal(1.725)]), goal: z.enum(['strength', 'hypertrophy', 'endurance', 'fat_loss', 'mobility', 'general', 'hybrid']), adjustmentPct: z.number().min(-25).max(15).optional(), allergies: z.array(z.string()).default([]) }), req.body, reply);
     if (!b) return;
     const { allergies, ...input } = b;
     const t = nutritionTarget(input);
     await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'target',?,?)").run(req.user!.id, JSON.stringify({ ...t, allergies }), now());
     return t;
+  });
+  app.post('/api/nutrition/estimate', { preHandler: athleteOnly }, async (req, reply) => {
+    if (!await needHealth(req, reply)) return;
+    const b = parse(z.object({ description: z.string().trim().min(3).max(500) }), req.body, reply);
+    if (!b) return;
+    if (!await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({error:'ai_consent_required'});
+    const key=process.env.GEMINI_API_KEY;
+    if (!key) return reply.code(503).send({error:'coach_unconfigured'});
+    const model=process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+    if (!/^[a-zA-Z0-9._-]+$/.test(model)) return reply.code(500).send({error:'invalid_coach_model'});
+    try {
+      const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',{
+        method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},
+        body:JSON.stringify({systemInstruction:{parts:[{text:'Estimá comida descrita por un adulto. Respondé ÚNICAMENTE JSON válido con campos kcal,proteinG,carbsG,fatG (números no negativos) y explanation (texto breve). No afirmes precisión; explicitá incertidumbre de porciones, aceite y cocción. Si no hay información suficiente, estimá porción habitual y avisá.'}]},contents:[{role:'user',parts:[{text:b.description}]}],generationConfig:{temperature:0.1,maxOutputTokens:240,responseMimeType:'application/json'}}),
+        signal:AbortSignal.timeout(12000)
+      });
+      if(!response.ok)return reply.code(502).send({error:'estimate_unavailable'});
+      const raw=await response.json() as {candidates?:{content?:{parts?:{text?:string}[]}}[]};
+      const text=raw.candidates?.[0]?.content?.parts?.map(p=>p.text??'').join('')??'';
+      const result=z.object({kcal:z.number().min(0).max(5000),proteinG:z.number().min(0).max(500),carbsG:z.number().min(0).max(1000),fatG:z.number().min(0).max(500),explanation:z.string().max(600)}).safeParse(JSON.parse(text));
+      if(!result.success)return reply.code(502).send({error:'estimate_invalid'});
+      return {...result.data,estimated:true};
+    }catch{return reply.code(503).send({error:'estimate_unavailable'});}
   });
   app.post('/api/nutrition/log', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;

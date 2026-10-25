@@ -92,6 +92,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
   const [tab, setTab] = useState('today');
   const [wellness, setWellness] = useState<'running' | 'nutrition' | 'recovery' | null>(null);
   const [proView, setProView] = useState<'athletes' | 'approvals'>('athletes');
+  const [coachOpen, setCoachOpen] = useState(false);
   const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
   const navigate = (next: string) => { setTab(next); setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const goBack = () => { setWellness(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -110,13 +111,14 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
             {tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
-            {tab === 'today' && <><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><BetaCoach /></>}
+            {tab === 'today' && <><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
               <button className="feature-card" onClick={() => setWellness('running')}><span className="feature-icon">↗</span><strong>{t('running')}</strong><small>Distancia, ritmos y registro de carreras</small><span>Ver actividad →</span></button>
               <button className="feature-card" onClick={() => setWellness('nutrition')}><span className="feature-icon">◉</span><strong>{t('nutrition')}</strong><small>Comidas, energía y proteínas diarias</small><span>Ver alimentación →</span></button>
               <button className="feature-card" onClick={() => setWellness('recovery')}><span className="feature-icon">☾</span><strong>{t('recovery')}</strong><small>Sueño, fatiga y disponibilidad</small><span>Ver recuperación →</span></button>
             </div>)}
+            {coachOpen && <div className="coach-modal" role="dialog" aria-modal="true" aria-label="Fondal Coach"><button className="back-button" onClick={()=>setCoachOpen(false)}>← Volver al entrenamiento</button><BetaCoach /></div>}
             {tab === 'settings' && <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} />}
           </>}
           <nav className="tabs" aria-label="Navegación principal">
@@ -292,78 +294,150 @@ function RestTimer() {
 }
 
 // Geolocation remains foreground-only on PWAs; explicit permission and manual save.
+type RunSplit = { km: number; seconds: number; pace: number };
+type RunSummary = { date: string; km: number; minutes: number; avgPace: number; kcal: number; weightKg: number; splits: RunSplit[]; tips: string[] };
 function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void }) {
   const [active, setActive] = useState(false);
   const [touchLocked, setTouchLocked] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [meters, setMeters] = useState(0);
-  const [status, setStatus] = useState('El GPS necesita permiso y una conexión segura (HTTPS).');
+  const [pace, setPace] = useState<number | null>(null);
+  const [weightKg, setWeightKg] = useState(70);
+  const [status, setStatus] = useState('Necesita permiso de ubicación y HTTPS.');
+  const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [splits, setSplits] = useState<RunSplit[]>([]);
+  const [unlocked, setUnlocked] = useState(0);
   const watchId = useRef<number | null>(null);
   const lastPoint = useRef<{lat:number;lon:number;at:number}|null>(null);
   const startedAt = useRef(0);
   const wake = useRef<{release:()=>Promise<void>}|null>(null);
   const running = useRef(false);
+  const distanceRef = useRef(0);
+  const splitsRef = useRef<RunSplit[]>([]);
+  const splitAt = useRef(0);
+  const lastPaces = useRef<number[]>([]);
   const stop = useCallback(() => {
     running.current = false;
-    if (watchId.current!==null) navigator.geolocation.clearWatch(watchId.current);
+    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     watchId.current = null;
     void wake.current?.release().catch(()=>{});
     wake.current = null;
     setActive(false);
     setTouchLocked(false);
-  },[]);
+  }, []);
   useEffect(() => () => {
-    running.current=false;
-    if(watchId.current!==null) navigator.geolocation.clearWatch(watchId.current);
+    running.current = false;
+    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     void wake.current?.release().catch(()=>{});
-  },[]);
+  }, []);
   useEffect(() => {
-    if(!active) return;
-    const tick=window.setInterval(()=>setElapsed(Math.round((Date.now()-startedAt.current)/1000)),1000);
-    return ()=>clearInterval(tick);
+    if (!active) return;
+    const id = window.setInterval(()=>setElapsed(Math.max(0,Math.floor((Date.now()-startedAt.current)/1000))),1000);
+    return ()=>clearInterval(id);
   },[active]);
-  const start=async()=>{
-    if(!navigator.geolocation) {setStatus('Este navegador no ofrece GPS.');return;}
-    setMeters(0);setElapsed(0);lastPoint.current=null;startedAt.current=Date.now();
-    running.current=true;setActive(true);setStatus('Buscando señal GPS…');
+  const fmt = (minutes:number|null) => minutes === null || !Number.isFinite(minutes) || minutes <= 0 ? '—:—' : Math.floor(minutes)+':'+String(Math.round((minutes%1)*60)).padStart(2,'0');
+  const start = async () => {
+    if (!navigator.geolocation) { setStatus('Este navegador no ofrece GPS.'); return; }
+    if (!window.isSecureContext) { setStatus('El GPS requiere HTTPS.'); return; }
+    setSummary(null);setMeters(0);setElapsed(0);setPace(null);setSplits([]);setUnlocked(0);
+    splitsRef.current=[];lastPaces.current=[];distanceRef.current=0;splitAt.current=0;
+    lastPoint.current=null;startedAt.current=Date.now();running.current=true;setActive(true);setStatus('Buscando señal GPS…');
     try {
-      const n=navigator as Navigator & {wakeLock?: {request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
-      if(n.wakeLock) wake.current=await n.wakeLock.request('screen');
-    } catch {setStatus('GPS activo. El dispositivo puede apagar la pantalla.');}
-    if(!running.current)return;
+      const n = navigator as Navigator & {wakeLock?:{request:(type:'screen')=>Promise<{release:()=>Promise<void>}>}};
+      if (n.wakeLock) wake.current=await n.wakeLock.request('screen');
+    } catch {setStatus('No se pudo mantener la pantalla encendida. Evitá bloquearla.');}
+    if (!running.current) return;
     watchId.current=navigator.geolocation.watchPosition(pos=>{
-      if(!running.current)return;
-      const {latitude:lat,longitude:lon,accuracy}=pos.coords;
-      if(accuracy>45){setStatus('Esperando una señal GPS más precisa…');return;}
-      const at=pos.timestamp;
-      if(lastPoint.current){
-        const prev=lastPoint.current;
+      if(!running.current) return;
+      const {latitude:lat,longitude:lon,accuracy,speed}=pos.coords;
+      if(accuracy>40) {setStatus('Señal imprecisa; esperando una posición mejor…');return;}
+      const at=pos.timestamp,prev=lastPoint.current;
+      if(prev) {
         const rad=Math.PI/180,dlat=(lat-prev.lat)*rad,dlon=(lon-prev.lon)*rad;
         const h=Math.sin(dlat/2)**2+Math.cos(prev.lat*rad)*Math.cos(lat*rad)*Math.sin(dlon/2)**2;
         const distance=12742000*Math.asin(Math.min(1,Math.sqrt(h)));
         const seconds=(at-prev.at)/1000;
-        if(seconds>0&&distance>=3&&distance/seconds<8) {
-          setMeters(m=>m+distance);
+        if(seconds>0 && distance>=3 && distance/seconds<8) {
+          distanceRef.current+=distance;
+          setMeters(distanceRef.current);
+          const speedMps = speed!==null && speed>0.6 && speed<8 ? speed : distance/seconds;
+          if(speedMps>0.6) {
+            const nextPace=1000/speedMps/60;
+            lastPaces.current=[...lastPaces.current.slice(-4),nextPace];
+            const avg=lastPaces.current.reduce((sum,x)=>sum+x,0)/lastPaces.current.length;
+            setPace(avg);
+          } else setPace(null);
+          const wholeKm=Math.floor(distanceRef.current/1000);
+          if(wholeKm>splitsRef.current.length) {
+            const since=(at-startedAt.current)/1000;
+            const previousElapsed=splitAt.current;
+            if(since-previousElapsed>0) {
+              const split={km:wholeKm,seconds:Math.round(since-previousElapsed),pace:(since-previousElapsed)/60};
+              splitsRef.current=[...splitsRef.current,split];setSplits(splitsRef.current);
+              splitAt.current=since;
+            }
+          }
           lastPoint.current={lat,lon,at};
-        } else if(seconds>0&&distance/seconds>=8) {
-          setStatus('Se descartó un salto de posición GPS.');
+          setStatus('GPS activo · distancia y ritmo aproximados');
+        } else if(seconds>0 && distance/seconds>=8) {
+          setStatus('Se ignoró un salto GPS poco probable.');
+        } else if(seconds>=15 && distance<3) {
+          lastPoint.current={lat,lon,at};setPace(null);
         }
-      } else lastPoint.current={lat,lon,at};
-      setStatus('GPS activo · distancia estimada');
-    },e=>setStatus(e.code===1?'Permiso de ubicación rechazado. Podés registrar la carrera manualmente.':'Se perdió la señal GPS. Podés registrar la carrera manualmente.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+      } else {lastPoint.current={lat,lon,at};setStatus('Señal GPS adquirida.');}
+    },e=>setStatus(e.code===1?'Ubicación denegada. Revisá los permisos.':'Sin señal GPS; la distancia puede ser incompleta.'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   };
+  const finish=()=>{
+    const km=distanceRef.current/1000,mins=(Date.now()-startedAt.current)/60000;
+    const fullSplits=splitsRef.current;
+    const remainingKm=km-fullSplits.length;
+    const remainingSecs=mins*60-splitAt.current;
+    const allSplits=remainingKm>=0.1&&remainingSecs>0?[...fullSplits,{km:Math.round(km*100)/100,seconds:Math.round(remainingSecs),pace:remainingSecs/60/remainingKm}]:fullSplits;
+    // Distance based approximation for running, not a wearable measurement.
+    const kcal=Math.round(km*Math.max(30,Math.min(250,weightKg)));
+    const validPaces=allSplits.map(x=>x.pace).filter(Number.isFinite);
+    const spread=validPaces.length>1?Math.max(...validPaces)-Math.min(...validPaces):0;
+    const tips=[spread>0.75?'Tus parciales variaron bastante: probá empezar más suave para sostener el ritmo.':'Buscá un ritmo cómodo y sostenible antes de acelerar.',
+      'El GPS y las calorías son estimaciones; sin pulsómetro no se pueden calcular zonas cardíacas reales.',
+      'Compará tu ritmo con sesiones de distancia similar, no solamente con tu carrera más rápida.'];
+    const result:RunSummary={date:new Date().toISOString(),km:Number(km.toFixed(2)),minutes:Number(mins.toFixed(2)),avgPace:km>0?mins/km:0,kcal,weightKg,splits:allSplits,tips};
+    stop();setSummary(result);
+    if(km>0.05&&mins>0)onDraft(Number(km.toFixed(2)),Number(mins.toFixed(2)));
+    try {localStorage.setItem('ff_last_run_summary',JSON.stringify(result));} catch {/* optional device storage */}
+  };
+  const paceGroups=splits.reduce((out,split)=>{const k=split.pace<5?'Rápido (<5:00)':split.pace<6.5?'Medio (5:00–6:30)':'Suave (>6:30)';out[k]=(out[k]||0)+1;return out;},{} as Record<string,number>);
   return <div className="card gps-run">
-    <h3>Seguimiento GPS (beta)</h3>
-    <p className="muted">Funciona mientras la app permanezca activa en primer plano. En segundo plano o con pantalla apagada el sistema puede suspender el seguimiento.</p>
-    <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km estimados</small></div><div><strong>{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</strong><small>tiempo</small></div></div>
+    <h3>Running GPS · beta</h3>
+    <p className="muted">Mantené abierta la pantalla. En iOS y Android la web no garantiza GPS cuando se bloquea el teléfono o queda en segundo plano.</p>
+    <div className="gps-metrics">
+      <div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div>
+      <div><strong>{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</strong><small>tiempo</small></div>
+      <div><strong>{fmt(pace)}</strong><small>ritmo actual min/km</small></div>
+      <div><strong>{fmt(meters>50?elapsed/60/(meters/1000):null)}</strong><small>ritmo promedio min/km</small></div>
+    </div>
     <p role="status" className="muted">{status}</p>
-    {!active?<button className="primary action-full" onClick={()=>void start()}>Iniciar GPS</button>:<div className="gps-actions">
-      <button onClick={()=>setTouchLocked(true)}>Bloquear toques</button>
-      <button onClick={()=>{stop();if(meters>0&&elapsed>0)onDraft(Number((meters/1000).toFixed(2)),Number((elapsed/60).toFixed(2)));}}>Finalizar y completar registro</button>
+    {!active ? <><label htmlFor="gps-weight">Peso para estimar energía (kg)</label><input id="gps-weight" type="number" min={30} max={250} value={weightKg} onChange={e=>setWeightKg(Number(e.target.value)||70)}/>
+      <button className="primary action-full" onClick={()=>void start()}>Iniciar carrera con GPS</button></> :
+      <div className="gps-actions"><button onClick={()=>setTouchLocked(true)}>Congelar pantalla</button><button onClick={finish}>Terminar carrera</button></div>}
+    {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla congelada">
+      <strong>Running activo</strong>
+      <div className="gps-metrics"><div><strong>{(meters/1000).toFixed(2)}</strong><small>km</small></div><div><strong>{fmt(pace)}</strong><small>min/km</small></div></div>
+      <p className="muted">Para evitar toques involuntarios, deslizá el control hasta el final.</p>
+      <label htmlFor="unlock-slide">Deslizar para desbloquear</label>
+      <input id="unlock-slide" aria-label="Deslizar para desbloquear" className="unlock-slider" type="range" min={0} max={100} value={unlocked}
+        onChange={e=>{const value=Number(e.target.value);if(value>=95){setTouchLocked(false);setUnlocked(0);}else setUnlocked(value);}}/>
+      <span className="muted">Deslizá de izquierda a derecha →</span>
+      <small>El botón físico de suspensión no controla esta función.</small>
     </div>}
-    {touchLocked&&active&&<div className="gps-touch-lock" role="dialog" aria-label="Pantalla táctil bloqueada">
-      <strong>Toques bloqueados</strong><p>El GPS continúa mientras el navegador esté activo.</p><button className="primary" onClick={()=>setTouchLocked(false)}>Desbloquear toques</button>
-      <p className="muted">Este bloqueo no controla el botón físico de suspensión.</p>
+    {summary&&<div className="run-summary">
+      <h3>Resumen de tu última carrera</h3>
+      <div className="gps-metrics"><div><strong>{summary.km.toFixed(2)}</strong><small>km</small></div><div><strong>{fmt(summary.avgPace)}</strong><small>ritmo medio min/km</small></div><div><strong>{summary.kcal}</strong><small>kcal estimadas</small></div><div><strong>{Math.round(summary.minutes)}</strong><small>minutos</small></div></div>
+      <h4>Ritmo por tramo</h4>
+      {summary.splits.length?summary.splits.map((sp,i)=><p key={i} className="run-split">{i<summary.splits.length-1?'Kilómetro '+sp.km:'Tramo '+sp.km+' km'}: {fmt(sp.pace)} min/km</p>):<p className="muted">No hubo suficientes puntos GPS para calcular parciales.</p>}
+      <h4>Bandas de ritmo (no zonas cardíacas)</h4>
+      {Object.entries(paceGroups).map(([label,count])=><p key={label}>{label}: {count} tramo(s)</p>)}
+      <h4>Ideas para mejorar</h4>{summary.tips.map(t=><p key={t} className="muted">{t}</p>)}
+      <p className="muted">Calorías aproximadas: peso × kilómetros. No es gasto metabólico medido. Revisá el registro de abajo y guardalo si corresponde.</p>
     </div>}
   </div>;
 }
@@ -485,39 +559,76 @@ function Progress() {
 }
 
 /* ---------- Nutrition ---------- */
+function LearningTips({topic}:{topic:'nutrition'|'training'}) {
+  const topics=topic==='nutrition'?[
+    ['Déficit y superávit','Un déficit significa consumir menos energía que la estimada para mantener el peso; un superávit, más. La estimación inicial se ajusta según la evolución real.'],
+    ['Proteínas y objetivos','Las necesidades dependen de peso, actividad y contexto clínico. La cifra calculada es una referencia, no una obligación universal.'],
+    ['Porciones estimadas','Aceites, salsas, tamaño de las porciones y cocción pueden modificar mucho las calorías. Confirmá los valores antes de guardarlos.']
+  ]:[
+    ['¿Qué significa RIR?','Repeticiones en reserva: cuántas repeticiones más creés que podrías completar con buena técnica. RIR 2 equivale aproximadamente a dos repeticiones restantes.'],
+    ['Cómo progresar las cargas','Cuando completás todas las series en el extremo superior del rango con técnica y RIR adecuados, puede considerarse aumentar la carga gradualmente.'],
+    ['Técnica antes que peso','Priorizar control, rango de movimiento tolerable y consistencia. Si aparece dolor inusual, detené el ejercicio y reevaluá.']
+  ];
+  return <div className="card learning-tips"><div className="eyebrow">FONDAL APRENDE</div><h3>Entendé lo que estás haciendo</h3>{topics.map(([title,body])=><details key={title}><summary>{title}</summary><p>{body}</p></details>)}<p className="muted">Material introductorio. No reemplaza orientación individual de un profesional.</p></div>;
+}
+
 function Nutrition() {
-  const t = useT();
-  const [d, setD] = useState<any>(null);
-  const [p, setP] = useState({ sex: 'f', weightKg: 70, heightCm: 170, age: 30, activity: 1.375, goal: 'general' });
-  const [m, setM] = useState({ meal: '', kcal: '', proteinG: '', carbsG: '', fatG: '', waterMl: '' });
-  const load = () => api('GET', '/api/nutrition').then(setD).catch(() => {});
-  useEffect(() => { load(); }, []);
-  const calc = async () => { await api('POST', '/api/nutrition/target', p); load(); };
-  const add = async (e: React.FormEvent) => { e.preventDefault(); await api('POST', '/api/nutrition/log', { meal: m.meal, kcal: +m.kcal || 0, proteinG: +m.proteinG || 0, carbsG: +m.carbsG || 0, fatG: +m.fatG || 0, waterMl: +m.waterMl || 0 }); setM({ meal: '', kcal: '', proteinG: '', carbsG: '', fatG: '', waterMl: '' }); load(); };
-  const num = (k: keyof typeof p) => <input type="number" value={p[k] as number} onChange={(e) => setP({ ...p, [k]: Number(e.target.value) })} />;
-  return (
-    <>
-      {d?.target ? (
-        <div className="card"><h2>{t('target')}</h2>
-          <p>{d.target.kcal} kcal · P {d.target.proteinG} · C {d.target.carbsG} · G {d.target.fatG} · {d.target.waterMl} ml</p>
-          {d.target.floored && <p className="warn">{t('kcalFloor')}</p>}
-          <p className="muted">{t('todayTotal')}: {d.today.kcal} kcal · P {d.today.proteinG} · C {d.today.carbsG} · G {d.today.fatG} · {d.today.waterMl} ml</p>
-          <div className="bar"><i style={{ width: `${Math.min(100, (d.today.kcal / d.target.kcal) * 100)}%` }} /></div></div>
-      ) : (
-        <div className="card"><h2>{t('nutrition')}</h2>
-          <label>{t('sex')}</label><Chips options={['female', 'male']} value={[p.sex === 'f' ? 'female' : 'male']} onChange={(v) => setP({ ...p, sex: v[0] === 'female' ? 'f' : 'm' })} />
-          <label>{t('weightKg')}</label>{num('weightKg')}<label>{t('heightCm')}</label>{num('heightCm')}<label>{t('age')}</label>{num('age')}
-          <label>{t('activity')}</label>
-          <select value={p.activity} onChange={(e) => setP({ ...p, activity: Number(e.target.value) })}><option value={1.2}>{t('act1')}</option><option value={1.375}>{t('act2')}</option><option value={1.55}>{t('act3')}</option><option value={1.725}>{t('act4')}</option></select>
-          <label>{t('goal')}</label><Chips options={['general', 'strength', 'hypertrophy', 'fat_loss']} value={[p.goal]} onChange={(v) => setP({ ...p, goal: v[0]! })} />
-          <p><button className="primary" onClick={calc}>{t('calcTarget')}</button></p></div>
-      )}
-      <form className="card" onSubmit={add}><h3>{t('addMeal')}</h3>
-        <label>{t('meal')}</label><input required value={m.meal} onChange={(e) => setM({ ...m, meal: e.target.value })} />
-        <div className="row">{(['kcal', 'proteinG', 'carbsG', 'fatG', 'waterMl'] as const).map((k) => <input key={k} aria-label={k} placeholder={k === 'kcal' ? 'kcal' : t({ proteinG: 'protein', carbsG: 'carbs', fatG: 'fat', waterMl: 'water' }[k]!)} inputMode="decimal" value={m[k]} onChange={(e) => setM({ ...m, [k]: e.target.value })} />)}</div>
-        <p><button className="primary">{t('addMeal')}</button></p></form>
-    </>
-  );
+  const [d,setD]=useState<any>(null);
+  const [p,setP]=useState({sex:'f',weightKg:70,heightCm:170,age:30,activity:1.375,goal:'general',adjustmentPct:0});
+  const [m,setM]=useState({meal:'',kcal:'',proteinG:'',carbsG:'',fatG:'',waterMl:''});
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [estimateNote,setEstimateNote]=useState('');
+  const [editTarget,setEditTarget]=useState(false);
+  const load=()=>api('GET','/api/nutrition').then(setD).catch(()=>setError('No se pudo cargar la alimentación.'));
+  useEffect(()=>{load();},[]);
+  const calc=async()=>{setError('');try{await api('POST','/api/nutrition/target',p);setEditTarget(false);load();}catch{setError('No se pudo calcular el objetivo.');}};
+  const estimate=async()=>{if(!m.meal.trim())return;setBusy(true);setError('');try{
+    const r=await api<{kcal:number;proteinG:number;carbsG:number;fatG:number;explanation:string}>('POST','/api/nutrition/estimate',{description:m.meal});
+    setM(v=>({...v,kcal:String(Math.round(r.kcal)),proteinG:String(Math.round(r.proteinG)),carbsG:String(Math.round(r.carbsG)),fatG:String(Math.round(r.fatG))}));
+    setEstimateNote(r.explanation);
+  }catch(e){const code=e instanceof ApiError?e.body?.error:'';
+    setError(code==='ai_consent_required'?'Activá la memoria IA en Perfil para usar esta estimación.':code==='coach_unconfigured'?'La estimación IA necesita una clave Gemini configurada en el servidor.':'No se pudo estimar la comida. Podés ingresar los valores manualmente.');
+  }finally{setBusy(false);}};
+  const add=async(e:React.FormEvent)=>{e.preventDefault();setError('');try{await api('POST','/api/nutrition/log',{meal:m.meal,kcal:+m.kcal||0,proteinG:+m.proteinG||0,carbsG:+m.carbsG||0,fatG:+m.fatG||0,waterMl:+m.waterMl||0});setM({meal:'',kcal:'',proteinG:'',carbsG:'',fatG:'',waterMl:''});setEstimateNote('');load();}catch{setError('No se pudo guardar la comida.');}};
+  const num=(k:'weightKg'|'heightCm'|'age')=><input type="number" value={p[k]} onChange={e=>setP({...p,[k]:Number(e.target.value)})}/>;
+  const target=d?.target;
+  return <section>
+    <div className="card"><h2>Tu objetivo de energía</h2>
+      {target&&<><p className="metric"><strong>{target.kcal}</strong><span>kcal por día (estimadas)</span></p>
+        <p>Consumidas: {Math.round(d.today.kcal)} kcal · Restantes: {Math.round(target.kcal-d.today.kcal)} kcal</p>
+        <p>Proteínas: {Math.round(d.today.proteinG)} / {target.proteinG} g</p>
+        <div className="bar"><i style={{width:`${Math.max(0,Math.min(100,d.today.kcal/target.kcal*100))}%`}}/></div>
+        <details><summary>¿De dónde sale este número?</summary>
+          <p>Metabolismo basal estimado: {target.bmr??'sin registro'} kcal. Gasto diario estimado: {target.tdee??'sin registro'} kcal.</p>
+          <p>Ajuste elegido: {target.adjustmentPct??'sin registro'} %. El cálculo usa Mifflin-St Jeor y un factor de actividad. No mide tu gasto real.</p>
+          <p>El valor debe revisarse según peso, entrenamiento, hambre, adherencia y condiciones clínicas. Un déficit mayor no siempre es mejor.</p>
+          {target.floored&&<p className="warn">Se aplicó un piso conservador de energía.</p>}
+        </details>
+        <button onClick={()=>setEditTarget(v=>!v)}>{editTarget?'Cerrar edición':'Modificar objetivo'}</button>
+      </>}
+      {(!target||editTarget)&&<div className="target-editor">
+        <p className="muted">Elegí un ajuste. Un déficit agresivo no es adecuado para todas las personas; consultá si tenés condiciones de salud relevantes.</p>
+        <label>Sexo usado por la fórmula</label><select value={p.sex} onChange={e=>setP({...p,sex:e.target.value})}><option value="f">Femenino</option><option value="m">Masculino</option></select>
+        <label>Peso (kg)</label>{num('weightKg')}<label>Altura (cm)</label>{num('heightCm')}<label>Edad</label>{num('age')}
+        <label>Actividad habitual</label><select value={p.activity} onChange={e=>setP({...p,activity:Number(e.target.value)})}>{[[1.2,'Sedentaria'],[1.375,'Ligera'],[1.55,'Moderada'],[1.725,'Alta']].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select>
+        <label>Objetivo</label><select value={p.goal} onChange={e=>setP({...p,goal:e.target.value})}>{[['general','Mantenimiento'],['fat_loss','Reducir grasa'],['hypertrophy','Hipertrofia'],['strength','Fuerza'],['endurance','Resistencia'],['hybrid','Atleta híbrido']].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select>
+        <label>Balance energético</label><select value={p.adjustmentPct} onChange={e=>setP({...p,adjustmentPct:Number(e.target.value)})}>{[[-20,'Déficit alto (-20%)'],[-15,'Déficit moderado (-15%)'],[-10,'Déficit leve (-10%)'],[0,'Mantenimiento'],[5,'Superávit leve (+5%)'],[10,'Superávit moderado (+10%)']].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select>
+        <button className="primary action-full" onClick={()=>void calc()}>Calcular y explicar mi objetivo</button>
+      </div>}
+    </div>
+    <form className="card" onSubmit={add}><h2>¿Qué comiste?</h2>
+      <p className="muted">Escribí naturalmente qué y cuánto comiste. La IA estimará porciones; revisá los números antes de guardar.</p>
+      <textarea required rows={3} value={m.meal} onChange={e=>setM({...m,meal:e.target.value})} placeholder="Ej.: comí dos bifes medianos, arroz y una ensalada con aceite"/>
+      <button type="button" disabled={busy||!m.meal.trim()} onClick={()=>void estimate()}>{busy?'Estimando…':'Estimar calorías con IA'}</button>
+      {estimateNote&&<p className="muted">{estimateNote}</p>}
+      <p className="muted">Valores editables: kcal, proteínas, carbohidratos, grasas y agua.</p>
+      <div className="nutrition-fields">{(['kcal','proteinG','carbsG','fatG','waterMl'] as const).map(k=><label key={k}>{k==='kcal'?'Calorías':k==='proteinG'?'Proteínas (g)':k==='carbsG'?'Carbohidratos (g)':k==='fatG'?'Grasas (g)':'Agua (ml)'}<input type="number" min={0} value={m[k]} onChange={e=>setM({...m,[k]:e.target.value})}/></label>)}</div>
+      <button className="primary action-full">Guardar comida</button>
+    </form>
+    {error&&<p role="alert" className="warn">{error}</p>}
+    <LearningTips topic="nutrition"/>
+  </section>;
 }
 
 /* ---------- Recovery ---------- */
