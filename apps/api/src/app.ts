@@ -356,6 +356,40 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return { target: target ? JSON.parse(target.data) : null, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
   });
 
+  /* Calendar: explicit local-time offset; estimated energy balance, not a medical measurement. */
+  app.get('/api/energy/calendar', { preHandler: athleteOnly }, async(req,reply)=>{
+    const q=parse(z.object({month:z.string().regex(/^\\d{4}-\\d{2}$/),timezoneOffset:z.coerce.number().int().min(-840).max(840).default(0)}),req.query,reply);
+    if(!q)return;
+    const [year,month]=q.month.split('-').map(Number);
+    if(year<2020||year>2100||month<1||month>12)return reply.code(400).send({error:'invalid_month'});
+    const localStart=Date.UTC(year,month-1,1), localEnd=Date.UTC(year,month,1);
+    const start=new Date(localStart+q.timezoneOffset*60000).toISOString();
+    const end=new Date(localEnd+q.timezoneOffset*60000).toISOString();
+    const rows=await db.prepare('SELECT kind,data,created_at FROM nutrition WHERE user_id=? AND created_at>=? AND created_at<? ORDER BY created_at').all(req.user!.id,start,end) as {kind:string;data:string;created_at:string}[];
+    const latestTarget=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
+    const target=latestTarget?JSON.parse(latestTarget.data) as {kcal?:number;tdee?:number;adjustmentPct?:number}:null;
+    const byDay=new Map<string,{intake:number;runKcal:number;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[]}>();
+    for(const row of rows){
+      if(row.kind!=='log'&&row.kind!=='exercise')continue;
+      const localDay=new Date(Date.parse(row.created_at)-q.timezoneOffset*60000).toISOString().slice(0,10);
+      const item=byDay.get(localDay)??{intake:0,runKcal:0,meals:[],runs:[]};
+      const data=JSON.parse(row.data) as {kcal?:number;km?:number;meal?:string};
+      const kcal=Math.max(0,Number(data.kcal)||0);
+      if(row.kind==='log'){item.intake+=kcal;item.meals.push({name:String(data.meal??'Comida'),kcal});}
+      else{item.runKcal+=kcal;item.runs.push({km:Number(data.km)||0,kcal});}
+      byDay.set(localDay,item);
+    }
+    const days=[...byDay].map(([date,item])=>{
+      const tdee=Number(target?.tdee)||0;
+      const adjustedBudget=tdee+item.runKcal;
+      const balance=tdee>0?Math.round(item.intake-adjustedBudget):null;
+      const ratio=balance===null?null:balance/tdee;
+      const band=ratio===null?'unknown':ratio>0.05?'red':ratio>0?'orange':ratio>=-0.05?'yellow':ratio>=-0.15?'green':ratio>=-0.25?'blue':'violet';
+      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,provisional:true};
+    });
+    return {month:q.month,target:target?{kcal:target.kcal,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,note:'Estimaciones provisionales. El gasto basal ya puede incluir parte de la actividad; sumar running podría duplicar gasto. Los colores no diagnostican déficit real.'};
+  });
+
   /* ---------------- Recovery ---------------- */
   app.post('/api/recovery', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
@@ -374,10 +408,13 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   const kmBetween = async (uid: number, from: string, to: string) => (await db.prepare('SELECT CAST(COALESCE(SUM(km),0) AS DOUBLE PRECISION) k FROM runs WHERE user_id=? AND created_at>=? AND created_at<?').get(uid, from, to) as { k: number }).k;
   app.post('/api/runs', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
-    const b = parse(z.object({ km: z.number().min(0.1).max(250), minutes: z.number().min(1).max(2000), rpe: z.number().min(1).max(10) }), req.body, reply);
+    const b = parse(z.object({ km: z.number().min(0.1).max(250), minutes: z.number().min(1).max(2000), rpe: z.number().min(1).max(10), weightKg:z.number().min(30).max(250).optional() }), req.body, reply);
     if (!b) return;
-    await db.prepare('INSERT INTO runs(user_id,km,minutes,rpe,created_at) VALUES(?,?,?,?,?)').run(req.user!.id, b.km, b.minutes, b.rpe, now());
-    return { pace: paceMinPerKm(b.km, b.minutes) };
+    const timestamp=now();
+    await db.prepare('INSERT INTO runs(user_id,km,minutes,rpe,created_at) VALUES(?,?,?,?,?)').run(req.user!.id, b.km, b.minutes, b.rpe, timestamp);
+    const calorieEstimate=b.weightKg ? Math.round(b.km*b.weightKg) : null;
+    if(calorieEstimate!==null) await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'exercise',?,?)").run(req.user!.id,JSON.stringify({kind:'run',km:b.km,minutes:b.minutes,kcal:calorieEstimate,weightKg:b.weightKg}),timestamp);
+    return { pace: paceMinPerKm(b.km, b.minutes),estimatedKcal:calorieEstimate };
   });
   app.get('/api/runs', { preHandler: athleteOnly }, async (req) => {
     const uid = req.user!.id;
