@@ -114,6 +114,8 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           </div>
           {isPro ? <>
             <div className="quick-tabs"><button className={proView === 'athletes' ? 'selected' : ''} onClick={() => setProView('athletes')}>{t('athletes')}</button><button className={proView === 'approvals' ? 'selected' : ''} onClick={() => setProView('approvals')}>{t('approvals')}</button></div>
+            {coachOpen && <div className="coach-modal" role="dialog" aria-modal="true" aria-label="Fondal Coach profesional"><button className="back-button" onClick={()=>setCoachOpen(false)}>← Volver al estudio</button><BetaCoach /></div>}
+            <button className="floating-coach" type="button" onClick={()=>setCoachOpen(true)}>🎙 Consultar tutor IA</button>
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
             {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
@@ -482,6 +484,56 @@ function GpsRun({ onDraft }: { onDraft: (km: number, minutes: number) => void })
   </div>;
 }
 
+type BrowserSpeechRecognition = {
+  lang:string;continuous:boolean;interimResults:boolean;
+  onresult:((event:{results:ArrayLike<{0:{transcript:string}}>;resultIndex:number})=>void)|null;
+  onerror:((event:{error:string})=>void)|null;
+  onend:(()=>void)|null;
+  start:()=>void;stop:()=>void;
+};
+function VoiceDictation({onTranscript}:{onTranscript:(text:string)=>void}){
+ const [active,setActive]=useState(false);
+ const [error,setError]=useState('');
+ const recognizer=useRef<BrowserSpeechRecognition|null>(null);
+ useEffect(()=>()=>recognizer.current?.stop(),[]);
+ const toggle=()=>{
+  if(active){recognizer.current?.stop();setActive(false);return;}
+  const w=window as Window & {SpeechRecognition?:new()=>BrowserSpeechRecognition;webkitSpeechRecognition?:new()=>BrowserSpeechRecognition};
+  const Speech=w.SpeechRecognition??w.webkitSpeechRecognition;
+  if(!Speech){setError('Dictado web no disponible en este navegador. Podés usar el micrófono del teclado del teléfono.');return;}
+  try{
+   const r=new Speech();r.lang='es-AR';r.continuous=false;r.interimResults=false;
+   r.onresult=event=>{const parts:string[]=[];for(let i=event.resultIndex;i<event.results.length;i++)parts.push(event.results[i]![0].transcript);onTranscript(parts.join(' ').trim());};
+   r.onerror=event=>{setError('No se pudo transcribir ('+event.error+'). Probá con el dictado del teclado.');setActive(false);};
+   r.onend=()=>setActive(false);recognizer.current=r;r.start();setActive(true);setError('');
+  }catch{setError('No se pudo iniciar el micrófono. Revisá los permisos.');}
+ };
+ return <div className="voice-input"><button type="button" onClick={toggle} aria-pressed={active}>{active?'■ Detener dictado':'🎙 Dictar por voz'}</button>{error&&<p className="muted" role="status">{error}</p>}</div>;
+}
+function MusicCenter(){
+ const [provider,setProvider]=useState<'spotify'|'youtube'>(()=>{try{return localStorage.getItem('ff_music_provider')==='youtube'?'youtube':'spotify';}catch{return 'spotify';}});
+ const [link,setLink]=useState(()=>{try{return localStorage.getItem('ff_spotify_playlist')??'';}catch{return '';}});
+ const [active,setActive]=useState('');
+ const [error,setError]=useState('');
+ const embed=active.match(/^(?:https:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?|spotify:)(playlist|album|track)[\/:]([a-zA-Z0-9]{22})(?:[?].*)?$/);
+ const select=(next:'spotify'|'youtube')=>{setProvider(next);try{localStorage.setItem('ff_music_provider',next);}catch{}};
+ const load=()=>{
+  const match=link.trim().match(/^(?:https:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?|spotify:)(playlist|album|track)[\/:]([a-zA-Z0-9]{22})(?:[?].*)?$/);
+  if(!match){setError('Pegá un enlace de canción, álbum o playlist de Spotify.');return;}
+  setActive(link.trim());setError('');try{localStorage.setItem('ff_spotify_playlist',link.trim());}catch{}
+ };
+ return <section className="card music-center"><div className="eyebrow">MÚSICA PARA ENTRENAR</div><h3>Tu música, sin salir del entrenamiento</h3>
+  <div className="quick-tabs"><button className={provider==='spotify'?'selected':''} onClick={()=>select('spotify')}>Spotify</button><button className={provider==='youtube'?'selected':''} onClick={()=>select('youtube')}>YouTube Music</button></div>
+  {provider==='spotify'?<><p className="muted">Pegá una playlist de Spotify. Se mostrará su reproductor oficial; no requiere conectar tu contraseña con Fondal Fit.</p>
+   <label htmlFor="music-link">Enlace de Spotify</label><input id="music-link" type="url" placeholder="https://open.spotify.com/playlist/..." value={link} onChange={e=>setLink(e.target.value)}/>
+   <button type="button" onClick={load}>Abrir reproductor</button>
+   {error&&<p className="warn" role="alert">{error}</p>}
+   {embed&&<iframe title="Reproductor de Spotify" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" src={`https://open.spotify.com/embed/${embed[1]}/${embed[2]}`} width="100%" height="180" style={{border:0,borderRadius:12}}/>}
+   <p className="muted">Los controles disponibles dependen de Spotify y tu cuenta. Control remoto completo y reproducción interna requieren otra integración y revisión de permisos.</p>
+  </>:<><p className="muted">YouTube Music no ofrece aquí un control remoto equivalente. Podés abrir su aplicación y continuar escuchando desde allí.</p><a href="https://music.youtube.com/" target="_blank" rel="noopener noreferrer">Abrir YouTube Music</a></>}
+ </section>;
+}
+
 function BetaCoach({initialMessage='',onMessageChange}:{initialMessage?:string;onMessageChange?:(message:string)=>void}) {
   const [status,setStatus]=useState<{available:boolean;remaining:number;dailyLimit:number}|null>(null);
   const [message,setMessage]=useState(initialMessage);
@@ -504,7 +556,7 @@ function BetaCoach({initialMessage='',onMessageChange}:{initialMessage?:string;o
     <div className="eyebrow">FONDAL COACH · BETA</div><h2>Consultá a tu entrenador</h2>
     <p className="muted">Consejos educativos basados en tu meta. La IA no modifica el plan ni reemplaza una evaluación profesional.</p>
     <p className="muted">{status?.available?`Consultas restantes hoy: ${status.remaining}/${status.dailyLimit}`:'Para activar la IA se necesita una clave gratuita configurada en el servidor.'}</p>
-    <label htmlFor="coach-message">Tu consulta</label><textarea id="coach-message" rows={3} maxLength={450} value={message} onChange={e=>{setMessage(e.target.value);onMessageChange?.(e.target.value);}} placeholder="¿Cómo adapto el entrenamiento de hoy a mi objetivo?"/>
+    <label htmlFor="coach-message">Tu consulta</label><VoiceDictation onTranscript={text=>{setMessage(prev=>(prev?prev+" ":"")+text);onMessageChange?.(text);}}/><textarea id="coach-message" rows={3} maxLength={450} value={message} onChange={e=>{setMessage(e.target.value);onMessageChange?.(e.target.value);}} placeholder="¿Cómo adapto el entrenamiento de hoy a mi objetivo?"/>
     <button className="primary action-full" disabled={working||!message.trim()||!status?.available||status.remaining<=0} onClick={()=>void submit()}>{working?'Consultando…':'Consultar al coach'}</button>
     {error&&<p className="warn" role="alert">{error}</p>}
     {answer&&<div className="coach-answer" role="status">{answer}</div>}
@@ -561,6 +613,7 @@ function Running() {
   const fmt = (p: number) => `${Math.floor(p)}:${String(Math.round((p % 1) * 60)).padStart(2, '0')}`;
   return (
     <>
+      <MusicCenter />
       <GpsRun onDraft={(km,minutes)=>setF(prev=>({...prev,km:String(km),speed:minutes>0?String(Number((km/minutes*60).toFixed(2))):''}))}/>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); const minutes=derivedMinutes; if(!(km>0&&speed>0&&minutes>0))return; try{await api('POST', '/api/runs', { km, minutes, rpe: +f.rpe });setManualResult({km,speed,kcal:Math.round(km*Math.max(30,Math.min(250,Number(f.weightKg)||70))),pace:paceFromSpeed,zone:paceZone});setF(v=>({...v,km:'',minutes:'',speed:''}));load();}catch{setManualResult(null);} }}>
         <h2>{t('running')}</h2>
