@@ -262,14 +262,14 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   /* ---------------- Beta coach: Gemini free-tier, opt-in, server-side only ---------------- */
   const coachDaily = new Map<number, { day: string; count: number }>();
-  app.get('/api/coach/status', { preHandler: athleteOnly }, async (req) => {
+  app.get('/api/coach/status', { preHandler: auth }, async (req) => {
     const day = now().slice(0,10);
     const usage = coachDaily.get(req.user!.id);
     return { available: !!process.env.GEMINI_API_KEY, provider: 'gemini', dailyLimit: 8, remaining: 8 - (usage?.day === day ? usage.count : 0), mode: 'beta' };
   });
-  app.post('/api/coach/chat', { preHandler: athleteOnly }, async (req, reply) => {
-    if (!await needHealth(req, reply)) return;
-    if (!await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({ error: 'ai_consent_required' });
+  app.post('/api/coach/chat', { preHandler: auth }, async (req, reply) => {
+    if (req.user!.role === 'athlete' && !await needHealth(req, reply)) return;
+    if (req.user!.role === 'athlete' && !await hasConsent(req.user!.id, 'ai_memory')) return reply.code(403).send({ error: 'ai_consent_required' });
     const parsed = parse(z.object({ message: z.string().trim().min(1).max(450) }),req.body,reply);
     if (!parsed) return;
     const key = process.env.GEMINI_API_KEY;
@@ -282,7 +282,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const assessment = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
     const workout = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(uid) as { n: number };
     const profile = assessment ? JSON.parse(assessment.data) as AssessmentInput : null;
-    const context = { primaryGoal: profile?.goal ?? 'general', secondaryGoals: profile?.secondaryGoals ?? [], target: profile?.targetDescription ?? '', availabilityDays: profile?.daysPerWeek ?? 3, sessionMinutes: profile?.sessionMinutes ?? 60, completedSessions: Number(workout.n) };
+    const context = req.user!.role === 'pro' ? {role:'professional',notice:'No student information shared. Suggestions are educational and must be reviewed by the professional.'} : { primaryGoal: profile?.goal ?? 'general', secondaryGoals: profile?.secondaryGoals ?? [], target: profile?.targetDescription ?? '', availabilityDays: profile?.daysPerWeek ?? 3, sessionMinutes: profile?.sessionMinutes ?? 60, completedSessions: Number(workout.n) };
     try {
       const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
       if (!/^[a-zA-Z0-9._-]+$/.test(model)) return reply.code(500).send({ error: 'invalid_coach_model' });
@@ -290,7 +290,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
         method:'POST',
         headers:{ 'content-type':'application/json', 'x-goog-api-key':key },
         body:JSON.stringify({
-          systemInstruction:{ parts:[{text:'Sos Fondal Coach, asistente educativo de ejercicio físico basado en evidencia. Contestá en español claro, breve y con incertidumbre explícita. Personalizá según la meta y los registros; no inventes historial ni cites estudios inexistentes. No indiques esteroides, dosis ni tratamientos. Ante dolor torácico, síncope, síntomas de alarma o lesión grave recomendá suspender actividad y consultar. No generes diagnósticos. Nunca modifiques directamente el plan: solo sugerencias.'}] },
+          systemInstruction:{ parts:[{text:'Sos Fondal Coach, asistente educativo de ejercicio físico basado en evidencia. Podés orientar a entrenadores profesionales, pero no afirmes que modificaste rutinas, no prometas un gasto calórico exacto por ejercicio y pedí datos faltantes. Contestá en español claro, breve y con incertidumbre explícita. Personalizá según la meta y los registros; no inventes historial ni cites estudios inexistentes. No indiques esteroides, dosis ni tratamientos. Ante dolor torácico, síncope, síntomas de alarma o lesión grave recomendá suspender actividad y consultar. No generes diagnósticos. Nunca modifiques directamente el plan: solo sugerencias.'}] },
           contents:[{role:'user',parts:[{text:'Contexto limitado: '+JSON.stringify(context)+'\\nConsulta: '+parsed.message}]}],
           generationConfig:{temperature:0.3,maxOutputTokens:420}
         }),
