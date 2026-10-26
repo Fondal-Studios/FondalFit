@@ -28,7 +28,7 @@ export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_mem
 interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null; pro_enabled: number; mode: string | null; last_seen_at: string | null; pro_code: string | null }
 
 /** One account can be athlete and professional: `mode` is the hat currently worn. Legacy rows (mode NULL) fall back to their role. */
-export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' | 'medical' | 'admin' => (u.mode === 'medical' ? 'medical' : u.mode === 'admin' && u.role === 'admin' ? 'admin' : u.mode === 'pro' && (u.pro_enabled || u.role === 'pro') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
+export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' | 'medical' | 'admin' => (u.mode === 'medical' ? 'medical' : u.mode === 'admin' ? 'admin' : u.mode === 'pro' && (u.pro_enabled || u.role === 'pro' || u.role === 'admin') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
 export const canPro = (u: Pick<User, 'role' | 'pro_enabled'>) => !!u.pro_enabled || u.role === 'pro' || u.role === 'admin';
 declare module 'fastify' { interface FastifyRequest { user?: User } }
 
