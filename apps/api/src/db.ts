@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS professional_profiles(
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   category TEXT NOT NULL CHECK(category IN ('medical','fitness')),
   display_name TEXT NOT NULL, specialty TEXT NOT NULL, credentials TEXT NOT NULL,
+  profession TEXT NOT NULL DEFAULT 'physician',
   license TEXT NOT NULL, description TEXT NOT NULL, phone TEXT NOT NULL,
   city TEXT NOT NULL, area TEXT NOT NULL, modality TEXT NOT NULL,
   lat @REAL, lon @REAL, verified INTEGER NOT NULL DEFAULT 0,
@@ -71,6 +72,7 @@ async function migrate(db: DB) {
   await ensureColumn(db, 'users', 'mode', 'TEXT');
   await ensureColumn(db, 'users', 'last_seen_at', 'TEXT');
   await ensureColumn(db, 'users', 'pro_code', 'TEXT');
+  await ensureColumn(db, 'professional_profiles', 'profession', "TEXT NOT NULL DEFAULT 'physician'");
 }
 
 const ddl = (d: DB['dialect']) =>
