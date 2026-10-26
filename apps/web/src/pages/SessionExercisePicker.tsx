@@ -20,7 +20,7 @@ const messages:Record<string,string>={
 export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,onSaved}:Props){
  const t=useT(),source=byId(exerciseId);
  const [version,setVersion]=useState<number|null>(null);
- const [choices,setChoices]=useState(CATALOG.filter(x=>x.id!==exerciseId&&x.pattern===source?.pattern&&x.muscle===source?.muscle&&!!x.timed===!!source?.timed));
+ const choices=CATALOG.filter(x=>x.id!==exerciseId&&x.pattern===source?.pattern&&x.muscle===source?.muscle&&!!x.timed===!!source?.timed);
  const [search,setSearch]=useState('');
  const [selected,setSelected]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null);
