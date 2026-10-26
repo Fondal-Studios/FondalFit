@@ -194,7 +194,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const b = parse(z.object({
       dayIndex: z.number().int().min(0).max(13),
       fatigue: z.number().min(1).max(10).default(5),
-      items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
+      items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), durationSeconds: z.number().int().min(1).max(3600).optional(), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
     if (!b) return;
     const uid = req.user!.id;
@@ -212,6 +212,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       const idx = day.items.findIndex((x) => x.exerciseId === it.exerciseId);
       if (idx < 0) continue;
       const p = day.items[idx]!;
+      if (p.durationSeconds) { decisions[it.exerciseId] = 'timed_hold_recorded'; continue; }
       let load = p.load;
       if (p.load === 0) { load = seedLoad(it.sets[0]!, p); decisions[it.exerciseId] = load ? 'seed' : 'hold'; }
       else {
