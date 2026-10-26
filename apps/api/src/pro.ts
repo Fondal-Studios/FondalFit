@@ -23,7 +23,7 @@ const cardioSchema = z.object({
   modality: z.enum(['run', 'bike']), type: z.enum(['zone2', 'intervals', 'tempo', 'long', 'walkrun']), durationMin: z.number().int().min(5).max(360),
   intervals: z.object({ reps: z.number().int().min(1).max(50), workSec: z.number().int().min(10).max(1800), restSec: z.number().int().min(0).max(1800) }).optional(),
 });
-const daySchema = z.object({ name: z.string().trim().min(1).max(60), kind: z.enum(['strength', 'cardio']).default('strength'), items: z.array(itemSchema).max(20).default([]), cardio: cardioSchema.optional() })
+const daySchema = z.object({ name: z.string().trim().min(1).max(60), kind: z.enum(['strength', 'cardio']).default('strength'), format:z.enum(['standard','superset','circuit']).default('standard'), items: z.array(itemSchema).max(20).default([]), cardio: cardioSchema.optional() })
   .refine((d) => (d.kind === 'cardio' ? !!d.cardio : d.items.length > 0), 'day_content');
 export const templateSchema = z.object({ name: z.string().trim().min(1).max(80), goal: z.enum(['hypertrophy', 'strength', 'recomposition', 'fat_loss', 'endurance', 'vo2max', 'general', 'mobility']).default('general'), notes: z.string().max(1000).optional(), days: z.array(daySchema).min(1).max(7) });
 
