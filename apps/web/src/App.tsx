@@ -130,6 +130,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
   const nav = useNav();
   const { me, refresh } = useApp();
   const tutorial=useTutorialStatus(me.id,me.mode);
+  useEffect(()=>{const show=()=>tutorial.show();window.addEventListener('fondal:show-tutorial',show);return()=>window.removeEventListener('fondal:show-tutorial',show);},[tutorial.show]);
   const needsConsent = me.mode === 'athlete' && !(me.consents.terms && me.consents.health_data);
   const top = stack[stack.length - 1];
   const active = tabs.includes(tab) ? tab : tabs[0]!;
