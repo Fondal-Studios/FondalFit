@@ -13,7 +13,7 @@ export function registerGym({app,db,auth,proOnly,athleteOnly,hasConsent,audit,no
   if(await owner(gymId,id))return true;
   return !!await db.prepare("SELECT 1 AS ok FROM gym_members WHERE gym_id=? AND user_id=? AND member_type='coach' AND status='active'").get(gymId,id);
  };
- const getGym=async(id:number)=>db.prepare('SELECT id,owner_id,name,city,area FROM gyms WHERE id=?').get(id) as {id:number;owner_id:number;name:string;city:string;area:string}|undefined;
+ const getGym=async(id:number)=>await db.prepare('SELECT id,owner_id,name,city,area FROM gyms WHERE id=?').get(id) as {id:number;owner_id:number;name:string;city:string;area:string}|undefined;
 
  app.get('/api/gyms/plans',{preHandler:auth},async()=>({
   current:'beta_free',checkoutEnabled:false,monthlyPrices:{individual:12,gym:49},
