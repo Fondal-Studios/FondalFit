@@ -10,6 +10,8 @@ export interface Food {
   /** weight of one countable unit (egg, banana, slice…) */ unitG?: number;
   liquid?: boolean;
   /** extra search words (any language) */ alias?: string;
+  /** shown in the "common foods" picker: pick N units of `unitName` (slice, piece, plate…) */
+  common?: boolean; emoji?: string; unitName?: [string, string, string];
 }
 
 const f = (id: string, cat: FoodCat, n: [string, string, string], kcal: number, p: number, c: number, fat: number, portionG: number, o: { unit?: number; liquid?: boolean; alias?: string } = {}): Food =>
@@ -191,6 +193,76 @@ export const FOODS: Food[] = [
   f('protein_bar', 'prepared', ['Barra de proteína', 'Protein bar', 'Barra de proteína'], 350, 30, 35, 10, 60, { unit: 60, alias: 'barra proteina protein bar' }),
 ];
 
+
+// ---- common foods: per-unit values (typical sizes) converted to per-100 g, for the "pick N portions" picker
+const cf = (id: string, emoji: string, n: [string, string, string], u: [string, string, string], unitG: number, kcalU: number, p: number, c: number, fat: number, alias: string, liquid = false): Food => {
+  const k = 100 / unitG, r1 = (x: number) => Math.round(x * k * 10) / 10;
+  return { id, cat: 'prepared', n, kcal: Math.round(kcalU * k), p: r1(p), c: r1(c), f: r1(fat), portionG: unitG, unitG, alias, common: true, emoji, unitName: u, liquid };
+};
+FOODS.push(
+  cf('pizza_slice', '🍕', ['Pizza (porción de muzzarella)', 'Cheese pizza slice', 'Pizza (fatia de muçarela)'], ['porción', 'slice', 'fatia'], 110, 270, 11, 33, 10, 'pizza porcion porciones slice fatia muzzarella'),
+  cf('pizza_fugazzeta', '🍕', ['Pizza fugazzeta (porción)', 'Onion & cheese pizza slice', 'Pizza fugazzeta (fatia)'], ['porción', 'slice', 'fatia'], 130, 340, 14, 36, 15, 'fugazzeta fugazza pizza'),
+  cf('milanesa_napo', '🥩', ['Milanesa napolitana', 'Neapolitan cutlet', 'Milanesa à napolitana'], ['milanesa', 'cutlet', 'milanesa'], 280, 560, 38, 32, 31, 'milanesa napolitana napo'),
+  cf('milanesa_fried_unit', '🥩', ['Milanesa de carne frita', 'Fried beef cutlet', 'Milanesa de carne frita'], ['milanesa', 'cutlet', 'milanesa'], 150, 380, 24, 20, 22, 'milanesa frita'),
+  cf('milanesa_sandwich', '🥪', ['Sándwich de milanesa', 'Cutlet sandwich', 'Sanduíche de milanesa'], ['sándwich', 'sandwich', 'sanduíche'], 280, 640, 33, 60, 28, 'sanguche milanesa lomito'),
+  cf('empanada_fried', '🥟', ['Empanada de carne frita', 'Beef empanada, fried', 'Empanada de carne frita'], ['empanada', 'empanada', 'empanada'], 90, 260, 9, 21, 15, 'empanada frita'),
+  cf('empanada_ham_cheese', '🥟', ['Empanada de jamón y queso', 'Ham & cheese empanada', 'Empanada de presunto e queijo'], ['empanada', 'empanada', 'empanada'], 90, 245, 10, 20, 14, 'empanada jamon queso'),
+  cf('hamburger_cheese', '🍔', ['Hamburguesa con queso (completa)', 'Cheeseburger', 'Hambúrguer com queijo'], ['hamburguesa', 'burger', 'hambúrguer'], 200, 520, 28, 40, 27, 'hamburguesa burger'),
+  cf('hamburger_double', '🍔', ['Hamburguesa doble', 'Double burger', 'Hambúrguer duplo'], ['hamburguesa', 'burger', 'hambúrguer'], 300, 780, 46, 42, 45, 'hamburguesa doble'),
+  cf('choripan', '🌭', ['Choripán', 'Chorizo sandwich', 'Choripán'], ['choripán', 'sandwich', 'sanduíche'], 200, 540, 22, 36, 34, 'choripan chorizo'),
+  cf('chorizo_unit', '🌭', ['Chorizo parrillero', 'Grilled chorizo', 'Linguiça grelhada'], ['chorizo', 'sausage', 'linguiça'], 100, 300, 15, 2, 26, 'chorizo'),
+  cf('morcilla_unit', '🌭', ['Morcilla', 'Blood sausage', 'Morcela'], ['porción', 'portion', 'porção'], 80, 190, 9, 12, 12, 'morcilla'),
+  cf('asado_plate', '🥩', ['Asado (plato, 250 g con hueso)', 'BBQ ribs plate', 'Costela na brasa (prato)'], ['plato', 'plate', 'prato'], 250, 540, 40, 0, 42, 'asado costilla vacio plato'),
+  cf('bife_chorizo', '🥩', ['Bife de chorizo', 'Sirloin steak', 'Bife de chorizo'], ['bife', 'steak', 'bife'], 250, 550, 60, 0, 33, 'bife chorizo lomo'),
+  cf('pollo_horno_muslo', '🍗', ['Pata muslo al horno', 'Baked chicken leg', 'Sobrecoxa assada'], ['pata muslo', 'leg', 'sobrecoxa'], 200, 360, 36, 0, 24, 'pollo horno pata muslo'),
+  cf('pollo_frito', '🍗', ['Pollo frito (presa)', 'Fried chicken piece', 'Frango frito (pedaço)'], ['presa', 'piece', 'pedaço'], 120, 320, 24, 10, 20, 'pollo frito presa'),
+  cf('pasta_plate', '🍝', ['Fideos con salsa (plato)', 'Pasta with sauce (plate)', 'Macarrão com molho (prato)'], ['plato', 'plate', 'prato'], 350, 520, 17, 92, 9, 'fideos tallarines spaghetti pasta salsa'),
+  cf('pasta_bolognese', '🍝', ['Fideos a la bolognesa (plato)', 'Pasta bolognese (plate)', 'Macarrão à bolonhesa (prato)'], ['plato', 'plate', 'prato'], 400, 690, 32, 86, 22, 'bolognesa tuco fideos'),
+  cf('ravioli_plate', '🍝', ['Ravioles con salsa (plato)', 'Ravioli with sauce (plate)', 'Ravióli ao molho (prato)'], ['plato', 'plate', 'prato'], 350, 560, 22, 78, 17, 'ravioles sorrentinos canelones'),
+  cf('noquis_plate', '🍝', ['Ñoquis con salsa (plato)', 'Gnocchi with sauce (plate)', 'Nhoque ao molho (prato)'], ['plato', 'plate', 'prato'], 350, 520, 14, 98, 8, 'noquis ñoquis gnocchi'),
+  cf('lasagna', '🍝', ['Lasaña (porción)', 'Lasagna slice', 'Lasanha (porção)'], ['porción', 'slice', 'porção'], 300, 520, 28, 48, 24, 'lasaña lasagna'),
+  cf('risotto', '🍚', ['Risotto (plato)', 'Risotto (plate)', 'Risoto (prato)'], ['plato', 'plate', 'prato'], 300, 480, 12, 70, 15, 'risotto arroz'),
+  cf('arroz_pollo', '🍚', ['Arroz con pollo (plato)', 'Chicken & rice (plate)', 'Arroz com frango (prato)'], ['plato', 'plate', 'prato'], 350, 520, 32, 62, 14, 'arroz con pollo'),
+  cf('locro', '🍲', ['Locro (plato)', 'Locro stew (plate)', 'Locro (prato)'], ['plato', 'plate', 'prato'], 350, 520, 28, 48, 24, 'locro guiso'),
+  cf('guiso_lentejas', '🍲', ['Guiso de lentejas (plato)', 'Lentil stew (plate)', 'Ensopado de lentilha (prato)'], ['plato', 'plate', 'prato'], 350, 400, 24, 56, 9, 'guiso lentejas'),
+  cf('sopa_verduras', '🍜', ['Sopa de verduras (plato)', 'Vegetable soup (bowl)', 'Sopa de legumes (prato)'], ['plato', 'bowl', 'prato'], 300, 120, 4, 20, 3, 'sopa caldo'),
+  cf('tarta_jyq', '🥧', ['Tarta de jamón y queso (porción)', 'Ham & cheese tart slice', 'Torta de presunto e queijo (fatia)'], ['porción', 'slice', 'fatia'], 150, 380, 15, 24, 25, 'tarta jamon queso'),
+  cf('tarta_verdura_unit', '🥧', ['Tarta de verdura (porción)', 'Vegetable tart slice', 'Torta de legumes (fatia)'], ['porción', 'slice', 'fatia'], 150, 290, 9, 25, 17, 'tarta verdura acelga'),
+  cf('tortilla_papa_unit', '🍳', ['Tortilla de papas (porción)', 'Potato omelette slice', 'Tortilha de batata (fatia)'], ['porción', 'slice', 'fatia'], 150, 260, 9, 20, 16, 'tortilla papas'),
+  cf('huevo_frito', '🍳', ['Huevo frito', 'Fried egg', 'Ovo frito'], ['huevo', 'egg', 'ovo'], 50, 90, 6, 0.5, 7, 'huevo frito'),
+  cf('huevo_duro', '🥚', ['Huevo duro', 'Boiled egg', 'Ovo cozido'], ['huevo', 'egg', 'ovo'], 50, 78, 6.3, 0.6, 5.3, 'huevo duro hervido'),
+  cf('omelette_2', '🍳', ['Omelette de 2 huevos', '2-egg omelette', 'Omelete de 2 ovos'], ['omelette', 'omelette', 'omelete'], 130, 210, 13, 2, 16, 'omelette tortilla huevos'),
+  cf('tostada_manteca', '🍞', ['Tostada con manteca y dulce', 'Toast with butter & jam', 'Torrada com manteiga e geleia'], ['tostada', 'toast', 'torrada'], 40, 140, 3, 22, 4.5, 'tostada manteca mermelada'),
+  cf('tostada_palta', '🥑', ['Tostada con palta', 'Avocado toast', 'Torrada com abacate'], ['tostada', 'toast', 'torrada'], 90, 190, 4, 17, 12, 'tostada palta aguacate'),
+  cf('medialuna', '🥐', ['Medialuna de manteca', 'Butter croissant (medialuna)', 'Croissant doce (medialuna)'], ['medialuna', 'piece', 'unidade'], 50, 200, 4, 22, 10, 'medialuna croissant factura'),
+  cf('factura', '🥐', ['Factura (vigilante, bolita)', 'Pastry (factura)', 'Pastel doce (factura)'], ['factura', 'pastry', 'doce'], 60, 250, 4, 32, 12, 'factura vigilante bolita'),
+  cf('tostado_jyq', '🥪', ['Tostado de jamón y queso', 'Ham & cheese toastie', 'Misto quente'], ['tostado', 'toastie', 'misto'], 110, 330, 17, 29, 16, 'tostado jamon queso'),
+  cf('sandwich_miga', '🥪', ['Sándwich de miga', 'Crustless sandwich (miga)', 'Sanduíche de miga'], ['sándwich', 'sandwich', 'sanduíche'], 60, 150, 6, 18, 5.5, 'sandwich miga'),
+  cf('cafe_leche_unit', '☕', ['Café con leche (taza)', 'Latte (cup)', 'Café com leite (xícara)'], ['taza', 'cup', 'xícara'], 250, 110, 6, 9, 5, 'cafe con leche cortado', true),
+  cf('mate_cebado', '🧉', ['Mate (sin azúcar)', 'Mate (no sugar)', 'Mate (sem açúcar)'], ['mate', 'gourd', 'cuia'], 500, 5, 0, 1, 0, 'mate cebado', true),
+  cf('cerveza_lata', '🍺', ['Cerveza (lata 473 ml)', 'Beer can (473 ml)', 'Cerveja (lata 473 ml)'], ['lata', 'can', 'lata'], 473, 200, 1.7, 16, 0, 'cerveza birra', true),
+  cf('vino_copa', '🍷', ['Vino tinto (copa)', 'Red wine (glass)', 'Vinho tinto (taça)'], ['copa', 'glass', 'taça'], 150, 125, 0.1, 4, 0, 'vino copa tinto', true),
+  cf('fernet_cola', '🥃', ['Fernet con cola (vaso)', 'Fernet & cola (glass)', 'Fernet com cola (copo)'], ['vaso', 'glass', 'copo'], 300, 230, 0, 30, 0, 'fernet cola trago', true),
+  cf('gaseosa_vaso', '🥤', ['Gaseosa (vaso 300 ml)', 'Soda (300 ml)', 'Refrigerante (300 ml)'], ['vaso', 'glass', 'copo'], 300, 126, 0, 32, 0, 'gaseosa coca cola refresco', true),
+  cf('helado_bocha', '🍨', ['Helado (bocha)', 'Ice cream (scoop)', 'Sorvete (bola)'], ['bocha', 'scoop', 'bola'], 70, 150, 2.5, 18, 7.5, 'helado bocha cucurucho'),
+  cf('alfajor_unit', '🍫', ['Alfajor de dulce de leche', 'Alfajor', 'Alfajor'], ['alfajor', 'alfajor', 'alfajor'], 55, 230, 2.5, 36, 9, 'alfajor'),
+  cf('chocolate_barra', '🍫', ['Chocolate con leche (cuadrado)', 'Milk chocolate (square)', 'Chocolate ao leite (quadrado)'], ['cuadrado', 'square', 'quadrado'], 10, 53, 0.7, 5.9, 3, 'chocolate cuadradito'),
+  cf('flan_unit', '🍮', ['Flan con dulce de leche', 'Flan with dulce de leche', 'Flan com doce de leite'], ['porción', 'portion', 'porção'], 150, 230, 6, 36, 7, 'flan postre'),
+  cf('torta_porcion', '🍰', ['Torta / bizcochuelo (porción)', 'Cake slice', 'Bolo (fatia)'], ['porción', 'slice', 'fatia'], 100, 350, 5, 48, 15, 'torta cumpleaños bizcochuelo budin'),
+  cf('banana_unit', '🍌', ['Banana', 'Banana', 'Banana'], ['banana', 'banana', 'banana'], 120, 105, 1.3, 27, 0.4, 'banana platano'),
+  cf('manzana_unit', '🍎', ['Manzana', 'Apple', 'Maçã'], ['manzana', 'apple', 'maçã'], 180, 95, 0.5, 25, 0.3, 'manzana'),
+  cf('papas_fritas_porcion', '🍟', ['Papas fritas (porción)', 'French fries (portion)', 'Batata frita (porção)'], ['porción', 'portion', 'porção'], 150, 470, 6, 60, 23, 'papas fritas fritas'),
+  cf('ensalada_mixta', '🥗', ['Ensalada mixta (plato)', 'Mixed salad (plate)', 'Salada mista (prato)'], ['plato', 'plate', 'prato'], 200, 50, 2, 9, 1, 'ensalada lechuga tomate'),
+  cf('ensalada_cesar', '🥗', ['Ensalada César con pollo', 'Chicken Caesar salad', 'Salada Caesar com frango'], ['plato', 'plate', 'prato'], 300, 420, 28, 14, 28, 'cesar ensalada pollo'),
+  cf('sushi_roll', '🍣', ['Sushi roll (pieza)', 'Sushi roll (piece)', 'Sushi (peça)'], ['pieza', 'piece', 'peça'], 35, 55, 2, 10, 0.8, 'sushi roll maki'),
+  cf('wok_pollo', '🥘', ['Salteado de pollo y verduras (plato)', 'Chicken stir-fry (plate)', 'Salteado de frango (prato)'], ['plato', 'plate', 'prato'], 350, 450, 34, 35, 18, 'wok salteado'),
+  cf('batido_proteina', '🥤', ['Batido de proteína con leche', 'Protein shake with milk', 'Shake de proteína com leite'], ['vaso', 'glass', 'copo'], 350, 260, 30, 18, 7, 'batido shake whey', true),
+  cf('yogur_granola', '🥣', ['Yogur con granola (bowl)', 'Yogurt & granola bowl', 'Iogurte com granola (tigela)'], ['bowl', 'bowl', 'tigela'], 250, 330, 13, 48, 9, 'yogur granola bowl'),
+  cf('avena_leche', '🥣', ['Avena con leche (bowl)', 'Oatmeal with milk (bowl)', 'Aveia com leite (tigela)'], ['bowl', 'bowl', 'tigela'], 300, 290, 13, 42, 8, 'avena porridge'),
+  cf('pancho', '🌭', ['Pancho (hot dog)', 'Hot dog', 'Cachorro-quente'], ['pancho', 'hot dog', 'cachorro-quente'], 130, 300, 11, 25, 17, 'pancho panchos hotdog'),
+  cf('lomito', '🥪', ['Lomito completo', 'Steak sandwich (lomito)', 'Sanduíche de lombo (lomito)'], ['lomito', 'sandwich', 'sanduíche'], 350, 720, 42, 52, 36, 'lomito completo'),
+  cf('tacos_unit', '🌮', ['Taco', 'Taco', 'Taco'], ['taco', 'taco', 'taco'], 90, 190, 9, 17, 10, 'taco burrito'),
+);
 export const foodById = (id: string) => FOODS.find((x) => x.id === id);
 export const foodName = (x: Food, lang: Lang) => x.n[lang === 'es' ? 0 : lang === 'en' ? 1 : 2];
 

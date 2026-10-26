@@ -87,14 +87,17 @@ export function registerFood(c: FoodCtx) {
     const logs = await dayLogs(uid, from, to);
     const sum = (k: 'kcal' | 'proteinG' | 'carbsG' | 'fatG' | 'waterMl') => logs.reduce((a, l) => a + (Number(l[k]) || 0), 0);
     const weight = await c.profileWeight(uid);
-    const exercise: { kind: string; name: string; kcal: number | null }[] = [];
+    const exercise: { kind: string; name: string; kcal: number | null; id?: number; deletable?: boolean; detail?: string }[] = [];
     const acts = await db.prepare('SELECT id,sport,duration_sec,distance_m,kcal_manual FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(uid, from, to) as { id: number; sport: string; duration_sec: number; distance_m: number; kcal_manual: number | null }[];
-    for (const a of acts) exercise.push({ kind: 'gps', name: a.sport, kcal: a.kcal_manual !== null && a.kcal_manual !== undefined ? Number(a.kcal_manual) : weight ? c.activityEnergy(a.sport, a.distance_m, a.duration_sec, weight) : null });
-    const blocks = await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='exercise' AND created_at>=? AND created_at<?").all(uid, from, to) as { data: string }[];
-    for (const b of blocks) { const d = JSON.parse(b.data) as { kind?: string; kcal?: number; blocks?: { name: string }[] }; if (d.kind === 'blocks') exercise.push({ kind: 'blocks', name: (d.blocks ?? []).map((x) => x.name).join(', '), kcal: Number(d.kcal) || 0 }); }
-    const wk = (await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM workouts WHERE user_id=? AND created_at>=? AND created_at<?').get(uid, from, to) as { c: number }).c;
+    for (const a of acts) exercise.push({ kind: 'gps', id: a.id, deletable: true, detail: `${(a.distance_m / 1000).toFixed(2)} km · ${Math.round(a.duration_sec / 60)} min`, name: a.sport, kcal: a.kcal_manual !== null && a.kcal_manual !== undefined ? Number(a.kcal_manual) : weight ? c.activityEnergy(a.sport, a.distance_m, a.duration_sec, weight) : null });
+    const blocks = await db.prepare("SELECT id,data FROM nutrition WHERE user_id=? AND kind='exercise' AND created_at>=? AND created_at<?").all(uid, from, to) as { id: number; data: string }[];
+    for (const b of blocks) { const d = JSON.parse(b.data) as { kind?: string; kcal?: number; blocks?: { name: string }[] }; if (d.kind === 'blocks') exercise.push({ kind: 'blocks', id: b.id, deletable: true, name: (d.blocks ?? []).map((x) => x.name).join(', '), kcal: Number(d.kcal) || 0 }); }
+    const wks = await db.prepare('SELECT id,data FROM workouts WHERE user_id=? AND created_at>=? AND created_at<? ORDER BY id').all(uid, from, to) as { id: number; data: string }[];
     // strength session ≈ 45 min at ~4.5 MET (above resting): a stated assumption, not a measurement
-    for (let i = 0; i < wk; i++) exercise.push({ kind: 'strength', name: 'strength', kcal: weight ? Math.round((4.5 - 1) * 3.5 * weight / 200 * 45) : null });
+    for (const w of wks) {
+      const d = JSON.parse(w.data) as { items?: { exerciseId: string; sets: unknown[] }[] };
+      exercise.push({ kind: 'strength', id: w.id, deletable: true, name: 'strength', detail: (d.items ?? []).map((i) => `${i.exerciseId}×${i.sets.length}`).join(', '), kcal: weight ? Math.round((4.5 - 1) * 3.5 * weight / 200 * 45) : null });
+    }
     const burnedExercise = exercise.reduce((a, e) => a + (e.kcal ?? 0), 0);
     const resting = target?.explain?.lifeKcal ?? null;
     const expenditure = resting === null ? null : Math.round(resting + burnedExercise);
@@ -117,6 +120,60 @@ export function registerFood(c: FoodCtx) {
       estimated: true,
       note: 'Estimated energy balance: resting + daily-life expenditure is a formula, exercise is estimated from MET tables; neither is measured.',
     };
+  });
+
+  /** Edit a logged meal by hand (name, kcal, macros, meal type): for corrections when the estimate was wrong. */
+  app.patch('/api/nutrition/log/:id', { preHandler: athleteOnly }, async (req, reply) => {
+    const b = c.parse(z.object({ meal: z.string().trim().min(1).max(120).optional(), mealType: z.enum(MEAL_TYPES).optional(), kcal: z.number().min(0).max(6000).optional(), proteinG: z.number().min(0).max(500).optional(), carbsG: z.number().min(0).max(900).optional(), fatG: z.number().min(0).max(500).optional() }), req.body, reply);
+    if (!b) return;
+    const id = Number((req.params as { id: string }).id);
+    const row = await db.prepare("SELECT data FROM nutrition WHERE id=? AND user_id=? AND kind='log'").get(id, req.user!.id) as { data: string } | undefined;
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    const next = { ...(JSON.parse(row.data) as Record<string, unknown>), ...b, edited: true };
+    await db.prepare("UPDATE nutrition SET data=? WHERE id=? AND user_id=? AND kind='log'").run(JSON.stringify(next), id, req.user!.id);
+    return { id, ...next };
+  });
+
+  /** Clear every food/water entry of a day (e.g. a day logged wrongly). Activity and workouts are untouched. */
+  app.delete('/api/nutrition/day', { preHandler: athleteOnly }, async (req, reply) => {
+    const q = c.parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), timezoneOffset: tzOffset }), req.query, reply);
+    if (!q) return;
+    const [from, to] = dayRange(q.date, q.timezoneOffset);
+    const r = await db.prepare("DELETE FROM nutrition WHERE user_id=? AND kind='log' AND created_at>=? AND created_at<?").run(req.user!.id, from, to);
+    return { ok: true, removed: r.changes };
+  });
+
+  app.delete('/api/nutrition/exercise/:id', { preHandler: athleteOnly }, async (req, reply) => {
+    const r = await db.prepare("DELETE FROM nutrition WHERE id=? AND user_id=? AND kind='exercise'").run(Number((req.params as { id: string }).id), req.user!.id);
+    return r.changes ? { ok: true } : reply.code(404).send({ error: 'not_found' });
+  });
+
+  /** A logged strength session (mistaken or duplicated). Plan loads already adapted are not rolled back. */
+  app.delete('/api/workouts/:id', { preHandler: athleteOnly }, async (req, reply) => {
+    const r = await db.prepare('DELETE FROM workouts WHERE id=? AND user_id=?').run(Number((req.params as { id: string }).id), req.user!.id);
+    return r.changes ? { ok: true } : reply.code(404).send({ error: 'not_found' });
+  });
+
+  /** Month overview for the calendar: per local day intake vs target, water, sessions and activities. Tap a day → /api/day. */
+  app.get('/api/calendar', { preHandler: athleteOnly }, async (req, reply) => {
+    const q = c.parse(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), timezoneOffset: tzOffset }), req.query, reply);
+    if (!q) return;
+    const uid = req.user!.id;
+    const [from] = dayRange(q.month + '-01', q.timezoneOffset);
+    const y = Number(q.month.slice(0, 4)), m = Number(q.month.slice(5, 7));
+    const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    const [to] = dayRange(nextMonth + '-01', q.timezoneOffset);
+    const dayOf = (iso: string) => localDay(q.timezoneOffset, Date.parse(iso));
+    const days: Record<string, { date: string; kcal: number; waterMl: number; meals: number; sessions: number; activities: number }> = {};
+    const slot = (iso: string) => (days[dayOf(iso)] ??= { date: dayOf(iso), kcal: 0, waterMl: 0, meals: 0, sessions: 0, activities: 0 });
+    for (const r of await db.prepare("SELECT created_at,data FROM nutrition WHERE user_id=? AND kind='log' AND created_at>=? AND created_at<?").all(uid, from, to) as { created_at: string; data: string }[]) {
+      const d = JSON.parse(r.data) as { kcal?: number; waterMl?: number }; const x = slot(r.created_at);
+      x.kcal += Number(d.kcal) || 0; x.waterMl += Number(d.waterMl) || 0; if (Number(d.kcal) > 0) x.meals++;
+    }
+    for (const r of await db.prepare('SELECT created_at FROM workouts WHERE user_id=? AND created_at>=? AND created_at<?').all(uid, from, to) as { created_at: string }[]) slot(r.created_at).sessions++;
+    for (const r of await db.prepare('SELECT started_at FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(uid, from, to) as { started_at: string }[]) slot(r.started_at).activities++;
+    const target = await readTarget(uid);
+    return { month: q.month, targetKcal: target?.kcal ?? null, days: Object.values(days).map((d) => ({ ...d, kcal: Math.round(d.kcal) })).sort((a, b) => a.date.localeCompare(b.date)) };
   });
 
   /** Compatibility shape used by earlier clients (today = the user's local day). */

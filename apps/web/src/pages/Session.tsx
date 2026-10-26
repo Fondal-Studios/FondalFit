@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import { byId, type PlanDay } from '@fondal/engine';
-import { Bar, useApp, useLoad, useT } from '../ctx';
+import { Bar, useApp, useLang, useLoad, useT } from '../ctx';
+import { ExerciseVisual } from '../anatomy';
+import { EXINFO } from '../exinfo';
 import { Page, useNav } from '../nav';
 import { fmtReps } from './Library';
 import { dayMuscles } from './Train';
@@ -20,6 +22,8 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
   const [rows, setRows] = useState<Record<string, SetRow[]>>(() => Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '', done: false }))])));
   const [fatigue, setFatigue] = useState(5);
   const [busy, setBusy] = useState(false);
+  const [tech, setTech] = useState<string | null>(null);
+  const lang = useLang();
   const [rest, setRest] = useState<{ left: number; total: number } | null>(null);
   const [summary, setSummary] = useState<{ msg: string; volume: number; sets: number } | null>(null);
   const t0 = useRef(Date.now());
@@ -83,7 +87,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
         return (
           <div className="card" key={it.exerciseId}>
             <div className="row between top"><div><h3 style={{ margin: 0 }}>{t('ex_' + it.exerciseId)}</h3><p className="muted small">{it.sets} × {fmtReps(ex, it.repMin, it.repMax)} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${it.restSec >= 60 ? Math.round(it.restSec / 6) / 10 + '′' : it.restSec + ' s'}` : ''}</p></div>
-              <button className="iconbtn" aria-label={t('howTo')} onClick={() => nav.push('exercise', { id: it.exerciseId })}>?</button></div>
+              <button className="linkbtn" aria-label={t('technique')} onClick={() => setTech(it.exerciseId)}>🎯 {t('technique')}</button></div>
             {prev && <p className="prev">{t('lastTime')}: {prev.sets.map((s) => `${s.weight}${ex?.timed ? '' : 'kg'}×${s.reps}`).join(' · ')}</p>}
             {rows[it.exerciseId]!.map((s, i) => (
               <div className={'setrow' + (s.done ? ' done' : '')} key={i}>
@@ -100,6 +104,16 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
       <label htmlFor="fat">{t('fatigue')}: {fatigue}</label><input id="fat" type="range" min={1} max={10} value={fatigue} onChange={(e) => setFatigue(Number(e.target.value))} />
       <p><button className="primary" disabled={busy || done === 0} onClick={finish}>{t('finish')}</button></p>
       {rest && <div className="toast" role="timer" aria-live="off">⏱ {t('rest')} {Math.floor(rest.left / 60)}:{String(rest.left % 60).padStart(2, '0')} <button className="link" onClick={() => setRest(null)}>{t('skip')}</button></div>}
+      {tech && (() => { const info = EXINFO[tech], ix = ({ es: 0, en: 1, pt: 2 } as const)[lang]; return (
+        <>
+          <div className="scrim" onClick={() => setTech(null)} />
+          <div className="sheet" role="dialog" aria-label={t('technique')} style={{ maxHeight: '86vh', overflow: 'auto' }}>
+            <div className="row between"><h3 style={{ margin: 0 }}>🎯 {t('ex_' + tech)}</h3><button className="iconbtn" aria-label={t('close')} onClick={() => setTech(null)}>✕</button></div>
+            <ExerciseVisual id={tech} />
+            {info && <><ol className="steps">{info.how[ix].split('|').map((x) => x.trim()).map((x, k) => <li key={k}>{x}</li>)}</ol><div className="cue"><b>{t('keyCue')}:</b> {info.tip[ix]}</div></>}
+            <div className="row"><button onClick={() => { const id = tech; setTech(null); nav.push('exercise', { id }); }}>{t('fullDetail')}</button><button className="primary" onClick={() => setTech(null)}>{t('close')}</button></div>
+          </div>
+        </>); })()}
     </Page>
   );
 }

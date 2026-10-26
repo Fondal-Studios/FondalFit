@@ -11,7 +11,7 @@ describe('food table', () => {
     for (const f of FOODS) {
       // Atwater sanity: stated kcal within 35% (alcohol, fibre, rounding) of 4p+4c+9f for foods with energy
       const est = 4 * f.p + 4 * f.c + 9 * f.f;
-      if (f.kcal > 40 && !['beer', 'wine_red'].includes(f.id)) expect(Math.abs(est - f.kcal) / f.kcal, f.id).toBeLessThan(0.35);
+      if (f.kcal > 40 && !['beer', 'wine_red', 'cerveza_lata', 'vino_copa', 'fernet_cola'].includes(f.id)) expect(Math.abs(est - f.kcal) / f.kcal, f.id).toBeLessThan(0.35);
       expect(f.portionG).toBeGreaterThan(0);
       expect(f.n.every((x) => x.length > 1)).toBe(true);
     }

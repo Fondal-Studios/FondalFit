@@ -151,6 +151,24 @@ export const CATALOG: Exercise[] = [
   e('dumbbell_swing', 'conditioning', 'full', ['dumbbells'], ['lower_back'], 2, 2, { sec: ['glutes', 'hamstrings'] }),
   e('dumbbell_thruster', 'conditioning', 'full', ['dumbbells'], ['shoulder', 'knee'], 2, 2, { sec: ['quads', 'shoulders'] }),
   e('rowing_machine', 'conditioning', 'full', ['machines'], [], 0, 1, { sec: ['back', 'quads'] }),
+  // ---- extra calisthenics & strength variations
+  e('hanging_leg_raise', 'core', 'core', ['bar'], ['shoulder'], 0, 2),
+  e('l_sit_hold', 'core', 'core', ['none'], ['wrist', 'shoulder'], 0, 3, { sec: ['triceps'], timed: true }),
+  e('negative_pull_up', 'pull', 'back', ['bar'], ['shoulder'], 0, 1, { sec: ['biceps'] }),
+  e('archer_pull_up', 'pull', 'back', ['bar'], ['shoulder'], 0, 3, { sec: ['biceps'] }),
+  e('pseudo_planche_push_up', 'push', 'chest', ['none'], ['wrist', 'shoulder'], 0, 3, { sec: ['shoulders'] }),
+  e('wall_handstand_push_up', 'push', 'shoulders', ['none'], ['wrist', 'shoulder', 'neck'], 0, 3, { sec: ['triceps'] }),
+  e('shrimp_squat', 'squat', 'quads', ['none'], ['knee'], 0, 3, { sec: ['glutes', 'core'] }),
+  e('cossack_squat', 'squat', 'quads', ['none'], ['knee'], 0, 2, { sec: ['glutes', 'hamstrings'] }),
+  e('jumping_lunge', 'lunge', 'quads', ['none'], ['knee', 'ankle'], 0, 2, { sec: ['glutes'] }),
+  e('tuck_front_lever_hold', 'pull', 'back', ['bar'], ['shoulder'], 0, 3, { sec: ['core'], timed: true }),
+  e('trap_bar_deadlift', 'hinge', 'hamstrings', ['barbell'], ['lower_back'], 2.5, 2, { sec: ['quads', 'glutes', 'back'] }),
+  e('pendlay_row', 'pull', 'back', ['barbell'], ['lower_back'], 2.5, 2, { sec: ['biceps'] }),
+  e('push_press', 'push', 'shoulders', ['barbell'], ['shoulder', 'lower_back'], 2.5, 3, { sec: ['triceps', 'quads'] }),
+  e('rack_pull', 'hinge', 'back', ['barbell'], ['lower_back'], 5, 2, { sec: ['hamstrings', 'glutes'] }),
+  e('t_bar_row', 'pull', 'back', ['machines'], ['lower_back'], 2.5, 1, { sec: ['biceps'] }),
+  e('box_jump', 'conditioning', 'quads', ['none'], ['knee', 'ankle'], 0, 2, { sec: ['glutes', 'calves'] }),
+  e('dumbbell_snatch', 'conditioning', 'full', ['dumbbells'], ['shoulder', 'lower_back'], 2, 3, { sec: ['shoulders', 'glutes'] }),
 ];
 
 export const byId = (id: string) => CATALOG.find((x) => x.id === id);

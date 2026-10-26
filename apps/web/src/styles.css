@@ -209,3 +209,36 @@ button.linkbtn { background:none; border:1px solid var(--line); color:var(--acce
 .gym-member label,.gym-member select{max-width:100%;width:100%}
 .gym-studio .row label{min-width:0;flex:1}
 @media(max-width:420px){.gym-studio .row{flex-wrap:wrap}.gym-studio .row label{min-width:120px}}
+
+/* calendar + day detail + common foods */
+.calgrid { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; margin:10px 0 }
+.calhead { text-align:center; font-size:.72rem; color:var(--muted); text-transform:uppercase }
+.calday { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:1px; min-height:58px; padding:4px 0; border-radius:10px; background:var(--card2); border:1px solid var(--line); font-size:.9rem }
+.calday small { font-size:.62rem; color:var(--muted); min-height:.8em } .calday .dots { font-size:.62rem; min-height:.9em }
+.calday.today { box-shadow:0 0 0 2px var(--accent) inset } .calday:disabled { opacity:.35 }
+.calday.b-ok, .callegend i.b-ok { background:#173323; border-color:#2d6a45 } .calday.b-low, .callegend i.b-low { background:#16283a; border-color:#2b5784 } .calday.b-low2, .callegend i.b-low2 { background:#241a38; border-color:#5a3f8f }
+.calday.b-high, .callegend i.b-high { background:#3a2c12; border-color:#9a7020 } .calday.b-high2, .callegend i.b-high2 { background:#3a1717; border-color:#a03a3a }
+.callegend { display:flex; flex-wrap:wrap; gap:4px 12px } .callegend i { display:inline-block; width:12px; height:12px; border-radius:4px; border:1px solid; vertical-align:-1px; margin-right:4px }
+.logrow { padding:10px 0; border-top:1px solid var(--line) } .logrow:first-of-type { border-top:0 }
+.commongrid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:8px 0 }
+.commongrid button { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:10px; text-align:left; min-height:92px }
+.commongrid .em { font-size:1.5rem }
+@media (min-width: 900px) { .commongrid { grid-template-columns:repeat(3,1fr) } .calday { min-height:70px } }
+
+/* anatomy + movement */
+:root { --m-primary:#ff5a3c; --m-secondary:#f4b740; --m-idle:#222b35; }
+.musclemap { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 }
+.musclemap figure, .movement figure { margin:0; text-align:center } .musclemap svg { width:100%; max-height:300px; background:#0f1317; border-radius:12px }
+.musclemap figcaption, .movement figcaption { font-size:.72rem; color:var(--muted); margin-top:2px }
+.m-body { fill:#1b2430; stroke:#3a4757; stroke-width:1.2 } .musclemap svg ellipse, .musclemap svg rect, .musclemap svg path:not(.m-body) { stroke:#0b0d10; stroke-width:.6 }
+.mm-legend { grid-column:1/-1; display:flex; gap:14px; justify-content:center } .mm-legend i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:4px; vertical-align:-1px }
+.mm-legend i.p { background:var(--m-primary) } .mm-legend i.s { background:var(--m-secondary) }
+.movement { display:flex; align-items:center; justify-content:center; gap:6px; margin:10px 0 } .movement figure { flex:1; max-width:190px }
+.movement svg { width:100%; background:#0f1317; border-radius:12px }
+.mv-limb { stroke:#9fb0c0; stroke-width:5; stroke-linecap:round; stroke-linejoin:round; fill:none } .mv.end .mv-limb { stroke:#d7e3ee }
+.mv-torso { stroke:#9fb0c0; stroke-width:10; stroke-linecap:round } .mv.end .mv-torso { stroke:#d7e3ee } .mv-limb.back { opacity:.45 }
+.mv-head { fill:#9fb0c0 } .mv.end .mv-head { fill:#d7e3ee } .mv-joint { fill:var(--m-primary) }
+.mv-floor { stroke:#2c3744; stroke-width:2 } .mv-bar { stroke:#7a8794; stroke-width:3; stroke-linecap:round }
+.mv-weight { stroke:#7a8794; stroke-width:3; stroke-linecap:round } .mv-plate { fill:var(--m-primary) }
+.mv-arrow { color:var(--accent); font-size:1.4rem; flex:none }
+.exvisual { margin:8px 0 }

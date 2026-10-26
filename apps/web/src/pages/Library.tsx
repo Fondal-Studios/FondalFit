@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../api';
 import { byId, CATALOG, ROUTINES, routineById, routineWeekDays, type Exercise, type Muscle, type Routine } from '@fondal/engine';
 import { EXINFO } from '../exinfo';
+import { ExerciseVisual } from '../anatomy';
 import { LineChart } from '../charts';
 import { Chips, useApp, useLang, useLoad, useT, type Lang } from '../ctx';
 import { Page, useNav } from '../nav';
@@ -62,6 +63,7 @@ export function ExerciseDetail({ id }: { id: string }) {
           {ex.timed && <span className="badge">{t('timed')}</span>}
           {ex.stresses.length > 0 && <span className="badge warn" title={t('stresses')}>⚠ {ex.stresses.map((s) => t(s)).join(', ')}</span>}
         </div>
+        <ExerciseVisual id={id} />
         <h3>{t('howTo')}</h3>
         <ol className="steps">{steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
         <div className="cue"><b>{t('keyCue')}:</b> {info.tip[IDX[lang]]}</div>

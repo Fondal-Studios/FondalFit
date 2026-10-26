@@ -151,11 +151,11 @@ function Route({ points }: { points: GeoPoint[] }) {
 
 
 /** For activities done with another app or without GPS: just distance, time and (optionally) your own calories. */
-function ManualActivity({ onSaved }: { onSaved: () => void }) {
+export function ManualActivity({ onSaved, date }: { onSaved: () => void; date?: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const today = new Date(); const pad = (n: number) => String(n).padStart(2, '0');
-  const [f, setF] = useState({ sport: 'run', date: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`, km: '', min: '', kcal: '' });
+  const [f, setF] = useState({ sport: 'run', date: date ?? `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`, km: '', min: '', kcal: '' });
   const [msg, setMsg] = useState('');
   const km = Number(f.km.replace(',', '.')), min = Number(f.min.replace(',', '.'));
   const valid = km >= 0 && km <= 400 && min >= 1 && min <= 1440 && (km > 0 || f.kcal !== '');

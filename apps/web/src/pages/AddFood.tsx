@@ -9,6 +9,7 @@ interface Custom { name: string; kcalPer100: number; proteinPer100: number; carb
 interface Entry { key: string; foodId?: string; custom?: Custom; grams: number }
 const entryMacros = (e: Entry): Macros => { if (e.foodId) return macrosFor(foodById(e.foodId)!, e.grams); const c = e.custom!, k = e.grams / 100; return { kcal: Math.round(c.kcalPer100 * k), p: Math.round(c.proteinPer100 * k * 10) / 10, c: Math.round(c.carbsPer100 * k * 10) / 10, f: Math.round(c.fatPer100 * k * 10) / 10 }; };
 const sumEntries = (es: Entry[]): Macros => es.reduce((a, e) => { const m = entryMacros(e); return { kcal: a.kcal + m.kcal, p: Math.round((a.p + m.p) * 10) / 10, c: Math.round((a.c + m.c) * 10) / 10, f: Math.round((a.f + m.f) * 10) / 10 }; }, { kcal: 0, p: 0, c: 0, f: 0 });
+const COMMON = FOODS.filter((f) => f.common);
 const EMOJI: Record<FoodCat, string> = { meat: '🥩', fish: '🐟', dairy: '🥚', veg: '🥦', fruit: '🍎', grain: '🍞', legume: '🫘', nuts: '🥜', fats: '🫒', drinks: '🥤', sweets: '🍫', prepared: '🍕' };
 const MEALS = ['breakfast', 'lunch', 'snack', 'dinner'] as const;
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -18,7 +19,7 @@ const SPEECH_LANG = { es: 'es-AR', pt: 'pt-BR', en: 'en-US' } as const;
 
 export function AddFood({ date }: { date?: string }) {
   const t = useT(), lang = useLang(), nav = useNav(), { toast } = useApp();
-  const [tab, setTab] = useState<'cat' | 'text' | 'recent' | 'manual'>('cat');
+  const [tab, setTab] = useState<'common' | 'cat' | 'text' | 'recent' | 'manual'>('common');
   const [meal, setMeal] = useState<string>(mealByHour());
   const [cat, setCat] = useState<FoodCat | null>(null);
   const [q, setQ] = useState('');
@@ -46,8 +47,18 @@ export function AddFood({ date }: { date?: string }) {
     <Page title={t('addFood')} sub={date ?? undefined}>
       <Chips options={[...MEALS]} value={[meal]} onChange={(v) => setMeal(v[0]!)} label={(m) => t('k_' + m)} />
       <div className="tabs-inline" role="tablist">
-        {(['cat', 'text', 'recent', 'manual'] as const).map((k) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t('addtab_' + k)}</button>)}
+        {(['common', 'cat', 'text', 'recent', 'manual'] as const).map((k) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t('addtab_' + k)}</button>)}
       </div>
+
+      {tab === 'common' && (
+        <>
+          <div className="searchbar"><input type="search" aria-label={t('searchFood')} placeholder={t('commonSearch')} value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="commongrid">
+            {COMMON.filter((f) => !q || norm(foodName(f, lang) + ' ' + (f.alias ?? '')).includes(norm(q))).map((f) => (
+              <button key={f.id} onClick={() => setPick({ food: f, grams: f.unitG! })}><span className="em" aria-hidden>{f.emoji}</span><b>{foodName(f, lang)}</b><span className="muted small">{Math.round(f.kcal * f.unitG! / 100)} {t('kcalShort')} / {f.unitName![lang === 'es' ? 0 : lang === 'en' ? 1 : 2]}</span></button>))}
+          </div>
+          <p className="muted small">{t('typicalValues')}</p>
+        </>)}
 
       {tab === 'cat' && (cat === null && !q ? (
         <>
@@ -104,8 +115,18 @@ function PortionSheet({ food, grams, onChange, onAdd, onCancel }: { food: Food; 
       <div className="scrim" onClick={onCancel} />
       <div className="sheet" role="dialog" aria-label={foodName(food, lang)}>
         <h3>{foodName(food, lang)}</h3>
-        <div className="chips">{gramChips(food).map((g) => <button key={g} className={'chip' + (g === grams ? ' on' : '')} onClick={() => onChange(g)}>{g} {unit}</button>)}</div>
-        {food.unitG && food.unitG >= 20 && <div className="chips" style={{ marginTop: 8 }}>{[1, 2, 3].map((n) => <button key={n} className={'chip' + (grams === n * food.unitG! ? ' on' : '')} onClick={() => onChange(n * food.unitG!)}>{n} {t('unit')} ({n * food.unitG!} {unit})</button>)}</div>}
+        {food.common && food.unitG && food.unitName ? (
+          <div style={{ margin: '10px 0' }}>
+            <p className="muted small" style={{ margin: 0 }}>{t('unitsLabel')} ({food.unitName[lang === 'es' ? 0 : lang === 'en' ? 1 : 2]})</p>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <button aria-label="−" onClick={() => onChange(Math.max(food.unitG! / 2, grams - food.unitG! / 2))} style={{ flex: 'none', width: 56 }}>−</button>
+              <b className="big" style={{ flex: 1, textAlign: 'center' }}>{Math.round((grams / food.unitG) * 10) / 10}</b>
+              <button aria-label="+" onClick={() => onChange(grams + food.unitG! / 2)} style={{ flex: 'none', width: 56 }}>+</button>
+            </div>
+            <div className="chips">{[1, 2, 3, 4, 6, 8].map((n) => <button key={n} className={'chip' + (grams === n * food.unitG! ? ' on' : '')} onClick={() => onChange(n * food.unitG!)}>{n}</button>)}</div>
+          </div>
+        ) : <div className="chips">{gramChips(food).map((g) => <button key={g} className={'chip' + (g === grams ? ' on' : '')} onClick={() => onChange(g)}>{g} {unit}</button>)}</div>}
+        {!food.common && food.unitG && food.unitG >= 20 && <div className="chips" style={{ marginTop: 8 }}>{[1, 2, 3].map((n) => <button key={n} className={'chip' + (grams === n * food.unitG! ? ' on' : '')} onClick={() => onChange(n * food.unitG!)}>{n} {t('unit')} ({n * food.unitG!} {unit})</button>)}</div>}
         <div className="row" style={{ margin: '12px 0' }}>
           <button aria-label="−10" onClick={() => onChange(Math.max(5, grams - 10))} style={{ flex: 'none' }}>−10</button>
           <input inputMode="numeric" aria-label={t('grams')} value={grams} onChange={(e) => onChange(Math.max(0, Math.min(2000, Number(e.target.value) || 0)))} style={{ textAlign: 'center', fontSize: '1.3rem' }} />

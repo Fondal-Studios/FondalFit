@@ -3,7 +3,6 @@ import { api } from '../api';
 import { Bar, Loading, useApp, useLoad, useT } from '../ctx';
 import { Ring, WaterBar, waterZone } from '../charts';
 import { useNav } from '../nav';
-import { EnergyCalendar } from './ActivityBlocks';
 
 interface Explain { bmr: number; lifeFactor: number; lifeKcal: number; trainKcal: number; tdee: number; adjustPct: number; proteinPerKg: number; fatPct: number; kcalFloor: number }
 interface Target { kcal: number; proteinG: number; fatG: number; carbsG: number; waterMl: number; floored: boolean; explain?: Explain }
@@ -26,7 +25,6 @@ export function Food() {
   const [showBudget, setShowBudget] = useState(true);
   const [open, setOpen] = useState(false);
   const [showMenus, setShowMenus] = useState(false);
-  const [showCal, setShowCal] = useState(false);
   const [weight, setWeight] = useState('');
   const isToday = date === localDate();
 
@@ -53,7 +51,7 @@ export function Food() {
     <div className="stack">
       <div className="row between">
         <button className="iconbtn" aria-label={t('prevDay')} onClick={() => setDate(shift(date, -1))}>‹</button>
-        <h2 style={{ textAlign: 'center', flex: 1 }}>{isToday ? t('todayWord') : new Date(date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</h2>
+        <h2 style={{ textAlign: 'center', flex: 1 }} onClick={() => nav.push('dayDetail', { date })}>{isToday ? t('todayWord') : new Date(date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</h2>
         <button className="iconbtn" aria-label={t('nextDay')} disabled={isToday} onClick={() => setDate(shift(date, 1))}>›</button>
       </div>
 
@@ -131,7 +129,7 @@ export function Food() {
         {tg.floored && <p className="warn">{t('kcalFloor')}</p>}
       </div>
 
-      <div className="card"><div className="row between"><h3>{t('energyCalendar')}</h3><button onClick={() => setShowCal(!showCal)} aria-expanded={showCal}>{showCal ? '−' : '+'}</button></div>{showCal && <EnergyCalendar />}</div>
+      <button className="primary big" onClick={() => nav.push('calendar')}>📅 {t('openCalendar')}</button>
 
       <div className="card"><h3>{t('updateWeight')}</h3>
         <div className="row"><input aria-label={t('weightKg')} placeholder={t('weightKg')} inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} /><button className="primary" disabled={!weight} onClick={saveWeight}>{t('save')}</button></div>

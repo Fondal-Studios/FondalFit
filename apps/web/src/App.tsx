@@ -19,6 +19,8 @@ const Cardio = L(() => import('./pages/Cardio'), 'Cardio');
 const Food = L(() => import('./pages/Food'), 'Food');
 const Wizard = L(() => import('./pages/Wizard'), 'Wizard');
 const Session = L(() => import('./pages/Session'), 'Session');
+const Calendar = L(() => import('./pages/Calendar'), 'Calendar');
+const DayDetail = L(() => import('./pages/Calendar'), 'DayDetail');
 const AddFood = L(() => import('./pages/AddFood'), 'AddFood');
 const ExerciseLibrary = L(() => import('./pages/Library'), 'ExerciseLibrary');
 const ExerciseDetail = L(() => import('./pages/Library'), 'ExerciseDetail');
@@ -178,6 +180,8 @@ function ScreenView({ s }: { s: Screen }): ReactNode {
     case 'routines': return <RoutineLibrary />;
     case 'routine': return <RoutineDetail id={p.id} />;
     case 'session': return <Session day={p.day} index={p.index ?? 99} free={!!p.free} name={p.name} />;
+    case 'calendar': return <Calendar />;
+    case 'dayDetail': return <DayDetail date={p.date} />;
     case 'addFood': return <AddFood date={p.date} />;
     case 'progress': return <ProgressHub />;
     case 'progress_lifts': return <LiftProgress />;

@@ -1018,3 +1018,29 @@ describe('privacy', () => {
     expect((await call('POST', '/api/auth/login', undefined, { email: 'ana@x.com', password: 'password123' })).status).toBe(401);
   });
 });
+
+describe('fixing a day: calendar, edit, clear and delete', () => {
+  it('edits a meal, clears a day, removes a strength session and shows month totals', async () => {
+    const { t, plan } = await athleteWithPlan('fix@x.com');
+    const y = new Date(Date.now() - 864e5).toISOString(), date = y.slice(0, 10);
+    const a = await call('POST', '/api/nutrition/log', t, { items: [{ foodId: 'pizza_slice', grams: 440 }], at: y });
+    expect(a.body.kcal).toBeGreaterThan(900); // 4 slices
+    await call('POST', '/api/nutrition/log', t, { items: [{ foodId: 'banana_unit', grams: 120 }], at: y });
+    const edited = await call('PATCH', `/api/nutrition/log/${a.body.id}`, t, { kcal: 540, meal: '2 porciones de pizza' });
+    expect(edited.status).toBe(200);
+    expect((await call('PATCH', `/api/nutrition/log/${a.body.id}`, await reg('other@x.com', 'athlete'), { kcal: 1 })).status).toBe(404);
+    const day = (await call('GET', `/api/day?date=${date}`, t)).body;
+    expect(day.logs.find((l: any) => l.id === a.body.id)).toMatchObject({ kcal: 540, edited: true });
+    const month = (await call('GET', `/api/calendar?month=${date.slice(0, 7)}`, t)).body;
+    expect(month.days.find((d: any) => d.date === date).kcal).toBe(540 + Math.round(day.logs.find((l: any) => l.id !== a.body.id).kcal));
+    expect((await call('DELETE', `/api/nutrition/day?date=${date}`, t)).body.removed).toBe(2);
+    expect((await call('GET', `/api/day?date=${date}`, t)).body.intake.kcal).toBe(0);
+    await call('POST', '/api/workouts', t, sessionFor(plan, 10, 3));
+    const today = (await call('GET', '/api/day', t)).body;
+    const w = today.exercise.find((e: any) => e.kind === 'strength');
+    expect(w.deletable).toBe(true);
+    expect((await call('DELETE', `/api/workouts/${w.id}`, t)).status).toBe(200);
+    expect((await call('GET', '/api/day', t)).body.exercise.filter((e: any) => e.kind === 'strength')).toHaveLength(0);
+    expect((await call('DELETE', `/api/workouts/${w.id}`, t)).status).toBe(404);
+  });
+});
