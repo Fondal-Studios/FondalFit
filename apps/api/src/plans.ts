@@ -55,6 +55,22 @@ export function registerPlans(c: PlanCtx) {
     };
   });
 
+  /** Recent completed strength sessions for the athlete dashboard. */
+  app.get('/api/plan/workout-history',{preHandler:athleteOnly},async(req)=>{
+    const rows=await db.prepare('SELECT day_index,data,created_at FROM workouts WHERE user_id=? ORDER BY created_at DESC LIMIT 30').all(req.user!.id) as {day_index:number;data:string;created_at:string}[];
+    const profile=await db.prepare('SELECT data FROM profiles WHERE user_id=?').get(req.user!.id) as {data:string}|undefined;
+    const weight=profile?Number((JSON.parse(profile.data) as {weightKg?:number}).weightKg)||0:0;
+    const sessions=rows.map(r=>{
+      const w=JSON.parse(r.data) as {durationMin?:number;items?:{sets?:{weight:number;reps:number}[]}[];name?:string};
+      const minutes=Math.max(10,Math.min(240,Number(w.durationMin)||45));
+      const sets=(w.items??[]).reduce((n,x)=>n+(x.sets?.length??0),0);
+      const volumeKg=(w.items??[]).reduce((n,x)=>n+(x.sets??[]).reduce((v,z)=>v+(Number(z.weight)||0)*(Number(z.reps)||0),0),0);
+      const met=sets>=12?4.5:sets>=6?4:3.5;
+      return {dayIndex:r.day_index,name:w.name??('Día '+(r.day_index+1)),date:r.created_at,durationMin:minutes,sets,volumeKg:Math.round(volumeKg),estimatedKcal:weight?Math.round((met-1)*3.5*weight/200*minutes):null};
+    });
+    return {sessions,method:'MET netos estimados según duración y series; el volumen no mide calorías'};
+  });
+
   /** Two-stage exercise swap: never allow the language model to write the plan directly. */
   const swapSchema=z.object({dayIndex:z.number().int().min(0).max(6),itemIndex:z.number().int().min(0).max(30),replacementId:z.string().max(60),equipmentConfirmed:z.boolean().default(false),clinicianApproved:z.boolean().default(false),expectedVersion:z.number().int().positive().optional()});
   const evaluateSwap=async(uid:number,b:z.infer<typeof swapSchema>)=>{
