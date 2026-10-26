@@ -79,7 +79,9 @@ export function AdminPanel(){
  const lookup=async()=>{try{const data=await api<{users:typeof accounts}>('GET','/api/admin/accounts/lookup?name='+encodeURIComponent(name));setAccounts(data.users);}catch{setError('No se pudo consultar la cuenta.');}};
  return <div><section className="card"><h2>Administración Fondal Fit</h2><p className="muted">Control de perfiles profesionales. Solo las cuentas autorizadas por el servidor pueden aprobar credenciales.</p>
   <label>Buscar cuenta por nombre exacto<input value={name} onChange={e=>setName(e.target.value)}/></label><button onClick={()=>void lookup()}>Verificar cuenta</button>
-  {accounts.map(a=><p key={a.id}>{a.name} · ID {a.id} · {a.email} · {a.role} · {a.mode}</p>)}{accounts.length===0&&<p className="muted">Sin resultados cargados.</p>}
+  {accounts.map(a=><div key={a.id} className="directory-result"><p>{a.name} · ID {a.id} · {a.email} · {a.role} · {a.mode}</p>
+   {a.name.toLowerCase()==='nanogm'&&<button onClick={async()=>{if(!window.confirm('¿Confirmás que este ID y correo corresponden a tu cuenta NanoGM?'))return;try{await api('POST','/api/admin/accounts/grant-founder',{userId:a.id,expectedEmail:a.email});setError('Permisos de fundador asignados. El perfil médico quedó pendiente de verificación de matrícula.');load();}catch{setError('No se pudo asignar. Verificá el ID y correo.');}}}>Habilitar administrador, entrenador y salud para NanoGM</button>}
+   </div>)}{accounts.length===0&&<p className="muted">Sin resultados cargados.</p>}
   {error&&<p className="warn" role="alert">{error}</p>}
  </section>
  <section className="card"><h2>Afiliaciones y verificación</h2>{profiles.map(p=><div className="directory-result" key={p.id+'-'+p.category}><strong>{p.displayName} · {categoryName(p.category)}</strong><p>{p.specialty} · {p.city} · {p.email}</p><p>Matrícula / certificación: {p.license||'No informada'}</p><p>{p.verified?'Verificado':'Pendiente'}</p><div className="row"><button onClick={()=>void verify(p,true)}>Aprobar credenciales</button><button onClick={()=>void verify(p,false)}>Revocar</button></div></div>)}</section>
