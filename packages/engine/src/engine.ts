@@ -42,11 +42,13 @@ const DAY_PATTERNS: Exercise['pattern'][][] = [
   ['squat', 'push', 'pull', 'core'],
   ['hinge', 'pull', 'push', 'mobility'],
   ['lunge', 'push', 'pull', 'carry', 'core'],
+  ['hinge', 'squat', 'pull', 'mobility'],
 ];
 
 /** Picks the most conservative variant first (fewest stressed areas, bodyweight first for beginners). */
 function pick(pool: Exercise[], pattern: Exercise['pattern'], beginner: boolean, used: Set<string>) {
-  const c = pool.filter((e) => e.pattern === pattern && (e.level??1) <= (beginner?2:4));
+  // Isometric holds require a timed-session UI; do not prescribe them as repetitions.
+  const c = pool.filter((e) => e.pattern === pattern && !e.holdSeconds && (e.level??1) <= (beginner?2:3));
   c.sort((a, b) => (beginner ? (a.level??1)-(b.level??1) : (b.level??1)-(a.level??1)) || (beginner ? a.increment-b.increment : b.increment-a.increment));
   return c.find((e) => !used.has(e.id)) ?? c[0];
 }
@@ -57,6 +59,10 @@ export function generatePlan(a: AssessmentInput): Plan {
   const nDays = Math.min(6, Math.max(1, Math.round(a.daysPerWeek)));
   const pool = allowedExercises(a);
   const s = SCHEME[a.goal];
+  const wantsRunning = a.preferredActivities?.includes('running') || a.goal === 'endurance' || a.goal === 'hybrid' || a.secondaryGoals?.includes('endurance') || a.secondaryGoals?.includes('hybrid');
+  const runningExperienceKm = Math.max(0, a.baseline?.weeklyRunKm ?? 0);
+  // New runners and athletes returning after a break start with shorter easy efforts.
+  const runMinutes = runningExperienceKm === 0 ? 15 : runningExperienceKm < 10 ? 20 : runningExperienceKm < 25 ? 30 : 45;
   const beginner = a.experience === 'beginner';
   const lowActivity = (a.baseline?.activityMinutesPerWeek !== undefined && a.baseline.activityMinutesPerWeek < 60) || (a.trainingContext?.recentBreakWeeks ?? 0) >= 8;
   const conservativeStart = beginner || lowActivity;
@@ -82,9 +88,9 @@ export function generatePlan(a: AssessmentInput): Plan {
       });
     }
     // Three distinct emphasis patterns: avoid repeating an identical full-body session every day.
-    const hybridRun = a.goal === 'hybrid' && d % 2 === 1;
-    const enduranceRun = a.goal === 'endurance' && a.preferredActivities?.includes('running');
-    const run = (hybridRun || enduranceRun) ? { minutes: Math.max(15, Math.min(50, Math.round(sessionMinutes * (hybridRun ? 0.45 : 0.75)))), intensity: 'easy' as const, note: 'Ritmo conversacional; ajustá según el esfuerzo percibido.' } : undefined;
+    const hybridRun = wantsRunning && a.goal !== 'endurance' && d % 2 === 1;
+    const enduranceRun = wantsRunning && a.goal === 'endurance';
+    const run = (hybridRun || enduranceRun) ? { minutes: Math.min(runMinutes, Math.max(10, Math.round(sessionMinutes * (hybridRun ? 0.45 : 0.75)))), intensity: 'easy' as const, note: runningExperienceKm === 0 ? 'Inicio conservador: alterná caminar y correr según tolerancia. Evitá aumentos bruscos.' : 'Ritmo conversacional; revisá el volumen semanal y el esfuerzo percibido.' } : undefined;
     const emphasis=['Empuje y sentadilla','Tracción y bisagra','Piernas y estabilidad'][d%3];
     days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza + carrera · ${emphasis}` : `Fuerza · ${emphasis}`) : `Sesión ${d+1} · ${emphasis}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
   }
