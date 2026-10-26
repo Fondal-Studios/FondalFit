@@ -1,9 +1,11 @@
 import {useEffect,useState} from 'react';
-import {CATALOG,byId} from '@fondal/engine';
+import {byId} from '@fondal/engine';
 import {api} from '../api';
 import {useT} from '../ctx';
 
 type Preview={version:number;toId:string;explanation:string};
+type Alternative={id:string;muscle:string;equipment:string[];level:number;available:boolean;reason:string|null};
+type Alternatives={version:number;sourceId:string;goal:string;alternatives:Alternative[]};
 type Props={dayIndex:number;itemIndex:number;exerciseId:string;onCancel:()=>void;onSaved:()=>void};
 const messages:Record<string,string>={
  professional_plan_requires_approval:'Esta rutina fue indicada por tu profesional. Solicitale que autorice la modificación.',
@@ -20,13 +22,14 @@ const messages:Record<string,string>={
 export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,onSaved}:Props){
  const t=useT(),source=byId(exerciseId);
  const [version,setVersion]=useState<number|null>(null);
- const choices=CATALOG.filter(x=>x.id!==exerciseId&&x.pattern===source?.pattern&&x.muscle===source?.muscle&&!!x.timed===!!source?.timed);
+ const [choices,setChoices]=useState<Alternative[]>([]);
+ const [loading,setLoading]=useState(true);
  const [search,setSearch]=useState('');
  const [selected,setSelected]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
- useEffect(()=>{api<{version:number}>('GET','/api/plan').then(x=>setVersion(x.version)).catch(()=>setError('No se pudo consultar la versión activa de tu rutina.'));},[]);
+ useEffect(()=>{let active=true;api<Alternatives>('GET',`/api/plan/exercise-swap/alternatives?dayIndex=${dayIndex}&itemIndex=${itemIndex}`).then(x=>{if(active){setVersion(x.version);setChoices(x.alternatives);}}).catch(()=>{if(active)setError('No se pudieron cargar las alternativas del catálogo.');}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[dayIndex,itemIndex,exerciseId]);
  const choose=async(id:string)=>{
   setSelected(id);setError('');setPreview(null);setBusy(true);
   try{
@@ -52,12 +55,13 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
  return <div className="exercise-swap-overlay" role="presentation" onClick={e=>{if(e.target===e.currentTarget)onCancel();}}>
   <section className="exercise-swap-dialog" role="dialog" aria-modal="true" aria-label="Alternativas de ejercicio">
    <div className="row between"><h2>Cambiar ejercicio</h2><button type="button" onClick={onCancel} aria-label="Cerrar alternativas">✕</button></div>
-   <p className="muted">Actual: <strong>{t('ex_'+exerciseId)}</strong>. Estas opciones trabajan el mismo grupo muscular y patrón de movimiento. Elegí una para verificar compatibilidad con tu plan.</p>
+   <p className="muted">Actual: <strong>{t('ex_'+exerciseId)}</strong>. Las opciones siguientes provienen del catálogo completo, no de los ejercicios de tu jornada. Están ordenadas por compatibilidad con tu nivel y equipamiento.</p>
    <label>Buscar alternativa<input autoFocus type="search" placeholder="Ej.: press inclinado, mancuernas…" value={search} onChange={e=>setSearch(e.target.value)}/></label>
-   {visible.length===0&&<p className="muted">No encontramos alternativas de ese patrón. Probá otra búsqueda.</p>}
+   {loading&&<p role="status">Buscando ejercicios similares en el catálogo…</p>}
+   {!loading&&visible.length===0&&<p className="muted">No hay alternativas fuera de tu jornada con ese patrón y grupo muscular. Probá otra búsqueda o consultá con tu entrenador.</p>}
    <div className="exercise-swap-options">
-    {visible.map(x=><button type="button" key={x.id} disabled={busy} className={selected===x.id?'on':''} onClick={()=>void choose(x.id)}>
-      <strong>{t('ex_'+x.id)}</strong><span className="muted small">{x.equipment.map(k=>t(k)).join(', ')} · {t('m_'+x.muscle)}</span>
+    {visible.map(x=><button type="button" key={x.id} disabled={busy||!x.available} className={selected===x.id?'on':''} onClick={()=>void choose(x.id)}>
+      <strong>{t('ex_'+x.id)}</strong><span className="muted small">{x.equipment.map(k=>t(k)).join(', ')} · {t('m_'+x.muscle)}{!x.available?' · '+(messages[x.reason??'']??'Requiere revisión'):''}</span>
     </button>)}
    </div>
    {busy&&<p role="status">Verificando compatibilidad…</p>}
