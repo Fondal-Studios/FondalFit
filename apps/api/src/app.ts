@@ -575,6 +575,77 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       note:'El NEAT no se mide: la cifra representa actividad cotidiana y otros gastos incluidos en el factor de vida. El ejercicio y la comida pueden estar incompletos. No es un gasto calórico medido.'};
   });
 
+  /* ---------------- Collectible AI tutors ---------------- */
+  const tutorCatalog = [
+    {id:'tito',name:'Tito',role:'Entrenamiento de fuerza',style:'directo y práctico',priceXp:0,sprite:'tanque'},
+    {id:'mora',name:'Mora',role:'Hábitos alimentarios',style:'cálido y claro',priceXp:0,sprite:'mago'},
+    {id:'cacho',name:'Cacho',role:'Recuperación y descanso',style:'tranquilo y prudente',priceXp:300,sprite:'tanque'},
+    {id:'luli',name:'Luli',role:'Ejercicio y constancia',style:'motivador sin presionar',priceXp:600,sprite:'mago'},
+  ] as const;
+  const tutorOwned = async (uid:number) => {
+    const rows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='tutor_unlock'").all(uid) as {data:string}[];
+    const result=new Set<string>(['tito','mora']);
+    for(const row of rows){try{const id=JSON.parse(row.data).id;if(tutorCatalog.some(x=>x.id===id))result.add(id);}catch{}}
+    return result;
+  };
+  const tutorProgress = async(uid:number) => {
+    const byDay=new Map<string,{date:string;sessions:number;runs:number}>();
+    const add=(date:string,type:'sessions'|'runs')=>{const day=date.slice(0,10);const x=byDay.get(day)??{date:day,sessions:0,runs:0};x[type]++;byDay.set(day,x);};
+    for(const row of await db.prepare('SELECT created_at FROM workouts WHERE user_id=?').all(uid) as {created_at:string}[])add(row.created_at,'sessions');
+    for(const row of await db.prepare('SELECT created_at FROM runs WHERE user_id=?').all(uid) as {created_at:string}[])add(row.created_at,'runs');
+    for(const row of await db.prepare('SELECT created_at FROM activities WHERE user_id=?').all(uid) as {created_at:string}[])add(row.created_at,'runs');
+    const recoveryCount=(await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM recovery WHERE user_id=?').get(uid) as {c:number}).c;
+    const earned=gamification([...byDay.values()],recoveryCount).xp;
+    const owned=await tutorOwned(uid);
+    const spent=tutorCatalog.filter(x=>x.priceXp>0&&owned.has(x.id)).reduce((a,x)=>a+x.priceXp,0);
+    return {earned,spent,available:Math.max(0,earned-spent),owned};
+  };
+  app.get('/api/tutors',{preHandler:athleteOnly},async(req)=>{
+    const p=await tutorProgress(req.user!.id);
+    const selected=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='tutor_selected' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
+    let selectedId='tito';try{selectedId=selected?JSON.parse(selected.data).id:'tito';}catch{}
+    return {tutors:tutorCatalog.map(x=>({...x,owned:p.owned.has(x.id)})),selectedId:p.owned.has(selectedId)?selectedId:'tito',xp:p.available,xpEarned:p.earned,aiConfigured:!!opts.coach};
+  });
+  app.post('/api/tutors/select',{preHandler:athleteOnly},async(req,reply)=>{
+    const b=parse(z.object({id:z.string()}),req.body,reply);if(!b)return;
+    if(!tutorCatalog.some(x=>x.id===b.id))return reply.code(400).send({error:'invalid_tutor'});
+    if(!(await tutorOwned(req.user!.id)).has(b.id))return reply.code(403).send({error:'tutor_locked'});
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'tutor_selected',?,?)").run(req.user!.id,JSON.stringify({id:b.id}),now());
+    return {ok:true,selectedId:b.id};
+  });
+  app.post('/api/tutors/unlock',{preHandler:athleteOnly,config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    const b=parse(z.object({id:z.string()}),req.body,reply);if(!b)return;
+    const tutor=tutorCatalog.find(x=>x.id===b.id);if(!tutor)return reply.code(400).send({error:'invalid_tutor'});
+    const p=await tutorProgress(req.user!.id);
+    if(p.owned.has(b.id))return {ok:true,alreadyOwned:true,xp:p.available};
+    if(p.available<tutor.priceXp)return reply.code(409).send({error:'insufficient_xp',xp:p.available});
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'tutor_unlock',?,?)").run(req.user!.id,JSON.stringify({id:b.id,priceXp:tutor.priceXp}),now());
+    await audit(req.user!.id,req.user!.id,'tutor:unlock:'+b.id);
+    return {ok:true,xp:p.available-tutor.priceXp};
+  });
+  app.post('/api/tutors/ask',{preHandler:athleteOnly,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({message:z.string().trim().min(1).max(1200)}),req.body,reply);if(!b)return;
+    if(!opts.coach)return reply.code(503).send({error:'coach_not_configured'});
+    const uid=req.user!.id;
+    const todayCount=(await db.prepare("SELECT CAST(COUNT(*) AS INTEGER) c FROM audit WHERE actor_id=? AND action='tutor:ask' AND created_at>=?").get(uid,now().slice(0,10)) as {c:number}).c;
+    if(todayCount>=30)return reply.code(429).send({error:'tutor_daily_limit'});
+    const selected=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='tutor_selected' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
+    let id='tito';try{id=selected?JSON.parse(selected.data).id:'tito';}catch{}
+    const owned=await tutorOwned(uid);if(!owned.has(id))id='tito';
+    const tutor=tutorCatalog.find(x=>x.id===id)!;
+    const condition=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='medical_context' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
+    let hasCondition=false;try{hasCondition=condition?JSON.parse(condition.data).hasCondition===true:false;}catch{}
+    let context='No hay consentimiento para utilizar datos personales. Respondé con información general.';
+    if(await hasConsent(uid,'ai_memory')){
+      const assessment=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as {data:string}|undefined;
+      if(assessment){const a=JSON.parse(assessment.data) as {goal?:string;strengthDays?:number;cardioDays?:number};context='Objetivo deportivo: '+String(a.goal??'general')+'; fuerza/semana: '+String(a.strengthDays??'?')+'; cardio/semana: '+String(a.cardioDays??'?')+'.';}
+    }
+    const system=COACH_SYSTEM+'\\nSos '+tutor.name+', un personaje tutor de estilo '+tutor.style+'. Tu especialidad es '+tutor.role+'. No te presentes como profesional matriculado. Todas tus orientaciones son sugerencias educativas, no prescripciones. No impongas cantidades, calorías o cambios de tratamiento. No recomiendes ciclos de restricción, ayunos ni días normocalóricos de forma autónoma: solo explicá una pauta ya validada por el profesional. Si se mencionan enfermedades, medicación o señales de alarma, no hagas recomendaciones individualizadas de dieta o ejercicio y derivá a un profesional de salud. Respuesta breve y en español.\\n'+context+(hasCondition?'\\nEl usuario declaró una enfermedad: limitá la respuesta a información general y recomendá consultar al nutricionista o médico responsable.':'');
+    try{const answer=await opts.coach(system,[{role:'user',content:b.message}]);await audit(uid,uid,'tutor:ask');return {tutorId:id,reply:answer,disclaimer:'Sugerencia educativa de IA; no reemplaza una indicación profesional.'};}
+    catch{return reply.code(502).send({error:'coach_unavailable'});}
+  });
+
   /* ---------------- AI coach ---------------- */
   app.get('/api/coach/status', { preHandler: athleteOnly }, async () => ({ configured: !!opts.coach }));
   app.post('/api/coach', { preHandler: athleteOnly, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req, reply) => {
