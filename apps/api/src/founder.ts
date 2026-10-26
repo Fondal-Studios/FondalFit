@@ -19,6 +19,10 @@ export async function bootstrapFounder(db:DB, opts:{userId:number;email:string;d
        'Consulta médica individual orientada a salud metabólica, composición corporal, fuerza, musculación y actividad física. Planificación personalizada según antecedentes y objetivos; atención presencial o virtual, sujeta a evaluación clínica.',
        ?,?,?,'both',NULL,NULL,0,1,?,?)
    ON CONFLICT(user_id,category) DO NOTHING`).run(opts.userId,opts.displayName,opts.phone,opts.city,opts.area,stamp,stamp);
+  // One-time correction requested by the verified account holder. Never rewrite a number
+  // the professional has subsequently edited themselves.
+  await db.prepare("UPDATE professional_profiles SET phone=?,updated_at=? WHERE user_id=? AND category='medical' AND phone=?")
+    .run(opts.phone,stamp,opts.userId,'5493875466419');
   if(found.role!=='admin'||saved.changes){
     await db.prepare('INSERT INTO audit(actor_id,subject_id,action,created_at) VALUES(?,?,?,?)').run(opts.userId,opts.userId,'founder:bootstrap_verified_identity',stamp);
   }
