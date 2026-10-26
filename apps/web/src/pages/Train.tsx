@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import {TutorExerciseSwap} from './TutorExerciseSwap';
+import {SessionExercisePicker} from './SessionExercisePicker';
 import { byId, hrZones, schemeFor, weeklyVolume, type Goal, type Plan, type PlanDay } from '@fondal/engine';
 import { Bar, Loading, useLoad, useT } from '../ctx';
 import { useNav } from '../nav';
@@ -64,7 +64,7 @@ export function Train() {
           )}
         </div>
       ))}
-      {editing&&<div className="card"><div className="row between"><h3>Editar mi rutina</h3><button onClick={()=>setEditing(null)}>Cerrar</button></div><TutorExerciseSwap initialDay={editing.day} initialItem={editing.item} compact onSaved={()=>{reload();setEditing(null);}}/></div>}
+      {editing&&plan.days[editing.day]?.items[editing.item]&&<SessionExercisePicker key={editing.day+'-'+editing.item} dayIndex={editing.day} itemIndex={editing.item} exerciseId={plan.days[editing.day]!.items[editing.item]!.exerciseId} onCancel={()=>setEditing(null)} onSaved={()=>{setEditing(null);reload();}}/>}
       {vol.length > 0 && <div className="card"><h3>{t('weeklyVolume')}</h3><p className="muted small">{t('volumeRef')}</p>
         {vol.map((v) => <div key={v.muscle}><span className="muted">{t('m_' + v.muscle)}: {v.sets} {t('sets')} · {t('vol_' + v.status)}</span><Bar pct={(v.sets / 20) * 100} /></div>)}</div>}
       <div className="card"><div className="row between"><h3>{t('whyPlan')}</h3><button onClick={() => setWhy(!why)} aria-expanded={why}>{why ? '−' : '+'}</button></div>
