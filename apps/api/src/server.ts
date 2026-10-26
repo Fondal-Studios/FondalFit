@@ -13,7 +13,7 @@ if(process.env.FOUNDER_ACCOUNT_ID && process.env.FOUNDER_ACCOUNT_EMAIL){
     userId:Number(process.env.FOUNDER_ACCOUNT_ID),
     email:process.env.FOUNDER_ACCOUNT_EMAIL,
     displayName:process.env.FOUNDER_PUBLIC_NAME??'Mariano Jiménez',
-    phone:process.env.FOUNDER_WHATSAPP??'5493875466419',
+    phone:process.env.FOUNDER_WHATSAPP??'5493875467519',
     city:process.env.FOUNDER_CITY??'Cafayate',
     area:process.env.FOUNDER_AREA??'Vertientes'
   });
