@@ -762,6 +762,11 @@ describe('kinesiology affiliation and safety',()=>{
   const list=(await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body.items;
   expect(list).toHaveLength(1);expect(list[0].profession).toBe('kinesiologist');expect(list[0].displayName).toBe('Kinesiólogo/a de prueba');
   expect((await call('GET','/api/directory?category=medical&city=Cafayate',kin)).body.items).toHaveLength(2);
+  const trainer=await reg('legacy.fitness@x.com','athlete');
+  const fitness={...common,category:'fitness',displayName:'Entrenador de prueba',license:'Certificado privado',specialty:'Fuerza y running'};
+  expect((await call('PUT','/api/profiles/me',trainer,fitness)).status).toBe(200);
+  const trainerProfiles=(await call('GET','/api/profiles/me',trainer)).body;
+  expect(trainerProfiles[0].profession).toBe('coach');
   expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'coach'})).status).toBe(400);
   expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'kinesiologist',description:'Nueva descripción'})).status).toBe(200);
   expect((await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body.items).toHaveLength(0);

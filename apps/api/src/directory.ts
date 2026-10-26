@@ -6,7 +6,7 @@ type Context={app:FastifyInstance;db:DB;auth:Guard;adminOnly:Guard;audit:(actor:
 const categories=['medical','fitness'] as const;
 const healthProfessions=['physician','kinesiologist','other_health'] as const;
 const profileInput=z.object({
- category:z.enum(categories),profession:z.enum(['physician','kinesiologist','other_health','coach']).default('physician'),displayName:z.string().trim().min(3).max(90),
+ category:z.enum(categories),profession:z.enum(['physician','kinesiologist','other_health','coach']).optional(),displayName:z.string().trim().min(3).max(90),
  specialty:z.string().trim().min(3).max(100),credentials:z.string().trim().max(180).default(''),
  license:z.string().trim().max(80).default(''),description:z.string().trim().max(700).default(''),
  phone:z.string().regex(/^\+?[0-9 ]{8,22}$/),city:z.string().trim().min(2).max(100),
@@ -38,7 +38,7 @@ export function registerDirectory({app,db,auth,adminOnly,audit,now}:Context){
  app.put('/api/profiles/me',{preHandler:auth},async(req,reply)=>{
   const b=profileInput.safeParse(req.body);
   if(!b.success)return reply.code(400).send({error:'invalid_profile',issues:b.error.issues});
-  const uid=userId(req),p=b.data;
+  const uid=userId(req),p={...b.data,profession:b.data.profession??(b.data.category==='fitness'?'coach':'physician')};
   if(p.category==='fitness'&&p.profession!=='coach')return reply.code(400).send({error:'invalid_profession_for_category'});
   if(p.category==='medical'&&!healthProfessions.includes(p.profession as typeof healthProfessions[number]))return reply.code(400).send({error:'invalid_profession_for_category'});
   const previous=await db.prepare('SELECT verified FROM professional_profiles WHERE user_id=? AND category=?').get(uid,p.category) as {verified:number}|undefined;
