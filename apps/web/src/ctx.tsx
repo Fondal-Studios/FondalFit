@@ -15,7 +15,7 @@ export const initialLang = (): Lang => {
   return (LANGS as string[]).includes(n) ? (n as Lang) : 'es';
 };
 
-export interface Me { id: number; name: string; role: 'athlete' | 'pro' | 'admin'; mode: 'athlete' | 'pro'; canPro: boolean; lang: Lang; subscription: { plan: string; trialEndsAt: string; active: boolean; canceled: boolean }; consents: Record<string, boolean> }
+export interface Me { id: number; name: string; role: 'athlete' | 'pro' | 'admin'; mode: 'athlete' | 'pro' | 'medical' | 'admin'; availableModes: ('athlete'|'pro'|'medical'|'admin')[]; canPro: boolean;canMedical:boolean;medicalVerified:boolean;isAdmin:boolean; lang: Lang; subscription: { plan: string; trialEndsAt: string; active: boolean; canceled: boolean }; consents: Record<string, boolean> }
 
 export function LangPicker({ lang, onLang }: { lang: Lang; onLang: (l: Lang) => void }) {
   const t = useT();

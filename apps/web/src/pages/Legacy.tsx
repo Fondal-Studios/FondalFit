@@ -113,7 +113,7 @@ export function Settings({ me, refresh, onLang, onLogout, onWizard }: { me: Me; 
   const [links, setLinks] = useState<any[]>([]);
   const [joinCode,setJoinCode]=useState('');
   const [joinStatus,setJoinStatus]=useState('');
-  const loadLinks = () => me.role === 'athlete' && api('GET', '/api/links').then(setLinks).catch(() => {});
+  const loadLinks = () => me.mode === 'athlete' && api('GET', '/api/links').then(setLinks).catch(() => {});
   useEffect(() => { loadLinks(); }, []); // eslint-disable-line
   const toggle = async (k: string, v: boolean) => { await api('PUT', '/api/consents', { [k]: v }); refresh(); loadLinks(); };
   const download = async () => {
