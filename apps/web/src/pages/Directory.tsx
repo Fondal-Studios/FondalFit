@@ -3,11 +3,12 @@ import {api} from '../api';
 import type {Me} from '../ctx';
 import {ProfessionalsMap} from './ProfessionalsMap';
 type Category='medical'|'fitness';
-type Profile={id:number;category:Category;displayName:string;specialty:string;credentials:string;license?:string;description:string;phone:string;city:string;area:string;modality:'online'|'in_person'|'both';lat:number|null;lon:number|null;verified:boolean;published?:boolean;distanceKm?:number|null};
-const categoryName=(c:Category)=>c==='medical'?'Profesional de salud':'Entrenador / profesor';
+type Profession='physician'|'kinesiologist'|'other_health'|'coach';
+type Profile={id:number;category:Category;profession:Profession;displayName:string;specialty:string;credentials:string;license?:string;description:string;phone:string;city:string;area:string;modality:'online'|'in_person'|'both';lat:number|null;lon:number|null;verified:boolean;published?:boolean;distanceKm?:number|null};
+const categoryName=(c:Category,profession?:Profession)=>c==='fitness'?'Entrenador / profesor':profession==='kinesiologist'?'Kinesiólogo/a':profession==='physician'?'Médico/a':'Profesional de salud';
 const whatsapp=(phone:string,name:string)=>'https://wa.me/'+phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hola, encontré tu perfil en Fondal Fit y quisiera consultar por un turno con '+name+'.');
 export function Directory(){
- const [category,setCategory]=useState<'all'|Category>('all'),[city,setCity]=useState('Cafayate'),[near,setNear]=useState<{lat:number;lon:number}|null>(null);
+ const [category,setCategory]=useState<'all'|Category|'kinesiology'>('all'),[city,setCity]=useState('Cafayate'),[near,setNear]=useState<{lat:number;lon:number}|null>(null);
  const [profiles,setProfiles]=useState<Profile[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [showMap,setShowMap]=useState(true),[selected,setSelected]=useState<string|null>(null);
  const search=async(c=category,t=city,loc=near)=>{
@@ -25,7 +26,7 @@ export function Directory(){
  return <section className="card directory"><h2>Encontrá un profesional</h2>
   <p className="muted">Médicos y profesores verificados. Elegí a quién consultar, por ubicación o modalidad. El contacto no comparte automáticamente tus datos de salud.</p>
   <div className="directory-controls">
-   <label>Especialidad<select value={category} onChange={e=>setCategory(e.target.value as 'all'|Category)}><option value="all">Todos</option><option value="medical">Médicos y salud</option><option value="fitness">Entrenadores y gimnasios</option></select></label>
+   <label>Especialidad<select value={category} onChange={e=>setCategory(e.target.value as 'all'|Category|'kinesiology')}><option value="all">Todos</option><option value="medical">Médicos y salud</option><option value="kinesiology">Kinesiólogos</option><option value="fitness">Entrenadores y gimnasios</option></select></label>
    <label>Ciudad<input value={city} onChange={e=>setCity(e.target.value)} placeholder="Ej.: Cafayate"/></label>
   </div>
   <div className="row"><button className="primary" disabled={busy} onClick={()=>void search()}>{busy?'Buscando…':'Buscar profesionales'}</button><button onClick={nearby}>Cerca de mí</button></div>
@@ -36,7 +37,7 @@ export function Directory(){
   {profiles.length===0&&!busy&&<p className="muted">No hay perfiles verificados con esos filtros. Probá otra ciudad o buscá en todas las especialidades.</p>}
   {profiles.map(p=><article className={'directory-result '+(selected===p.id+'-'+p.category?'directory-selected':'')} key={p.id+'-'+p.category}>
    <div className="row between"><strong>{p.displayName}</strong><span className="badge ok">Verificado</span></div>
-   <p>{categoryName(p.category)} · {p.specialty}</p>
+   <p>{categoryName(p.category,p.profession)} · {p.specialty}</p>
    <p className="muted">{p.city}{p.area?', '+p.area:''}{p.distanceKm!==null&&p.distanceKm!==undefined?' · ≈'+p.distanceKm+' km en línea recta':''} · {p.modality==='both'?'Presencial y virtual':p.modality==='online'?'Virtual':'Presencial'}</p>
    {p.description&&<p>{p.description}</p>}
    <div className="row"><a className="directory-contact" href={whatsapp(p.phone,p.displayName)} target="_blank" rel="noopener noreferrer">Consultar por WhatsApp</a>
@@ -45,28 +46,41 @@ export function Directory(){
   </article>)}
  </section>;
 }
-const empty=(name:string,category:Category):Profile=>({id:0,category,displayName:name,specialty:'',credentials:'',license:'',description:'',phone:'',city:'Cafayate',area:'',modality:'both',lat:null,lon:null,verified:false,published:true});
+const empty=(name:string,category:Category):Profile=>({id:0,category,profession:category==='fitness'?'coach':'physician',displayName:name,specialty:'',credentials:'',license:'',description:'',phone:'',city:'Cafayate',area:'',modality:'both',lat:null,lon:null,verified:false,published:true});
 export function MyProfessionalProfile({me,category,onSaved}:{me:Me;category:Category;onSaved?:()=>void}){
  const [profile,setProfile]=useState<Profile>(empty(me.name,category)),[status,setStatus]=useState(''),[saving,setSaving]=useState(false);
  useEffect(()=>{api<Profile[]>('GET','/api/profiles/me').then(rows=>setProfile(rows.find(x=>x.category===category)??empty(me.name,category))).catch(()=>{});},[category,me.name]);
  const set=<K extends keyof Profile>(key:K,value:Profile[K])=>setProfile(p=>({...p,[key]:value}));
  const save=async()=>{setSaving(true);try{await api('PUT','/api/profiles/me',profile);setStatus('Perfil enviado a verificación. No será público hasta su aprobación.');onSaved?.();}catch{setStatus('No se pudo guardar. Revisá los datos y el número internacional de WhatsApp.');}finally{setSaving(false);}};
  return <section className="card professional-profile"><h2>{category==='medical'?'Mi perfil de salud':'Mi perfil de entrenador'}</h2>
-  <p className="muted">La afiliación es gratuita durante la beta. Las credenciales y matrícula se revisan antes de publicar. No se solicitan documentos de pacientes.</p>
+  <p className="muted">La afiliación es gratuita durante la beta. Las credenciales y matrícula se revisan antes de publicar. No se solicitan documentos de pacientes. Los perfiles de kinesiología se identifican como tales, sin atribuirles una especialidad médica.</p>
   <p className={profile.verified?'ok':'warn'}>{profile.verified?'Perfil verificado':'Pendiente de verificación'}</p>
   <div className="professional-template">
    <h3>Plantilla de presentación profesional</h3>
    <p className="muted">Usá estos ejemplos como punto de partida y reemplazá cada dato con tu experiencia real. No se atribuyen especialidades ni títulos sin documentación.</p>
-   <button type="button" onClick={()=>setProfile(p=>({...p,
-     specialty:category==='medical'?'Salud metabólica, actividad física y composición corporal':'Entrenamiento de fuerza, running y hábitos saludables',
-     description:category==='medical'?'Acompaño a personas que buscan mejorar su salud, composición corporal y capacidad funcional con evaluación individual, hábitos sostenibles y entrenamiento adaptado.':'Planifico entrenamiento según objetivos, nivel inicial y disponibilidad, con seguimiento de cargas, técnica y progreso semanal.'
-   }))}>Completar ejemplo de {category==='medical'?'salud':'entrenamiento'}</button>
+   <div className="row">
+    {category==='medical'&&<button type="button" onClick={()=>setProfile(p=>({...p,profession:'physician',
+      specialty:'Salud metabólica, actividad física y composición corporal',
+      description:'Acompaño a personas que buscan mejorar su salud, composición corporal y capacidad funcional mediante evaluación individual y recomendaciones acordes a sus objetivos.'
+    }))}>Ejemplo médico</button>}
+    {category==='medical'&&<button type="button" onClick={()=>setProfile(p=>({...p,profession:'kinesiologist',
+      specialty:'Kinesiología musculoesquelética y ejercicio terapéutico',
+      description:'Realizo evaluación funcional y acompaño procesos de rehabilitación y retorno progresivo a la actividad física. Trabajo con objetivos individualizados y seguimiento de movilidad, fuerza y tolerancia al esfuerzo.'
+    }))}>Ejemplo kinesiólogo</button>}
+    {category==='fitness'&&<button type="button" onClick={()=>setProfile(p=>({...p,profession:'coach',
+      specialty:'Entrenamiento de fuerza, running y hábitos saludables',
+      description:'Planifico entrenamiento según objetivos, nivel inicial y disponibilidad, con seguimiento de cargas, técnica y progreso semanal.'
+    }))}>Ejemplo entrenador</button>}
+   </div>
   </div>
   <div className="profile-fields">
+   {category==='medical'&&<label>Profesión de salud<select value={profile.profession} onChange={e=>set('profession',e.target.value as Profession)}>
+     <option value="physician">Medicina</option><option value="kinesiologist">Kinesiología / Fisioterapia</option><option value="other_health">Otra profesión sanitaria</option>
+   </select></label>}
    <label>Nombre público<input value={profile.displayName} onChange={e=>set('displayName',e.target.value)}/></label>
-   <label>Especialidad<input placeholder={category==='medical'?'Medicina del ejercicio, nutrición clínica…':'Calistenia, fuerza, running…'} value={profile.specialty} onChange={e=>set('specialty',e.target.value)}/></label>
+   <label>Especialidad<input placeholder={category==='medical'?(profile.profession==='kinesiologist'?'Rehabilitación musculoesquelética, ejercicio terapéutico…':'Salud metabólica, actividad física…'):'Calistenia, fuerza, running…'} value={profile.specialty} onChange={e=>set('specialty',e.target.value)}/></label>
    <label>Formación / título<input value={profile.credentials} onChange={e=>set('credentials',e.target.value)}/></label>
-   <label>{category==='medical'?'Matrícula profesional':'Certificación (si corresponde)'}<input value={profile.license??''} onChange={e=>set('license',e.target.value)}/></label>
+   <label>{category==='medical'?'Matrícula o registro profesional':'Certificación (si corresponde)'}<input value={profile.license??''} onChange={e=>set('license',e.target.value)}/></label>
    <label>WhatsApp internacional (solo números, ej. 5493875467519)<input inputMode="tel" value={profile.phone} onChange={e=>set('phone',e.target.value)}/></label>
    <label>Ciudad<input value={profile.city} onChange={e=>set('city',e.target.value)}/></label>
    <label>Zona o barrio<input value={profile.area} onChange={e=>set('area',e.target.value)}/></label>
