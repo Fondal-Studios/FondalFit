@@ -15,7 +15,7 @@ export async function bootstrapFounder(db:DB, opts:{userId:number;email:string;d
   // Professional title and license are not assumed verified.
   const saved=await db.prepare(`INSERT INTO professional_profiles(
     user_id,category,display_name,specialty,credentials,license,description,phone,city,area,modality,lat,lon,verified,published,created_at,updated_at
-   ) VALUES(?,'medical',?,'Salud metabólica, ejercicio y musculación','Médico · formación de posgrado en salud metabólica (declarada)','7016',
+   ) VALUES(?,'medical',?,'Salud metabólica, ejercicio y musculación','Médico · enfoque en salud metabólica, ejercicio y entrenamiento de fuerza','7016',
        'Consulta médica individual orientada a salud metabólica, composición corporal, fuerza, musculación y actividad física. Planificación personalizada según antecedentes y objetivos; atención presencial o virtual, sujeta a evaluación clínica.',
        ?,?,?,'both',NULL,NULL,0,1,?,?)
    ON CONFLICT(user_id,category) DO NOTHING`).run(opts.userId,opts.displayName,opts.phone,opts.city,opts.area,stamp,stamp);
