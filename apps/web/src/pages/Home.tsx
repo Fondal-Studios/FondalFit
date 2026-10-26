@@ -40,10 +40,10 @@ export function Home() {
 
   if (!p.plan) return (
     <div className="stack">{hello}
-      <AthleteProfessionalLink/>
       <div className="card hero"><h3>{t('welcomeTitle')}</h3><p>{t('noPlanYet')}</p><p className="muted">{t('planWizardIntro')}</p><button className="primary big" onClick={() => nav.push('wizard')}>{t('createPlan')}</button></div>
       <div className="grid2"><button className="tile" onClick={() => nav.push('routines')}><b>📚</b><span>{t('orPickRoutine')}</span></button><button className="tile" onClick={() => nav.push('exercises')}><b>🏋️</b><span>{t('exercises')}</span></button></div>
       <button className="primary" onClick={() => nav.go('food')}>{t('trackFoodFirst')}</button>
+      <AthleteProfessionalLink/>
     </div>
   );
 
@@ -56,7 +56,6 @@ export function Home() {
   return (
     <div className="stack">
       {hello}
-      <AthleteProfessionalLink/>
 
       {p.away && p.away.gapDays >= 10 && p.away.options && (
         <div className="card alert"><h3>{t('welcomeBack')} · {p.away.gapDays} {t('daysAway')}</h3><p>{t('returnIntro')}</p>
@@ -118,6 +117,7 @@ export function Home() {
         <button className="tile" onClick={() => nav.push('exercises')}><b>🏋️</b><span>{t('exercises')}</span></button>
         <button className="tile" onClick={() => nav.push('recovery')}><b>😴</b><span>{t('recovery')}</span></button>
       </div>
+      <AthleteProfessionalLink/>
     </div>
   );
 }
