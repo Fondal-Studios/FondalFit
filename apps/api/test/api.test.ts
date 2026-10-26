@@ -744,6 +744,29 @@ describe('professional network and four account modes',()=>{
    expect((await call('GET','/api/directory?city=Cafayate',token)).body.items).toHaveLength(0);
  });
 });
+describe('kinesiology affiliation and safety',()=>{
+ it('stores an independent physiotherapist identity and filters it apart from medical doctors',async()=>{
+  const kin=await reg('kin@x.com','athlete');
+  const physician=await reg('physician@x.com','athlete');
+  const admin=await reg('admin.kin@x.com','pro');
+  await db.prepare("UPDATE users SET role='admin' WHERE email=?").run('admin.kin@x.com');
+  const common={category:'medical',displayName:'Kinesiólogo/a de prueba',specialty:'Rehabilitación y ejercicio terapéutico',credentials:'Licenciatura en Kinesiología',license:'7016K',description:'Evaluación funcional y retorno progresivo al deporte',phone:'5493875000000',city:'Cafayate',area:'Centro',modality:'both',lat:-26.07,lon:-65.97,published:true};
+  expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'kinesiologist'})).status).toBe(200);
+  expect((await call('PUT','/api/profiles/me',physician,{...common,profession:'physician',displayName:'Médico de prueba',license:'A-123'})).status).toBe(200);
+  const pending=(await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body;
+  expect(pending.items).toHaveLength(0);
+  const pkin=(await call('GET','/api/me',kin)).body;
+  const pphys=(await call('GET','/api/me',physician)).body;
+  expect((await call('POST','/api/admin/professionals/verify',admin,{userId:pkin.id,category:'medical',verified:true})).status).toBe(200);
+  expect((await call('POST','/api/admin/professionals/verify',admin,{userId:pphys.id,category:'medical',verified:true})).status).toBe(200);
+  const list=(await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body.items;
+  expect(list).toHaveLength(1);expect(list[0].profession).toBe('kinesiologist');expect(list[0].displayName).toBe('Kinesiólogo/a de prueba');
+  expect((await call('GET','/api/directory?category=medical&city=Cafayate',kin)).body.items).toHaveLength(2);
+  expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'coach'})).status).toBe(400);
+  expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'kinesiologist',description:'Nueva descripción'})).status).toBe(200);
+  expect((await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body.items).toHaveLength(0);
+ });
+});
 describe('founder account authorization',()=>{
  it('requires an existing administrator and exact NanoGM identity',async()=>{
    const target=await reg('founder@x.com','athlete');
