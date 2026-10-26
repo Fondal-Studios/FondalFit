@@ -579,8 +579,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   const tutorCatalog = [
     {id:'tito',name:'Tito',role:'Entrenamiento de fuerza',style:'directo y práctico',priceXp:0,sprite:'tanque'},
     {id:'mora',name:'Mora',role:'Hábitos alimentarios',style:'cálido y claro',priceXp:0,sprite:'mago'},
-    {id:'cacho',name:'Cacho',role:'Recuperación y descanso',style:'tranquilo y prudente',priceXp:300,sprite:'tanque'},
-    {id:'luli',name:'Luli',role:'Ejercicio y constancia',style:'motivador sin presionar',priceXp:600,sprite:'mago'},
+    {id:'cacho',name:'Cacho',role:'Recuperación y descanso',style:'tranquilo y prudente',priceXp:300,sprite:'guerrero'},
+    {id:'luli',name:'Luli',role:'Ejercicio y constancia',style:'motivador sin presionar',priceXp:600,sprite:'profeta'},
   ] as const;
   const tutorOwned = async (uid:number) => {
     const rows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='tutor_unlock'").all(uid) as {data:string}[];
