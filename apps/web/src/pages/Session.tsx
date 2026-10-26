@@ -24,6 +24,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
   const last = useLoad<{ last: Last }>(`/api/progress/last?ids=${ids.join(',')}`);
   const [rows, setRows] = useState<Record<string, SetRow[]>>(() => Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '', done: false }))])));
   const [fatigue, setFatigue] = useState(5);
+  const [durationMin,setDurationMin]=useState(60);
   const [busy, setBusy] = useState(false);
   const [tech, setTech] = useState<string | null>(null);
   const lang = useLang();
@@ -65,7 +66,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
     if (!items.length) { toast(t('logOneSet')); return; }
     setBusy(true);
     try {
-      const r = await api('POST', '/api/workouts', { dayIndex: free ? 99 : index, fatigue, name, items });
+      const r = await api('POST', '/api/workouts', { dayIndex: free ? 99 : index, fatigue, durationMin, name, items });
       const msg = r.free ? t('sessionSaved') : r.adaptation === 'paused' ? t('adaptPaused') : r.applied ? t('applied') : t('needsApproval');
       setSummary({ msg: [msg, r.deloadSuggested ? t('deloadSuggested') : ''].filter(Boolean).join(' '), volume: Math.round(volume), sets: done });
     } catch (e) { toast(e instanceof ApiError ? t('invalid') : t('netError')); } finally { setBusy(false); }
@@ -107,6 +108,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
         );
       })}
       {changing!==null&&activeDay.items[changing]&&<SessionExercisePicker key={index+'-'+changing} dayIndex={index} itemIndex={changing} exerciseId={activeDay.items[changing]!.exerciseId} onSessionChoice={(replacementId)=>{const previous=activeDay.items[changing!]!;const updated={...activeDay,items:activeDay.items.map((x,i)=>i===changing?{...x,exerciseId:replacementId,load:0}:x)};setActiveDay(updated);setRows(old=>{const next={...old};next[replacementId]=Array.from({length:previous.sets},()=>({weight:'',reps:'',rir:'',done:false}));return next;});setChanging(null);toast('Ejercicio registrado para esta sesión. Tu plan original no cambió.');}} onCancel={()=>setChanging(null)} onSaved={()=>{void api<{plan:{days:PlanDay[]}|null}>('GET','/api/plan').then(r=>{const updated=r.plan?.days[index];if(updated){setActiveDay(updated);setRows(previous=>Object.fromEntries(updated.items.map(x=>[x.exerciseId,previous[x.exerciseId]??Array.from({length:x.sets},()=>({weight:String(x.load||''),reps:'',rir:'',done:false}))])));}setChanging(null);toast('Ejercicio actualizado en tu sesión y rutina.');}).catch(()=>{setChanging(null);toast('Cambio guardado; reabrí la sesión para actualizarla.');});}}/>}
+      <label htmlFor="duration">Duración real aproximada del entrenamiento (minutos, sin contar tiempo usando la app)</label><input id="duration" type="number" min={10} max={240} value={durationMin} onChange={e=>setDurationMin(Math.max(10,Math.min(240,Number(e.target.value)||10)))}/>
       <label htmlFor="fat">{t('fatigue')}: {fatigue}</label><input id="fat" type="range" min={1} max={10} value={fatigue} onChange={(e) => setFatigue(Number(e.target.value))} />
       <p><button className="primary" disabled={busy || done === 0} onClick={finish}>{t('finish')}</button></p>
       {rest && <div className="toast" role="timer" aria-live="off">⏱ {t('rest')} {Math.floor(rest.left / 60)}:{String(rest.left % 60).padStart(2, '0')} <button className="link" onClick={() => setRest(null)}>{t('skip')}</button></div>}
