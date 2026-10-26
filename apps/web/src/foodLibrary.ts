@@ -29,6 +29,26 @@ export const MENUS:Meal[]=p.flatMap((protein,pi)=>c.flatMap((carb,ci)=>v.map((ve
   tags:[protein==='lentils'?'vegetariano':'mixto',ci%2===0?'energía para entrenar':'comida completa']
 }))));
 export function nutrition(items:Portion[]){return items.reduce((a,item)=>{const f=FOODS.find(x=>x.id===item.id);if(!f)return a;const g=Math.max(0,Math.min(2000,item.grams))/100;return{kcal:a.kcal+f.kcal*g,proteinG:a.proteinG+f.protein*g,carbsG:a.carbsG+f.carbs*g,fatG:a.fatG+f.fat*g};},{kcal:0,proteinG:0,carbsG:0,fatG:0});}
+/** Three editable meal ideas, not a prescribed complete diet. No intake is logged. */
+export function suggestDailyMeals(targetKcal:number, dayKey:string, avoid:string[]=[]):{meal:Meal;kcal:number;proteinG:number}[]{
+  const eligible=MENUS.filter(m=>!m.ingredients.some(i=>avoid.includes(i.id)));
+  if(!eligible.length)return [];
+  const safeTarget=Number.isFinite(targetKcal)&&targetKcal>0?targetKcal:1800;
+  // These are substantial meal ideas; remaining energy may come from other food.
+  const perMeal=safeTarget/3;
+  const seed=[...dayKey].reduce((a,ch)=>a+ch.charCodeAt(0),0);
+  const scored=eligible.map(meal=>{
+    const totals=nutrition(meal.ingredients);
+    return {meal,kcal:Math.round(totals.kcal),proteinG:Math.round(totals.proteinG),
+      gap:Math.abs(totals.kcal-perMeal)};
+  }).sort((a,b)=>a.gap-b.gap);
+  const chosen:typeof scored=[];
+  for(let offset=0;offset<Math.min(eligible.length,20)&&chosen.length<3;offset++){
+    const candidate=scored[(seed+offset)%Math.min(eligible.length,20)]!;
+    if(!chosen.some(x=>x.meal.ingredients[0]?.id===candidate.meal.ingredients[0]?.id))chosen.push(candidate);
+  }
+  return chosen;
+}
 export const THEORY=[
 {title:'Carbohidratos: qué son',body:'Aportan energía y pueden ayudar a sostener el ejercicio. No hace falta evitarlos: importan la cantidad total, la fibra, el contexto y la tolerancia individual.'},
 {title:'Absorción rápida y lenta',body:'Los alimentos menos procesados y ricos en fibra suelen producir una respuesta glucémica más gradual. El ritmo depende también de la porción, la cocción y la combinación con grasa y proteínas.'},
