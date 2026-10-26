@@ -111,6 +111,25 @@ export function registerPlans(c: PlanCtx) {
       .sort((x,y)=>Number(y.available)-Number(x.available)||x.level-y.level||x.id.localeCompare(y.id));
     return {version:latest.version,sourceId:source.id,goal:plan.goal,alternatives:choices};
   });
+  // Document the exercise actually performed without changing a prescribed plan or asserting clinical safety.
+  app.post('/api/plan/exercise-swap/session-choice',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await c.needHealth(req,reply))return;
+    const schema=z.object({dayIndex:z.number().int().min(0).max(6),itemIndex:z.number().int().min(0).max(30),replacementId:z.string().max(60),expectedVersion:z.number().int().positive(),riskAcknowledged:z.literal(true)});
+    const b=c.parse(schema,req.body,reply);if(!b)return;
+    const latest=await c.latestPlan(req.user!.id);
+    if(!latest||latest.version!==b.expectedVersion)return reply.code(409).send({error:'plan_changed'});
+    const plan=JSON.parse(latest.data) as Plan;
+    const original=plan.days[b.dayIndex]?.items[b.itemIndex];
+    const replacement=CATALOG.find(x=>x.id===b.replacementId);
+    if(!original||!replacement)return reply.code(400).send({error:'invalid_exercise'});
+    const from=CATALOG.find(x=>x.id===original.exerciseId);
+    if(!from||from.muscle!==replacement.muscle||from.pattern!==replacement.pattern)return reply.code(409).send({error:'different_training_stimulus'});
+    const assessment=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {data:string}|undefined;
+    const a=assessment?JSON.parse(assessment.data) as {restrictions?:string[]}:{};
+    const conflicts=replacement.stresses.filter(x=>(a.restrictions??[]).includes(x));
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'session_choice',?,?)").run(req.user!.id,JSON.stringify({dayIndex:b.dayIndex,itemIndex:b.itemIndex,replacementId:b.replacementId,planVersion:latest.version,conflicts}),new Date().toISOString());
+    return {ok:true,replacementId:b.replacementId,conflicts,planUnchanged:true};
+  });
   app.post('/api/plan/exercise-swap/preview',{preHandler:athleteOnly},async(req,reply)=>{
     if(!await c.needHealth(req,reply))return;
     const b=c.parse(swapSchema,req.body,reply);if(!b)return;
