@@ -284,7 +284,10 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
     if (day.kind === 'cardio') return reply.code(400).send({ error: 'cardio_day_use_activities' });
-    if(b.items.some(item=>!day.items.some(p=>p.exerciseId===item.exerciseId)))return reply.code(400).send({error:'unknown_session_exercise'});
+    const overrides=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='session_choice' ORDER BY id DESC LIMIT 100").all(uid) as {data:string}[];
+    const accepted=new Set(day.items.map(p=>p.exerciseId));
+    for(const row of overrides){try{const o=JSON.parse(row.data) as {dayIndex:number;planVersion:number;replacementId:string};if(o.dayIndex===b.dayIndex&&o.planVersion===cur.version)accepted.add(o.replacementId);}catch{}}
+    if(b.items.some(item=>!accepted.has(item.exerciseId)))return reply.code(400).send({error:'unknown_session_exercise'});
     await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
     // Deload weeks, post-break ramps and fixed programs log the work but do not change loads.
     const exp = ((JSON.parse((await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined)?.data ?? '{}') as { experience?: 'beginner' | 'intermediate' | 'advanced' }).experience) ?? 'intermediate';
