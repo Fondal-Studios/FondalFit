@@ -1044,3 +1044,25 @@ describe('fixing a day: calendar, edit, clear and delete', () => {
     expect((await call('DELETE', `/api/workouts/${w.id}`, t)).status).toBe(404);
   });
 });
+
+
+describe('collectible AI tutors', () => {
+  it('starts with two free tutors and requires ownership to select or buy', async () => {
+    const t = await reg('tutors@x.com', 'athlete');
+    const first = await call('GET', '/api/tutors', t);
+    expect(first.status).toBe(200);
+    expect(first.body.xp).toBe(0);
+    expect(first.body.tutors.filter((x:{owned:boolean}) => x.owned)).toHaveLength(2);
+    expect((await call('POST', '/api/tutors/select', t, {id:'mora'})).status).toBe(200);
+    expect((await call('GET', '/api/tutors', t)).body.selectedId).toBe('mora');
+    expect((await call('POST', '/api/tutors/select', t, {id:'luli'})).status).toBe(403);
+    expect((await call('POST', '/api/tutors/unlock', t, {id:'luli'})).status).toBe(409);
+    expect((await call('POST', '/api/tutors/select', t, {id:'unknown'})).status).toBe(400);
+  });
+  it('requires health consent and a configured AI for advice', async () => {
+    const t = await reg('tutor-consent@x.com', 'athlete');
+    expect((await call('POST', '/api/tutors/ask', t, {message:'¿Qué puedo cocinar?'})).status).toBe(403);
+    await call('PUT', '/api/consents', t, allConsents);
+    expect((await call('POST', '/api/tutors/ask', t, {message:'¿Qué puedo cocinar?'})).status).toBe(503);
+  });
+});
