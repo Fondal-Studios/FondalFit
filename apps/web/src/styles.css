@@ -292,3 +292,14 @@ nav.tabs button {min-width:0;flex:1 1 0;padding:8px 3px;overflow-wrap:anywhere}
 .athlete-exercise-row>button:first-child{flex:1;min-width:0;text-align:left;display:flex;justify-content:space-between;align-items:center}
 .athlete-exercise-edit{flex:0 0 auto;align-self:center;font-size:.83rem;padding:8px 10px}
 @media(max-width:430px){.athlete-exercise-row{flex-wrap:wrap}.athlete-exercise-row>button:first-child{flex:1 1 100%}.athlete-exercise-edit{flex:1 1 100%}}
+
+/* Exercise substitution: guaranteed visible above the workout and bottom navigation. */
+.exercise-swap-overlay{position:fixed;inset:0;z-index:1350;display:flex;justify-content:center;align-items:flex-end;padding:0;background:rgba(3,8,9,.82);overscroll-behavior:contain}
+.exercise-swap-dialog{width:min(100%,600px);max-height:94dvh;max-height:94vh;overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border:1px solid #567462;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -20px 70px #000a;min-width:0}
+.exercise-swap-dialog h2{margin:0;font-size:1.15rem}
+.exercise-swap-dialog .row.between>button{flex:0 0 auto}
+.exercise-swap-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:38dvh;overflow-y:auto;padding:3px 0}
+.exercise-swap-options button{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;text-align:left;min-width:0;padding:10px;overflow-wrap:anywhere;font-size:.9rem}
+.exercise-swap-options button.on{border-color:var(--accent);background:#173326}
+.exercise-swap-options button span{display:block}
+@media(max-width:390px){.exercise-swap-options{grid-template-columns:1fr}.exercise-swap-dialog{padding:12px 12px calc(18px + env(safe-area-inset-bottom))}}
