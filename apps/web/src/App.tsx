@@ -7,6 +7,7 @@ import { Home } from './pages/Home';
 import { More } from './pages/More';
 import {ProfessionalHub} from './pages/ProfessionalHub';
 import {WeeklyRankings} from './pages/WeeklyRankings';
+import {Directory,MyProfessionalProfile,MedicalPanel,AdminPanel} from './pages/Directory';
 
 // Heavier screens load on demand: faster first paint on the free server and slow phones.
 const Wizard = lazy(() => import('./pages/Wizard').then((m) => ({ default: m.Wizard })));
@@ -79,35 +80,39 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 }
 
 const ATHLETE_TABS = ['home', 'train', 'cardio', 'food', 'more'];
-const MORE_TABS = ['coach', 'science', 'recovery', 'progress', 'rankings', 'settings'];
-const PRO_TABS = ['athletes', 'approvals', 'rankings', 'settings'];
-const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', athletes: 'athletes', approvals: 'approvals', settings: 'settings', rankings:'rankings' };
-const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', athletes: '👥', approvals: '✅', settings: '⚙️',rankings:'🏆' };
+const MORE_TABS = ['coach', 'science', 'recovery', 'progress', 'rankings', 'directory', 'profile', 'settings'];
+const PRO_TABS = ['athletes', 'approvals', 'directory', 'settings'];
+const MEDICAL_TABS=['medical_panel','directory','settings'];
+const ADMIN_TABS=['admin_panel','directory','settings'];
+const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', athletes: 'athletes', approvals: 'approvals', settings: 'settings', rankings:'rankings',directory:'Profesionales',profile:'Afiliarme',medical_panel:'Salud',admin_panel:'Administración' };
+const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', athletes: '👥', approvals: '✅', settings: '⚙️',rankings:'🏆',directory:'🔎',profile:'🩺',medical_panel:'🩺',admin_panel:'🛡️' };
 
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
   const isPro = me.mode === 'pro';
+  const isMedical=me.mode==='medical';
+  const isAdminMode=me.mode==='admin';
   const [switching,setSwitching]=useState(false);
   const [modeError,setModeError]=useState('');
-  const switchMode=async()=>{
-    if(switching)return;
+  const switchMode=async(next:'athlete'|'pro'|'medical'|'admin')=>{
+    if(switching||me.mode===next)return;
     setSwitching(true);setModeError('');
     try{
-      if(!isPro&&!me.canPro)await api('POST','/api/me/pro');
-      await api('POST','/api/me/mode',{mode:isPro?'athlete':'pro'});
+      if(next==='pro'&&!me.canPro)await api('POST','/api/me/pro');
+      await api('POST','/api/me/mode',{mode:next});
       await refresh();
-    }catch{setModeError('No se pudo cambiar de interfaz. Reintentá.');}
+    }catch{setModeError('No se pudo cambiar de interfaz. Revisá si tu perfil está habilitado.');}
     finally{setSwitching(false);}
   };
-  const tabs = isPro ? PRO_TABS : ATHLETE_TABS;
+  const tabs=isAdminMode?ADMIN_TABS:isMedical?MEDICAL_TABS:isPro?PRO_TABS:ATHLETE_TABS;
   const [tab, setTab] = useState(tabs[0]!);
-  const needsConsent = !isPro && !(me.consents.terms && me.consents.health_data);
+  const needsConsent = me.mode==='athlete' && !(me.consents.terms && me.consents.health_data);
   const go = (k: string) => { setTab(k); window.scrollTo({ top: 0 }); };
-  const navActive = MORE_TABS.includes(tab) && !isPro ? 'more' : tab;
+  const navActive = MORE_TABS.includes(tab) && me.mode==='athlete' ? 'more' : tab;
   const wizard = tab === 'wizard';
   return (
     <>
-      <header className="top"><div><h1>{t('app')}</h1><small className="mode-label">{isPro?'Modo profesional':'Modo deportista'}</small></div><div className="mode-actions"><button className="mode-switch" type="button" disabled={switching} onClick={()=>void switchMode()} aria-label={isPro?'Cambiar a deportista':'Cambiar a profesional'}>{switching?'Cambiando…':isPro?'⇄ Soy deportista':'⇄ Soy profesional'}</button><button onClick={onLogout}>{t('logout')}</button></div></header>
+      <header className="top"><div><h1>{t('app')}</h1><small className="mode-label">{({athlete:'Deportista',pro:'Entrenador físico',medical:'Profesional de salud',admin:'Administrador'} as const)[me.mode]}</small></div><div className="mode-actions"><button onClick={()=>go('settings')}>Usuario / Ajustes</button><button onClick={onLogout}>{t('logout')}</button></div></header>
       {modeError&&<p className="warn" role="alert">{modeError}</p>}
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<p className="muted" role="status">{t('loading')}</p>}>
@@ -122,10 +127,14 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           {tab === 'recovery' && <><BackToMore go={go} /><Recovery /></>}
           {tab === 'progress' && <><BackToMore go={go} /><Progress /></>}
           {tab === 'athletes' && <ProfessionalHub />}
+          {tab === 'directory' && <Directory />}
+          {tab === 'profile' && <MyProfessionalProfile me={me} category="medical" onSaved={refresh}/>}
+          {tab === 'medical_panel' && <MedicalPanel me={me}/>}
+          {tab === 'admin_panel' && <AdminPanel/>}
           {tab === 'rankings' && <WeeklyRankings />}
           {tab === 'approvals' && <ProApprovals />}
-          {tab === 'settings' && <>{!isPro && <BackToMore go={go} />}<Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onWizard={() => go('wizard')} /></>}
-          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{k==='rankings'?'Ranking':t(NAV[k]!)}</button>)}</nav>
+          {tab === 'settings' && <><section className="card"><h2>Mi cuenta · Cambiar interfaz</h2><p className="muted">Elegí qué herramientas querés usar. El cambio no borra entrenamientos ni vínculos.</p><div className="mode-selector">{(['athlete','pro','medical','admin'] as const).map(m=><button key={m} className={me.mode===m?'on':''} disabled={switching||(m==='medical'&&!me.canMedical)||(m==='admin'&&!me.isAdmin)} onClick={()=>void switchMode(m)}>{({athlete:'Deportista',pro:'Entrenador físico',medical:'Profesional de salud',admin:'Administrador'} as const)[m]}{me.mode===m?' ✓':''}</button>)}</div>{!me.canMedical&&<p className="muted">Para habilitar Salud, completá tu perfil profesional y solicitá verificación.</p>}</section>{me.mode==='athlete'&&<MyProfessionalProfile me={me} category="medical" onSaved={refresh}/>}<Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onWizard={() => go('wizard')} /></>}
+          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{['directory','profile','medical_panel','admin_panel'].includes(k)?NAV[k]:k==='rankings'?'Ranking':t(NAV[k]!)}</button>)}</nav>
         </Suspense>
       )}
     </>
