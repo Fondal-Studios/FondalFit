@@ -93,7 +93,7 @@ export function registerPro(c: ProCtx) {
     const tpl = templateSchema.parse(JSON.parse(t.data));
     const plan: Plan = {
       engineVersion: 'pro-template', goal: tpl.goal, weeksSinceDeload: 0,
-      days: tpl.days.map((d) => ({ name: d.name, kind: d.kind, items: d.items.map((i) => ({ ...i })), cardio: d.cardio })),
+      days: tpl.days.map((d) => ({ name: d.name, kind: d.kind, format:d.format, items: d.items.map((i) => ({ ...i })), cardio: d.cardio })),
     };
     const version = await c.savePlan(b.athleteId, plan, `pro:${req.user!.id}`);
     await c.audit(req.user!.id, b.athleteId, 'template:assign');
