@@ -23,6 +23,7 @@ export function Settings() {
     <Page title={t('settings')}>
       <div className="card"><h3>{me.name}</h3><p className="muted">{me.email}</p><LangPicker lang={lang} onLang={onLang} /></div>
 
+      <div className="card"><h3>Ayuda y tutoriales</h3><p className="muted">Aprendé a usar cada función de Fondal Fit paso a paso. Podés repetir la guía todas las veces que quieras.</p><button className="primary" onClick={()=>window.dispatchEvent(new Event('fondal:show-tutorial'))}>Ver tutorial de mi interfaz</button></div>
       <div className="card"><h3>{t('accountMode')}</h3>
         {me.canPro ? <p className="muted">{t('modeHelp')}</p> : <p className="muted">{t('enableProHelp')}</p>}
         {me.canPro ? <div className="modepill" role="group" aria-label={t('accountMode')} style={{ alignSelf: 'flex-start' }}>
