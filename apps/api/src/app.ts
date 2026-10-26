@@ -336,8 +336,11 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const t = await latestTarget(req.user!.id);
     if (!t) return reply.code(409).send({ error: 'no_target' });
     const day = dayNumberOf(new Date((q.date ?? now().slice(0, 10)) + 'T12:00:00Z'));
-    // `shuffle` skips ahead in the 30-menu rotation: each step shows the next three menus
-    return { kcal: t.kcal, shuffle: q.shuffle, menus: menusForDay(day + q.shuffle, t.kcal, t.diet ?? []) };
+    // Informational recipe examples only: do not scale portions to an individual's calorie target.
+    // A dietitian-reviewed prescription must be implemented separately with verified credentials.
+    const menus = menusForDay(day + q.shuffle, 2000, t.diet ?? []);
+    return { kcal: t.kcal, shuffle: q.shuffle, menus, informationalOnly: true,
+      disclaimer: 'Ejemplos generales de comidas, no constituyen una dieta ni una prescripción nutricional. Las cantidades y valores son aproximados. Consultá a un/a licenciado/a en Nutrición matriculado/a para un plan individualizado. Los filtros de ingredientes no garantizan ausencia de alérgenos.' };
   });
 
   /** Rule-based, evidence-ranked supplement advice (works without the AI key). */
