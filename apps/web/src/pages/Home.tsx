@@ -70,7 +70,7 @@ function PersonalConsultation(){
    <h3>Salud metabólica, composición corporal y musculación</h3>
    <p><strong>Médico Mariano Jiménez</strong> · Matrícula 7016 · Cafayate, Vertientes.</p>
    <p className="muted">Acompañamiento médico personalizado para revisar hábitos, entrenamiento, composición corporal y objetivos. Consulta presencial o virtual a coordinar.</p>
-   <a className="directory-contact" target="_blank" rel="noopener noreferrer" href={'https://wa.me/5493875466419?text='+message}>Consultar disponibilidad por WhatsApp</a>
+   <a className="directory-contact" target="_blank" rel="noopener noreferrer" href={'https://wa.me/5493875467519?text='+message}>Consultar disponibilidad por WhatsApp</a>
    <p className="muted small">La consulta es opcional y tiene honorarios a confirmar. WhatsApp se abre fuera de Fondal Fit; no se comparte tu historial automáticamente.</p>
  </aside>;
 }
