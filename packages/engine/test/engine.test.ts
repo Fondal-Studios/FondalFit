@@ -39,6 +39,14 @@ describe('generatePlan', () => {
       if (byId(item.exerciseId)?.holdSeconds) expect(item.durationSeconds).toBeGreaterThan(0);
     }
   });
+  it('builds progressive 4, 8, and 12 week schedules with recovery weeks', () => {
+    for (const programWeeks of [4,8,12] as const) {
+      const plan = generatePlan({...base,programWeeks});
+      expect(plan.schedule).toHaveLength(programWeeks);
+      expect(plan.schedule?.filter(w => w.phase === 'recovery')).toHaveLength(programWeeks/4);
+      expect(plan.schedule?.[3]?.volumeFactor).toBeLessThan(plan.schedule?.[2]?.volumeFactor ?? 0);
+    }
+  });
   it('is deterministic', () => { expect(generatePlan(base)).toEqual(generatePlan(base)); });
   it('bodyweight only when no equipment', () => {
     expect(allowedExercises({ equipment: [], restrictions: [] }).every((e) => e.equipment.includes('none'))).toBe(true);
