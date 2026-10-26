@@ -55,19 +55,23 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
   <section className="exercise-swap-dialog" role="dialog" aria-modal="true" aria-label="Alternativas de ejercicio">
    <div className="row between"><h2>Cambiar ejercicio</h2><button type="button" onClick={onCancel} aria-label="Cerrar alternativas">✕</button></div>
    <p className="muted">Actual: <strong>{t('ex_'+exerciseId)}</strong>. Las opciones siguientes provienen del catálogo completo, no de los ejercicios de tu jornada. Están ordenadas por compatibilidad con tu nivel y equipamiento.</p>
-   <label>Buscar alternativa<input autoFocus type="search" placeholder="Ej.: press inclinado, mancuernas…" value={search} onChange={e=>setSearch(e.target.value)}/></label>
-   {loading&&<p role="status">Buscando ejercicios similares en el catálogo…</p>}
-   {!loading&&visible.length===0&&<p className="muted">No hay alternativas fuera de tu jornada con ese patrón y grupo muscular. Probá otra búsqueda o consultá con tu entrenador.</p>}
-   <div className="exercise-swap-options">
-    {visible.map(x=><button type="button" key={x.id} disabled={busy||!x.available} className={selected===x.id?'on':''} onClick={()=>void choose(x.id)}>
-      <strong>{t('ex_'+x.id)}</strong><span className="muted small">{x.equipment.map(k=>t(k)).join(', ')} · {t('m_'+x.muscle)}{!x.available?' · '+(messages[x.reason??'']??'Requiere revisión'):''}</span>
-    </button>)}
-   </div>
-   {busy&&<p role="status">Verificando compatibilidad…</p>}
+   {preview ? <div className="card exercise-swap-confirm" role="status">
+     <h3>¿Confirmás el reemplazo?</h3>
+     <p><strong>{t('ex_'+exerciseId)} → {t('ex_'+preview.toId)}</strong></p>
+     <p>{preview.explanation}</p>
+     <div className="exercise-swap-confirm-actions"><button type="button" className="primary" disabled={busy} onClick={()=>void confirm()}>{busy?'Guardando…':'Confirmar y guardar cambio'}</button><button type="button" disabled={busy} onClick={()=>{setPreview(null);setSelected('');}}>Elegir otro ejercicio</button></div>
+   </div> : <>
+     <label>Buscar alternativa<input type="search" placeholder="Ej.: press inclinado, mancuernas…" value={search} onChange={e=>setSearch(e.target.value)}/></label>
+     {loading&&<p role="status">Buscando ejercicios similares en el catálogo…</p>}
+     {!loading&&visible.length===0&&<p className="muted">No hay alternativas compatibles fuera de tu jornada con ese patrón y grupo muscular.</p>}
+     <div className="exercise-swap-options">
+       {visible.map(x=><button type="button" key={x.id} disabled={busy||!x.available} className={selected===x.id?'on':''} onClick={()=>void choose(x.id)}>
+         <strong>{t('ex_'+x.id)}</strong><span className="muted small">{x.equipment.map(k=>t(k)).join(', ')} · {t('m_'+x.muscle)}{!x.available?' · '+(messages[x.reason??'']??'Requiere revisión'):''}</span>
+       </button>)}
+     </div>
+   </>}
+   {busy&&<p role="status">{preview?'Guardando el cambio…':'Verificando compatibilidad…'}</p>}
    {error&&<p className="warn" role="alert">{error}</p>}
-   {preview&&<div className="card"><strong>Alternativa compatible con tu objetivo</strong><p>{preview.explanation}</p>
-     <div className="row"><button type="button" className="primary" disabled={busy} onClick={()=>void confirm()}>Confirmar y guardar en mi rutina</button><button type="button" onClick={()=>setPreview(null)}>Elegir otra</button></div>
-   </div>}
    <p className="muted small">No se modifica ningún ejercicio hasta que confirmes. Si el plan fue asignado por un profesional, el cambio requiere su revisión.</p>
   </section>
  </div>;
