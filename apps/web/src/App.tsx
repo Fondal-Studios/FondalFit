@@ -82,7 +82,7 @@ export function App() {
 function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void; onDone: () => void }) {
   const t = useT();
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [f, setF] = useState({ email: '', password: '', name: '', role: 'athlete' });
+  const [f, setF] = useState({ email: '', password: '', name: '', role: 'athlete', profession: 'coach' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
@@ -100,6 +100,7 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
         <label htmlFor="name">{t('name')}</label><input id="name" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
         <label htmlFor="role">{t('role')}</label>
         <select id="role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="athlete">{t('athlete')}</option><option value="pro">{t('pro')}</option></select>
+        {f.role==='pro'&&<label htmlFor="profession">Tipo de profesional<select id="profession" value={f.profession} onChange={e=>setF({...f,profession:e.target.value})}><option value="coach">Profesor de educación física / entrenador</option><option value="kinesiologist">Kinesiólogo/a</option><option value="physician">Médico/a</option><option value="dietitian">Licenciado/a en Nutrición</option></select></label>}
         <p className="muted small">{t('roleSwitchNote')}</p>
       </>}
       <label htmlFor="email">{t('email')}</label><input id="email" type="email" required autoComplete="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
