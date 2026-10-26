@@ -7,6 +7,7 @@ import { EXINFO } from '../exinfo';
 import { Page, useNav } from '../nav';
 import { fmtReps } from './Library';
 import { dayMuscles } from './Train';
+import {TutorExerciseSwap} from './TutorExerciseSwap';
 
 interface SetRow { weight: string; reps: string; rir: string; done: boolean }
 type Last = Record<string, { at: string; sets: { weight: number; reps: number; rir: number }[] }>;
@@ -17,7 +18,9 @@ type Last = Record<string, { at: string; sets: { weight: number; reps: number; r
  */
 export function Session({ day, index, free, name }: { day: PlanDay; index: number; free?: boolean; name?: string }) {
   const t = useT(), nav = useNav(), { toast } = useApp();
-  const ids = day.items.map((i) => i.exerciseId);
+  const [activeDay,setActiveDay]=useState<PlanDay>(day);
+  const [changing,setChanging]=useState<number|null>(null);
+  const ids = activeDay.items.map((i) => i.exerciseId);
   const last = useLoad<{ last: Last }>(`/api/progress/last?ids=${ids.join(',')}`);
   const [rows, setRows] = useState<Record<string, SetRow[]>>(() => Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '', done: false }))])));
   const [fatigue, setFatigue] = useState(5);
@@ -35,7 +38,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
     return () => clearTimeout(id);
   }, [rest]);
 
-  const total = day.items.reduce((a, i) => a + i.sets, 0);
+  const total = activeDay.items.reduce((a, i) => a + i.sets, 0);
   const done = Object.values(rows).flat().filter((r) => r.done).length;
   const set = (id: string, i: number, patch: Partial<SetRow>) => setRows((r) => ({ ...r, [id]: r[id]!.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
   const prefill = (id: string, i: number) => {
@@ -49,7 +52,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
       // loaded exercises need a weight: a set logged at 0 kg would corrupt progress and the next load
       if ((byId(id)?.increment ?? 0) > 0 && !(Number(r.weight || pre?.weight || 0) > 0)) { toast(t('enterWeight')); return; }
       // an empty set is completed with the target/previous numbers so a quick tap still records something meaningful
-      const reps = r.reps || (pre?.reps ?? String(day.items.find((x) => x.exerciseId === id)!.repMax));
+      const reps = r.reps || (pre?.reps ?? String(activeDay.items.find((x) => x.exerciseId === id)!.repMax));
       set(id, i, { done: true, reps, weight: r.weight || pre?.weight || '0', rir: r.rir || String(day.items.find((x) => x.exerciseId === id)!.rirTarget) });
       if (restSec) setRest({ left: restSec, total: restSec });
     } else set(id, i, { done: false });
@@ -58,7 +61,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
   const volume = useMemo(() => Object.values(rows).flat().filter((r) => r.done).reduce((a, r) => a + Number(r.weight || 0) * Number(r.reps || 0), 0), [rows]);
 
   const finish = async () => {
-    const items = day.items.map((it) => ({ exerciseId: it.exerciseId, sets: rows[it.exerciseId]!.filter((s) => s.done).map((s) => ({ weight: Number(s.weight || 0), reps: Number(s.reps || 0), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
+    const items = activeDay.items.map((it) => ({ exerciseId: it.exerciseId, sets: rows[it.exerciseId]!.filter((s) => s.done).map((s) => ({ weight: Number(s.weight || 0), reps: Number(s.reps || 0), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
     if (!items.length) { toast(t('logOneSet')); return; }
     setBusy(true);
     try {
@@ -80,14 +83,16 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
     );
   }
   return (
-    <Page title={name ?? `${day.name} · ${dayMuscles(day).map((m) => t('m_' + m)).join(', ')}`} sub={free ? t('freeSession') : undefined}>
+    <Page title={name ?? `${activeDay.name} · ${dayMuscles(activeDay).map((m) => t('m_' + m)).join(', ')}`} sub={free ? t('freeSession') : undefined}>
       <div className="progressbar"><Bar pct={(done / Math.max(1, total)) * 100} /><p className="muted small">{done}/{total} {t('sets')}</p></div>
-      {day.items.map((it) => {
+      {activeDay.items.map((it,exerciseIndex) => {
         const ex = byId(it.exerciseId), prev = last.data?.last[it.exerciseId];
         return (
           <div className="card" key={it.exerciseId}>
             <div className="row between top"><div><h3 style={{ margin: 0 }}>{t('ex_' + it.exerciseId)}</h3><p className="muted small">{it.sets} × {fmtReps(ex, it.repMin, it.repMax)} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${it.restSec >= 60 ? Math.round(it.restSec / 6) / 10 + '′' : it.restSec + ' s'}` : ''}</p></div>
               <button className="linkbtn" aria-label={t('technique')} onClick={() => setTech(it.exerciseId)}>🎯 {t('technique')}</button></div>
+            {!free&&index!==99&&<div className="row"><button type="button" disabled={busy||rows[it.exerciseId]?.some(x=>x.done)} onClick={()=>setChanging(exerciseIndex)} aria-label={'Cambiar '+t('ex_'+it.exerciseId)}>Cambiar ejercicio · Ver alternativas</button></div>}
+            {changing===exerciseIndex&&<div className="card"><button type="button" onClick={()=>setChanging(null)}>Cerrar alternativas</button><TutorExerciseSwap initialDay={index} initialItem={exerciseIndex} compact onSaved={()=>{void api<{plan:{days:PlanDay[]}|null}>('GET','/api/plan').then(r=>{const updated=r.plan?.days[index];if(updated){setActiveDay(updated);setRows(previous=>Object.fromEntries(updated.items.map(x=>[x.exerciseId,previous[x.exerciseId]??Array.from({length:x.sets},()=>({weight:String(x.load||''),reps:'',rir:'',done:false}))])));}setChanging(null);toast('Rutina actualizada. El ejercicio nuevo ya está en esta sesión.');}).catch(()=>toast('Cambio guardado. Reabrí la sesión para ver la rutina nueva.'));}}/></div>}
             {prev && <p className="prev">{t('lastTime')}: {prev.sets.map((s) => `${s.weight}${ex?.timed ? '' : 'kg'}×${s.reps}`).join(' · ')}</p>}
             {rows[it.exerciseId]!.map((s, i) => (
               <div className={'setrow' + (s.done ? ' done' : '')} key={i}>
