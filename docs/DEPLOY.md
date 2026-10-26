@@ -32,3 +32,9 @@ Docker: `docker build -t fondal-fit . && docker run -p 3001:3001 -e DATABASE_URL
 - Cifrado en reposo propio, reseteo de contraseña, correo transaccional, términos y privacidad revisados por un abogado.
 - Pagos: fuera de alcance por ahora (solo prueba de 14 días y cancelación, sin cobro).
 - Probar en Safari iPhone y Android reales.
+
+## Variables de entorno de administración
+- `ADMIN_EMAILS` = tu email de login (coma para varios): habilita el panel de telemetría (cuentas creadas, activos por día, uso). Solo muestra agregados, nunca datos de salud.
+- `ANTHROPIC_API_KEY`: activa el coach y la interpretación con IA de comidas en texto libre (sin clave funciona con reglas).
+- `FOUNDER_ACCOUNT_ID` / `FOUNDER_ACCOUNT_EMAIL`: cuenta fundadora verificada en el directorio profesional.
+- Tip: el plan gratuito de Render duerme tras 15 min sin uso; el primer ingreso tarda ~50 s.
