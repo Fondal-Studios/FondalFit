@@ -19,7 +19,8 @@ export function TutorCompanion({tab,onOpen}:{tab:string;onOpen:()=>void}){
  useEffect(()=>{let live=true;api<TutorInfo>('GET','/api/tutors').then(r=>{if(live)setInfo(r)}).catch(()=>{});return()=>{live=false}},[tab]);
  const tutor=info?.tutors.find(t=>t.id===info.selectedId);
  const name=tutor?.name??'Tu tutor';
- const tip=(hints[tab]??hints.default)[new Date().getDate()%((hints[tab]??hints.default).length)]!;
+ const choices=hints[tab]??hints.default??['Podés consultarme sobre alimentación, entrenamiento y recuperación.'];
+ const tip=choices[new Date().getDate()%choices.length]??'Podés consultarme sobre alimentación, entrenamiento y recuperación.';
  const ask=async()=>{
   if(!question.trim()||sending)return;
   setSending(true);setError('');setReply('');
