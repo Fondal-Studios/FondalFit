@@ -40,7 +40,7 @@ export interface CardioSession {
   intervals?: { reps: number; workSec: number; restSec: number };
 }
 
-export interface PlanDay { name: string; kind?: 'strength' | 'cardio' | 'hiit' | 'mobility'; items: Prescription[]; cardio?: CardioSession; /** free text shown with the session (e.g. a run/walk pattern) */ note?: string }
+export interface PlanDay { name: string; kind?: 'strength' | 'cardio' | 'hiit' | 'mobility'; items: Prescription[]; format?: 'standard' | 'superset' | 'circuit'; cardio?: CardioSession; /** free text shown with the session (e.g. a run/walk pattern) */ note?: string }
 export interface Ramp { startedAt: string; weeks: number; setsMult: number; loadMult: number }
 export interface Plan {
   engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number;
