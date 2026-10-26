@@ -257,3 +257,32 @@ button.linkbtn { background:none; border:1px solid var(--line); color:var(--acce
 .tutorial-visit{align-self:flex-start;font-size:.88rem;text-decoration:underline}
 .tutorial-help-button{min-height:38px;padding:6px 10px;border:1px solid #699b7c;border-radius:10px}
 @media(max-width:480px){.tutorial-backdrop{align-items:flex-end;padding:0}.tutorial-dialog{width:100%;max-height:92dvh;border-radius:20px 20px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom))}.tutorial-actions button{flex:1}.tutorial-head{font-size:.67rem}}
+
+/* Fondal Fit mobile layout: the document must scroll vertically, never sideways. */
+html,body,#root {width:100%;min-width:0;max-width:100%;overflow-x:clip}
+main,.page,.stack,.card,header.top,.row,.grid2,.professional-hub {min-width:0;max-width:100%}
+.card,.page,.stack {overflow-wrap:anywhere}
+img,svg,canvas,video {max-width:100%}
+input,textarea,select {min-width:0;max-width:100%;box-sizing:border-box}
+header.top {flex-wrap:wrap;gap:8px}
+header.top h1 {min-width:0}
+header.top .modepill {max-width:100%;overflow-x:auto}
+nav.tabs {max-width:100vw;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+nav.tabs button {min-width:0;flex:1 1 0;padding:8px 3px;overflow-wrap:anywhere}
+.tutor-companion {background:linear-gradient(130deg,#142a22,#151c24);border:1px solid #426b52;border-radius:16px;padding:12px;margin:8px 0;min-width:0;overflow:hidden}
+.tutor-companion-home {border-color:#65a77c}
+.tutor-companion-head {display:flex;gap:12px;align-items:center;min-width:0}
+.tutor-companion-copy {flex:1;min-width:0}
+.tutor-companion-copy p {margin:4px 0;color:#c8d4ca;font-size:.87rem;line-height:1.4}
+.tutor-mini-sprite {width:76px;height:52px;flex:0 0 76px;background-size:400% 900%;background-position:0 0;background-repeat:no-repeat;image-rendering:pixelated;background-color:#23372d;border:1px solid #446c55;border-radius:9px}
+.tutor-companion-actions {display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.tutor-companion-actions button {flex:1 1 145px;font-size:.88rem;padding:8px}
+.tutor-companion-chat {max-width:100%;min-width:0}
+.tutor-companion-chat .row {min-width:0}
+.tutor-companion-chat .row input {flex:1 1 180px;min-width:0}
+.tutor-companion-chat .row button {flex:0 0 auto}
+.tutor-roster {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tutor-roster .card {min-width:0;margin:0;padding:12px 8px;overflow:hidden}
+.tutor-roster .card button {width:100%;min-width:0;white-space:normal;font-size:.82rem;overflow-wrap:anywhere}
+.tutor-card-sprite {width:112px;max-width:100%;height:75px;margin:0 auto 8px;background-repeat:no-repeat;background-position:0 0;background-size:400% 900%;image-rendering:pixelated;border-radius:10px;background-color:#243229}
+@media (max-width:390px) {.tutor-companion-head{gap:8px}.tutor-mini-sprite{width:58px;height:40px;flex-basis:58px}.tutor-roster{gap:7px}.tutor-roster .card{padding:8px 6px}.tutor-companion-actions button{flex:1 1 100%}}
