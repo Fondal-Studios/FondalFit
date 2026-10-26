@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import {TutorExerciseSwap} from './TutorExerciseSwap';
 import { byId, hrZones, schemeFor, weeklyVolume, type Goal, type Plan, type PlanDay } from '@fondal/engine';
 import { Bar, Loading, useLoad, useT } from '../ctx';
 import { useNav } from '../nav';
@@ -18,6 +19,7 @@ export function Train() {
   const { data, err, reload } = useLoad<PlanRes>('/api/plan');
   const asm = useLoad<{ assessment: { profile?: { age: number } } | null }>('/api/assessment');
   const [why, setWhy] = useState(false);
+  const [editing,setEditing]=useState<{day:number;item:number}|null>(null);
   if (!data) return <Loading err={err} retry={reload} />;
   if (!data.plan) return (
     <div className="stack"><h2>{t('nav_train')}</h2>
@@ -39,6 +41,7 @@ export function Train() {
         {cur?.label === 'deload' && <p className="muted">{t('deloadExplain')}</p>}
         {cur?.ramp && <p className="warn">{t('rampActive')}</p>}
         {data.advice && data.advice.mode !== 'normal' && <p className="warn" role="status">{data.advice.mode === 'rest' ? t('adviceRest') : t('adviceLight')}</p>}
+        <p className="muted small">Esta rutina es una propuesta inicial. Podés personalizar los ejercicios compatibles y conservar cada cambio en tu plan.</p>
         <div className="row"><button onClick={() => nav.push('routines')}>{t('changeRoutine')}</button><button onClick={() => nav.push('exercises')}>{t('exercises')}</button></div>
       </div>
       {plan.days.map((d, i) => (
@@ -51,12 +54,17 @@ export function Train() {
               {d.cardio.intervals && <p className="muted">{t('intervalsDesc', { n: d.cardio.intervals.reps, w: fmtSec(d.cardio.intervals.workSec), r: fmtSec(d.cardio.intervals.restSec) })}</p>}
               {age && ['zone2', 'long', 'walkrun'].includes(d.cardio.type) && <p className="muted small">{t('hrEstimate')}: {hrZones(age).z2[0]}–{hrZones(age).z2[1]} bpm. {t('hrNote')}</p>}</div>
           ) : (
-            <div className="list">{d.items.map((it) => (
-              <button key={it.exerciseId} onClick={() => nav.push('exercise', { id: it.exerciseId })}>
-                <span><b>{t('ex_' + it.exerciseId)}</b><span className="sub">{it.sets} × {fmtReps(byId(it.exerciseId), it.repMin, it.repMax)} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${it.restSec >= 60 ? Math.round(it.restSec / 6) / 10 + '′' : it.restSec + ' s'}` : ''}{it.load ? ` · ${it.load} kg` : ''}</span></span><span aria-hidden>›</span></button>))}</div>
+            <div className="list">{d.items.map((it,j) => (
+              <div key={i+'-'+j} className="athlete-exercise-row">
+                <button onClick={() => nav.push('exercise', { id: it.exerciseId })}>
+                  <span><b>{t('ex_' + it.exerciseId)}</b><span className="sub">{it.sets} × {fmtReps(byId(it.exerciseId), it.repMin, it.repMax)} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${it.restSec >= 60 ? Math.round(it.restSec / 6) / 10 + '′' : it.restSec + ' s'}` : ''}{it.load ? ` · ${it.load} kg` : ''}</span></span><span aria-hidden>›</span>
+                </button>
+                <button className="athlete-exercise-edit" onClick={()=>setEditing({day:i,item:j})}>Cambiar ejercicio</button>
+              </div>))}</div>
           )}
         </div>
       ))}
+      {editing&&<div className="card"><div className="row between"><h3>Editar mi rutina</h3><button onClick={()=>setEditing(null)}>Cerrar</button></div><TutorExerciseSwap initialDay={editing.day} initialItem={editing.item} compact onSaved={()=>{reload();setEditing(null);}}/></div>}
       {vol.length > 0 && <div className="card"><h3>{t('weeklyVolume')}</h3><p className="muted small">{t('volumeRef')}</p>
         {vol.map((v) => <div key={v.muscle}><span className="muted">{t('m_' + v.muscle)}: {v.sets} {t('sets')} · {t('vol_' + v.status)}</span><Bar pct={(v.sets / 20) * 100} /></div>)}</div>}
       <div className="card"><div className="row between"><h3>{t('whyPlan')}</h3><button onClick={() => setWhy(!why)} aria-expanded={why}>{why ? '−' : '+'}</button></div>
