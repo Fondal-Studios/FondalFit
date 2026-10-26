@@ -84,7 +84,15 @@ function buildStrengthDay(name: string, tpl: Template, pool: Exercise[], a: Asse
       restSec: iso ? Math.min(s.restSec, 75) : s.restSec,
     });
   }
-  return { name, kind: 'strength', items };
+  // Exercise organization changes the session workflow, never increases weekly volume.
+  // Beginners keep simple sets; more experienced athletes can receive compatible paired work.
+  const format: PlanDay['format'] = a.experience === 'beginner' || items.length < 3 || a.goal === 'strength'
+    ? 'standard'
+    : a.goal === 'hypertrophy' || a.goal === 'recomposition'
+      ? 'superset'
+      : a.goal === 'general' || a.goal === 'fat_loss' || a.goal === 'endurance'
+        ? 'circuit' : 'standard';
+  return { name, kind: 'strength', items, format };
 }
 
 const isLowerDay = (d: PlanDay) => d.kind === 'strength' && d.items.filter((i) => LOWER_MUSCLES.has(byId(i.exerciseId)?.muscle as Muscle)).length >= 2;
