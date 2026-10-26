@@ -242,3 +242,18 @@ button.linkbtn { background:none; border:1px solid var(--line); color:var(--acce
 .mv-weight { stroke:#7a8794; stroke-width:3; stroke-linecap:round } .mv-plate { fill:var(--m-primary) }
 .mv-arrow { color:var(--accent); font-size:1.4rem; flex:none }
 .exvisual { margin:8px 0 }
+
+/* Accessible guided tutorial for Alpha onboarding */
+.tutorial-backdrop{position:fixed;inset:0;z-index:1200;background:rgba(4,12,10,.76);display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto}
+.tutorial-dialog{background:#17241f;color:#f4faf5;border:1px solid #5c9274;border-radius:18px;box-shadow:0 20px 70px #0008;width:min(100%,520px);max-height:calc(100dvh - 32px);overflow:auto;padding:22px;display:flex;flex-direction:column;gap:13px}
+.tutorial-dialog h2{font-size:1.4rem;margin:2px 0;line-height:1.25}
+.tutorial-dialog p{line-height:1.6;margin:0}
+.tutorial-head{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#b4dac4;font-size:.74rem;letter-spacing:.06em;font-weight:700}
+.tutorial-head button{min-width:36px;min-height:36px}
+.tutorial-progress{height:7px;border-radius:8px;overflow:hidden;background:#394a40}
+.tutorial-progress span{height:100%;display:block;background:#8fd5a4;transition:width .15s ease}
+.tutorial-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px}
+.tutorial-actions button{min-height:44px}
+.tutorial-visit{align-self:flex-start;font-size:.88rem;text-decoration:underline}
+.tutorial-help-button{min-height:38px;padding:6px 10px;border:1px solid #699b7c;border-radius:10px}
+@media(max-width:480px){.tutorial-backdrop{align-items:flex-end;padding:0}.tutorial-dialog{width:100%;max-height:92dvh;border-radius:20px 20px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom))}.tutorial-actions button{flex:1}.tutorial-head{font-size:.67rem}}
