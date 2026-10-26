@@ -87,6 +87,27 @@ export function registerPlans(c: PlanCtx) {
     const explanation='Ambos ejercicios trabajan principalmente '+to.muscle+' y comparten el patrón '+to.pattern+'. La sustitución es compatible con el objetivo '+plan.goal+'. Se conserva la cantidad de series y repeticiones, y se reinicia la carga para evitar trasladar automáticamente un peso inseguro. Revisá la técnica antes de comenzar.';
     return {plan:proposed,version:latest.version,fromId:from.id,toId:to.id,explanation} as const;
   };
+  /** Catalog-based alternatives, excluding exercises already scheduled in this workout. */
+  app.get('/api/plan/exercise-swap/alternatives',{preHandler:athleteOnly},async(req,reply)=>{
+    const q=c.parse(z.object({dayIndex:z.coerce.number().int().min(0).max(6),itemIndex:z.coerce.number().int().min(0).max(30)}),req.query,reply);if(!q)return;
+    const latest=await c.latestPlan(req.user!.id);if(!latest)return reply.code(404).send({error:'no_plan'});
+    const plan=JSON.parse(latest.data) as Plan;
+    const day=plan.days[q.dayIndex],current=day?.items[q.itemIndex];
+    if(!day||!current)return reply.code(404).send({error:'exercise_not_found'});
+    const source=CATALOG.find(x=>x.id===current.exerciseId);
+    if(!source)return reply.code(404).send({error:'unknown_exercise'});
+    const scheduled=new Set(day.items.map(x=>x.exerciseId));
+    const assessment=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {data:string}|undefined;
+    const a=assessment?JSON.parse(assessment.data) as {experience?:string;equipment?:string[];restrictions?:string[]}:{};
+    const available=new Set([...(a.equipment??[]),'none']);
+    const maxLevel=a.experience==='advanced'?3:a.experience==='intermediate'?2:1;
+    const choices=CATALOG.filter(x=>!scheduled.has(x.id)&&x.pattern===source.pattern&&x.muscle===source.muscle&&!!x.timed===!!source.timed)
+      .map(x=>({id:x.id,muscle:x.muscle,pattern:x.pattern,equipment:x.equipment,level:x.level,
+        available:x.equipment.some(eq=>available.has(eq))&&x.level<=maxLevel&&!x.stresses.some(area=>(a.restrictions??[]).includes(area)),
+        reason:!x.equipment.some(eq=>available.has(eq))?'equipment_unavailable':x.level>maxLevel?'exercise_too_advanced':x.stresses.some(area=>(a.restrictions??[]).includes(area))?'exercise_conflicts_with_restriction':null}))
+      .sort((x,y)=>Number(y.available)-Number(x.available)||x.level-y.level||x.id.localeCompare(y.id));
+    return {version:latest.version,sourceId:source.id,goal:plan.goal,alternatives:choices};
+  });
   app.post('/api/plan/exercise-swap/preview',{preHandler:athleteOnly},async(req,reply)=>{
     if(!await c.needHealth(req,reply))return;
     const b=c.parse(swapSchema,req.body,reply);if(!b)return;
