@@ -2,7 +2,7 @@ import {RunningMap, missingGPSGap, type GPSPoint} from './RunningMap';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, hasToken, setToken } from './api';
 import { LANGS, translate, type Lang } from './i18n';
-import { FOODS, MENUS, THEORY, nutrition, parseSimpleFood, type Portion } from './foodLibrary';
+import { FOODS, MENUS, THEORY, nutrition, suggestDailyMeals, parseSimpleFood, type Portion } from './foodLibrary';
 
 /* ---------- i18n context ---------- */
 const LangCtx = createContext<{ lang: Lang; t: (k: string) => string }>({ lang: 'es', t: (k) => k });
@@ -890,6 +890,23 @@ function VirtualMentorChoice({onCoach,onProfessional}:{onCoach:()=>void;onProfes
   </div>;
 }
 
+function DailyMealSuggestions({targetKcal}:{targetKcal:number}) {
+  const today=new Date().toLocaleDateString('en-CA');
+  const [skip,setSkip]=useState<string[]>([]);
+  const [rotation,setRotation]=useState(0);
+  const options=suggestDailyMeals(targetKcal,today+'-'+rotation,skip);
+  return <div className="card" aria-label="Menú propuesto del día">
+    <div className="eyebrow">IDEAS PARA COMER HOY</div><h3>Menú orientativo</h3>
+    {options.length?options.map(({meal,kcal,proteinG},i)=><p key={meal.id}>{['Comida 1','Comida 2','Comida 3'][i]}: {meal.title} · ≈{kcal} kcal · {proteinG} g de proteína</p>):<p>No hay platos con los filtros seleccionados.</p>}
+    <label>Evitar ingrediente <select value="" onChange={e=>{if(e.target.value)setSkip(v=>v.includes(e.target.value)?v:[...v,e.target.value]);}}>
+      <option value="">Seleccionar…</option>{FOODS.filter(x=>!skip.includes(x.id)).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+    </select></label>
+    {skip.length>0&&<button type="button" onClick={()=>setSkip([])}>Quitar filtros ({skip.length})</button>}
+    <button type="button" onClick={()=>setRotation(x=>x+1)}>Cambiar sugerencias</button>
+    <p className="muted">Combinaciones orientativas, no un plan alimentario completo. Se pueden ajustar las porciones desde Nutrición. No se registran como consumidas.</p>
+  </div>;
+}
+
 function NutritionTodaySummary() {
   const [data,setData]=useState<any>(null);
   useEffect(()=>{api<any>('GET','/api/nutrition').then(setData).catch(()=>{});},[]);
@@ -899,6 +916,7 @@ function NutritionTodaySummary() {
     <h3>{data.target ? `${Math.round(data.today.kcal)} / ${Math.round(data.target.kcal)} kcal registradas` : 'Objetivo nutricional sin configurar'}</h3>
     <p className="muted">{data.suggestedNutrition ? `Ajuste sugerido: ${data.suggestedNutrition.suggestedAdjustmentPct}% (editable)` : 'Completá tu evaluación para recibir una sugerencia.'}</p>
     <p className="muted">Los menús propuestos no cuentan como comida consumida.</p>
+    <DailyMealSuggestions targetKcal={data.target?.kcal??1800}/>
   </section>;
 }
 
