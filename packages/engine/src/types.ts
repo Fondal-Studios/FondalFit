@@ -25,6 +25,7 @@ export interface Prescription {
   repMax: number;
   rirTarget: number;
   load: number; // kg, 0 for bodyweight
+  durationSeconds?: number; // isometric hold target; repetitions otherwise
 }
 
 export interface PlanDay { name: string; items: Prescription[]; run?: {minutes:number; intensity:'easy'|'moderate'; note:string} }
