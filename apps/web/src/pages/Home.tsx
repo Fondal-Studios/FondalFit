@@ -83,7 +83,7 @@ export function Home() {
         {p.week&&<p><strong>{p.week.doneDays.length} de {days.length} jornadas completadas esta semana.</strong></p>}
         <button onClick={()=>nav.go('train')}>Ver mis entrenamientos</button>
       </section>
-      {menus.data?.menus?.length>0&&<section className="card"><h3>Idea de comida para hoy</h3><p>{t('dish_'+menus.data.menus[0]!.id)} · ≈{Math.round(4*menus.data.menus[0]!.p+4*menus.data.menus[0]!.c+9*menus.data.menus[0]!.f)} kcal</p><p className="muted small">Ejemplo informativo, no una dieta prescrita.</p><button onClick={()=>nav.go('food')}>Ver alimentos y platos</button></section>}
+      {menus.data?.menus?.[0]&&<section className="card"><h3>Idea de comida para hoy</h3><p>{t('dish_'+menus.data.menus[0].id)} · ≈{Math.round(4*menus.data.menus[0].p+4*menus.data.menus[0].c+9*menus.data.menus[0].f)} kcal</p><p className="muted small">Ejemplo informativo, no una dieta prescrita.</p><button onClick={()=>nav.go('food')}>Ver alimentos y platos</button></section>}
 
       {p.away && p.away.gapDays >= 10 && p.away.options && (
         <div className="card alert"><h3>{t('welcomeBack')} · {p.away.gapDays} {t('daysAway')}</h3><p>{t('returnIntro')}</p>
