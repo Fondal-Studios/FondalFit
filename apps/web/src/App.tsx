@@ -129,6 +129,13 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
   const t = useT();
   const nav = useNav();
   const { me, refresh } = useApp();
+  const [professionalNotices,setProfessionalNotices]=useState<{code:string;category?:string;message:string}[]>([]);
+  useEffect(()=>{
+    if(!(me.canPro||me.mode==='medical'||me.mode==='admin'))return;
+    let active=true;
+    api<{notifications:{code:string;category?:string;message:string}[]}>('GET','/api/profiles/notifications').then(r=>{if(active)setProfessionalNotices(r.notifications);}).catch(()=>{});
+    return()=>{active=false;};
+  },[me.id,me.mode,me.canPro]);
   const tutorial=useTutorialStatus(me.id,me.mode);
   useEffect(()=>{const show=()=>tutorial.show();window.addEventListener('fondal:show-tutorial',show);return()=>window.removeEventListener('fondal:show-tutorial',show);},[tutorial.show]);
   const needsConsent = me.mode === 'athlete' && !(me.consents.terms && me.consents.health_data);
@@ -144,6 +151,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
         {!me.canPro && me.mode === 'athlete' && <button className="linkbtn" onClick={() => nav.push('settings')}>🎓 {t('proModeShort')}</button>}
         {(me.canPro || me.mode === 'medical' || me.mode === 'admin') && <div className="modepill" role="group" aria-label={t('accountMode')}>{modes.map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={() => void switchMode(m as 'athlete' | 'pro')}>{t(m === 'pro' ? 'pro' : m === 'medical' ? 'navHealth' : m === 'admin' ? 'admin' : 'athlete')}</button>)}</div>}
       </header>
+      {professionalNotices.length>0&&<section className="card" role="status" aria-label="Notificaciones profesionales"><h2>Notificaciones profesionales ({professionalNotices.length})</h2><ul>{professionalNotices.map((n,i)=><li key={n.code+'-'+(n.category??i)}>{n.message}</li>)}</ul><button type="button" onClick={()=>nav.push('profile')}>Completar mi perfil profesional</button><button type="button" onClick={()=>api<{notifications:typeof professionalNotices}>('GET','/api/profiles/notifications').then(r=>setProfessionalNotices(r.notifications)).catch(()=>{})}>Actualizar avisos</button></section>}
       {!needsConsent&&tutorial.open&&<Tutorial initial onClose={tutorial.hide}/>}
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<div className="skeleton" role="status" aria-label={t('loading')} />}>
