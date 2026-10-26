@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {api} from '../api';
 import {Page} from '../nav';
+import {TutorFoodLog} from './TutorFoodLog';
 
 type Tutor={id:string;name:string;role:string;style:string;priceXp:number;sprite:string;owned:boolean};
 type Catalog={tutors:Tutor[];selectedId:string;xp:number;xpEarned:number;aiConfigured:boolean};
@@ -43,6 +44,7 @@ export function TutorLounge(){
     </article>)}
    </div>
   </section>
+  <TutorFoodLog tutorName={selected?.name??'tu tutor'}/>
   <section className="card">
    <h3>Charlá con {selected?.name??'tu tutor'}</h3>
    <p className="muted">Podés consultar sobre ideas de comidas, información de calorías, entrenamiento, descanso y constancia. Ninguna sugerencia es una dieta prescrita ni modifica tu programa por sí sola.</p>
