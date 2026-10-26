@@ -329,7 +329,22 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   });
 
   /* ---------------- Nutrition ---------------- */
-  /** Three menus for the day (30 rotate every 10 days), portions scaled to the saved calorie target and diet. */
+  /** Voluntary health-context flag; no diagnosis details are required or exposed in recipe responses. */
+  app.put('/api/nutrition/medical-context', { preHandler: athleteOnly }, async (req, reply) => {
+    if (!await needHealth(req, reply)) return;
+    const b = parse(z.object({ hasCondition: z.boolean() }), req.body, reply);
+    if (!b) return;
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'medical_context',?,?)").run(req.user!.id, JSON.stringify(b), now());
+    return { ok: true, requiresProfessionalConsultation: b.hasCondition };
+  });
+  app.get('/api/nutrition/medical-context', { preHandler: athleteOnly }, async (req) => {
+    const row = await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='medical_context' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
+    const hasCondition = row ? JSON.parse(row.data).hasCondition === true : false;
+    return { hasCondition, requiresProfessionalConsultation: hasCondition,
+      notice: hasCondition ? 'Por haber registrado una enfermedad, consultá con un/a licenciado/a en Nutrición o médico/a responsable antes de seguir recomendaciones alimentarias. Esta aplicación no indica dietas terapéuticas.' : null };
+  });
+
+  /** Rotating informational dishes, without individualized portion prescriptions. */
   app.get('/api/nutrition/menus', { preHandler: athleteOnly }, async (req, reply) => {
     const q = parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), shuffle: z.coerce.number().int().min(0).max(1000).default(0) }), req.query, reply);
     if (!q) return;
@@ -338,8 +353,16 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const day = dayNumberOf(new Date((q.date ?? now().slice(0, 10)) + 'T12:00:00Z'));
     // Informational recipe examples only: do not scale portions to an individual's calorie target.
     // A dietitian-reviewed prescription must be implemented separately with verified credentials.
+    const condition = await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='medical_context' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
+    const hasCondition = condition ? JSON.parse(condition.data).hasCondition === true : false;
+    const assessment = await db.prepare("SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
+    const goal = assessment ? (JSON.parse(assessment.data) as {goal?:string}).goal ?? 'general' : 'general';
     const menus = menusForDay(day + q.shuffle, 2000, t.diet ?? []);
-    return { kcal: t.kcal, shuffle: q.shuffle, menus, informationalOnly: true,
+    // Rank example recipes by sports interest; do not alter serving sizes or prescribe a diet.
+    if (goal === 'hypertrophy' || goal === 'strength') menus.sort((a,b)=>b.p-a.p);
+    else if (goal === 'fat_loss') menus.sort((a,b)=>a.kcal-b.kcal);
+    
+    return { kcal: t.kcal, shuffle: q.shuffle, menus, goal, informationalOnly: true, requiresProfessionalConsultation: hasCondition, medicalNotice: hasCondition ? 'Registraste una enfermedad: consultá con un/a nutricionista matriculado/a o médico/a responsable antes de seguir recomendaciones alimentarias.' : null,
       disclaimer: 'Ejemplos generales de comidas, no constituyen una dieta ni una prescripción nutricional. Las cantidades y valores son aproximados. Consultá a un/a licenciado/a en Nutrición matriculado/a para un plan individualizado. Los filtros de ingredientes no garantizan ausencia de alérgenos.' };
   });
 
