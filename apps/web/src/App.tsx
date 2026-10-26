@@ -120,7 +120,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
             {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
-            {tab === 'today' && <><ActivityBlocks/><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'today' && <><ActivityBlocks/><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><NutritionTodaySummary/><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
@@ -890,6 +890,18 @@ function VirtualMentorChoice({onCoach,onProfessional}:{onCoach:()=>void;onProfes
   </div>;
 }
 
+function NutritionTodaySummary() {
+  const [data,setData]=useState<any>(null);
+  useEffect(()=>{api<any>('GET','/api/nutrition').then(setData).catch(()=>{});},[]);
+  if(!data)return null;
+  return <section className="card" aria-label="Alimentación de hoy">
+    <div className="eyebrow">ALIMENTACIÓN DE HOY</div>
+    <h3>{data.target ? `${Math.round(data.today.kcal)} / ${Math.round(data.target.kcal)} kcal registradas` : 'Objetivo nutricional sin configurar'}</h3>
+    <p className="muted">{data.suggestedNutrition ? `Ajuste sugerido: ${data.suggestedNutrition.suggestedAdjustmentPct}% (editable)` : 'Completá tu evaluación para recibir una sugerencia.'}</p>
+    <p className="muted">Los menús propuestos no cuentan como comida consumida.</p>
+  </section>;
+}
+
 function Nutrition() {
   const [d,setD]=useState<any>(null);
   const [p,setP]=useState({sex:'f',weightKg:70,heightCm:170,age:30,activity:1.375,goal:'general',adjustmentPct:0});
@@ -900,7 +912,7 @@ function Nutrition() {
   const [editTarget,setEditTarget]=useState(false);
   const [quick,setQuick]=useState('');
   const [portions,setPortions]=useState<Portion[]>([]);
-  const load=()=>api('GET','/api/nutrition').then(setD).catch(()=>setError('No se pudo cargar la alimentación.'));
+  const load=()=>api<any>('GET','/api/nutrition').then(data=>{setD(data);const n=data.suggestedNutrition;if(n)setP(prev=>({...prev,goal:n.goal,weightKg:n.weightKg??prev.weightKg,heightCm:n.heightCm??prev.heightCm,age:n.age??prev.age,adjustmentPct:n.suggestedAdjustmentPct}));}).catch(()=>setError('No se pudo cargar la alimentación.'));
   useEffect(()=>{load();},[]);
   const calc=async()=>{setError('');try{await api('POST','/api/nutrition/target',p);setEditTarget(false);load();}catch{setError('No se pudo calcular el objetivo.');}};
   const estimate=async()=>{if(!m.meal.trim())return;setBusy(true);setError('');try{
@@ -915,6 +927,7 @@ function Nutrition() {
   const target=d?.target;
   return <section>
     <DailyEnergyCalendar />
+    {d?.suggestedNutrition&&<div className="card"><h3>Propuesta según tu entrenamiento</h3><p>Objetivo: {d.suggestedNutrition.goal} · Ajuste orientativo: {d.suggestedNutrition.suggestedAdjustmentPct}% · {d.suggestedNutrition.trainingDays} sesiones semanales.</p><p className="muted">Estimación editable; confirmar los datos antes de guardar un objetivo.</p></div>}
     <div className="card"><h2>Tu objetivo de energía</h2>
       {target&&<><p className="metric"><strong>{target.kcal}</strong><span>kcal por día (estimadas)</span></p>
         <p>Consumidas: {Math.round(d.today.kcal)} kcal · Restantes: {Math.round(target.kcal-d.today.kcal)} kcal</p>
