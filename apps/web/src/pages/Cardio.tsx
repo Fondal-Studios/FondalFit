@@ -125,7 +125,8 @@ export function Cardio() {
           <p className="muted">{t('weekRun')}: <b>{hist.data.weekRunKm}</b></p>
           {hist.data.alerts.map((a) => <p key={a} className="warn" role="alert">{t('a_' + a)}</p>)}
           {!hist.data.activities.length && <p className="muted">{t('noActivities')}</p>}
-          {hist.data.activities.map((a) => <p key={a.id} className="muted">{String(a.started_at).slice(0, 10)} · {t(a.sport)} · {(a.distance_m / 1000).toFixed(2)} km · {fmtTime(a.moving_sec)} · {a.sport === 'bike' ? (a.moving_sec ? ((a.distance_m / a.moving_sec) * 3.6).toFixed(1) + ' km/h' : '–') : fmtPace(a.avg_pace_sec_km) + ' /km'}</p>)}</>}
+          {hist.data.activities.map((a: any) => <div className="row between" key={a.id} style={{ margin: '6px 0' }}><span className="muted" style={{ flex: 3 }}>{String(a.started_at).slice(0, 10)} · <b>{t(a.sport)}</b>{a.manual ? ' ✎' : ''} · {(a.distance_m / 1000).toFixed(2)} km · {fmtTime(a.moving_sec || a.duration_sec)}{a.sport === 'bike' ? (a.duration_sec ? ' · ' + ((a.distance_m / a.duration_sec) * 3.6).toFixed(1) + ' km/h' : '') : a.avg_pace_sec_km ? ' · ' + fmtPace(a.avg_pace_sec_km) + ' /km' : ''}{a.estimated_kcal ? ' · ≈' + a.estimated_kcal + ' kcal' : ''}</span><button aria-label={t('remove')} style={{ flex: 'none', minHeight: 36, padding: '0 10px' }} onClick={async () => { if (confirm(t('deleteActivityConfirm'))) { await api('DELETE', `/api/activities/${a.id}`); hist.reload(); } }}>✕</button></div>)}
+          <ManualActivity onSaved={hist.reload} /></>}
       </div>
       {locked&&<div className="cardio-lock" role="dialog" aria-modal="true" aria-label="Pantalla de carrera congelada">
        <h2>Corrida activa · pantalla bloqueada</h2>
@@ -146,4 +147,38 @@ function Route({ points }: { points: GeoPoint[] }) {
   const w = Math.max((maxLo - minLo) * k, 1e-5), h = Math.max(maxLa - minLa, 1e-5), sc = 180 / Math.max(w, h);
   const pts = points.filter((_, i) => i % Math.ceil(points.length / 200) === 0).map((p) => `${((p.lon - minLo) * k * sc + 10).toFixed(1)},${((maxLa - p.lat) * sc + 10).toFixed(1)}`).join(' ');
   return <svg viewBox={`0 0 ${w * sc + 20} ${h * sc + 20}`} className="route" role="img" aria-label="route"><polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /></svg>;
+}
+
+
+/** For activities done with another app or without GPS: just distance, time and (optionally) your own calories. */
+function ManualActivity({ onSaved }: { onSaved: () => void }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const today = new Date(); const pad = (n: number) => String(n).padStart(2, '0');
+  const [f, setF] = useState({ sport: 'run', date: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`, km: '', min: '', kcal: '' });
+  const [msg, setMsg] = useState('');
+  const km = Number(f.km.replace(',', '.')), min = Number(f.min.replace(',', '.'));
+  const valid = km >= 0 && km <= 400 && min >= 1 && min <= 1440 && (km > 0 || f.kcal !== '');
+  const save = async () => {
+    try {
+      const startedAt = new Date(`${f.date}T12:00:00`).toISOString();
+      const sec = Math.round(min * 60);
+      await api('POST', '/api/activities', { sport: f.sport, source: 'manual', startedAt, durationSec: sec, movingSec: sec, distanceM: Math.round(km * 1000), avgPaceSecKm: 0, elevGainM: 0, route: [], ...(f.kcal ? { kcal: Math.round(Number(f.kcal)) } : {}) });
+      setMsg(t('actSaved')); setF({ ...f, km: '', min: '', kcal: '' }); setOpen(false); onSaved();
+    } catch { setMsg(t('invalid')); }
+  };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button onClick={() => setOpen(!open)} aria-expanded={open}>＋ {t('logManually')}</button>
+      {msg && <p className="ok" role="status">{msg}</p>}
+      {open && <div className="card" style={{ marginTop: 8 }}>
+        <p className="muted small">{t('manualActHelp')}</p>
+        <Chips options={['run', 'bike', 'walk']} value={[f.sport]} onChange={(v) => setF({ ...f, sport: v[0]! })} />
+        <label>{t('date')}<input type="date" value={f.date} max={`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
+        <div className="grid3"><label>{t('distanceKm')}<input inputMode="decimal" value={f.km} onChange={(e) => setF({ ...f, km: e.target.value })} /></label>
+          <label>{t('minutes')}<input inputMode="decimal" value={f.min} onChange={(e) => setF({ ...f, min: e.target.value })} /></label>
+          <label>kcal ({t('optional')})<input inputMode="numeric" value={f.kcal} onChange={(e) => setF({ ...f, kcal: e.target.value.replace(/\D/g, '') })} /></label></div>
+        <button className="primary" disabled={!valid} onClick={save}>{t('save')}</button></div>}
+    </div>
+  );
 }

@@ -46,6 +46,13 @@ const profileSchema = z.object({
 const assessmentSchema = z.object({
   profile: profileSchema,
   goal: z.enum(['hypertrophy', 'strength', 'recomposition', 'fat_loss', 'endurance', 'vo2max', 'general', 'mobility']),
+  secondaryGoals: z.array(z.enum(['hypertrophy', 'strength', 'recomposition', 'fat_loss', 'endurance', 'vo2max', 'general', 'mobility'])).max(3).default([]),
+  /** measurable targets: body weight by a date, a 5K time, or a lift's estimated 1RM */
+  targets: z.array(z.discriminatedUnion('metric', [
+    z.object({ metric: z.literal('weight'), targetKg: z.number().min(30).max(300), byDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
+    z.object({ metric: z.literal('run5k'), targetSec: z.number().int().min(900).max(3600), byDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
+    z.object({ metric: z.literal('lift'), exerciseId: z.string().max(60), targetKg: z.number().min(5).max(600), byDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
+  ])).max(4).default([]),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
   strengthDays: z.number().int().min(0).max(6),
   cardioDays: z.number().int().min(0).max(6),
@@ -248,12 +255,18 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.post('/api/workouts', { preHandler: athleteOnly }, async (req, reply) => {
     if (!await needHealth(req, reply)) return;
     const b = parse(z.object({
-      dayIndex: z.number().int().min(0).max(5),
+      dayIndex: z.number().int().min(0).max(99),
+      name: z.string().trim().max(80).optional(),
       fatigue: z.number().min(1).max(10).default(5),
       items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
     if (!b) return;
     const uid = req.user!.id;
+    // dayIndex 99 = a one-off session picked from the library: logged (it counts for progress), but never changes the plan or its loads
+    if (b.dayIndex === 99) {
+      await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, 99, JSON.stringify(b), now());
+      return { applied: false, free: true, decisions: {}, deloadSuggested: false };
+    }
     const cur = await latestPlan(uid);
     if (!cur) return reply.code(409).send({ error: 'no_plan' });
     await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
@@ -311,12 +324,13 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   /* ---------------- Nutrition ---------------- */
   /** Three menus for the day (30 rotate every 10 days), portions scaled to the saved calorie target and diet. */
   app.get('/api/nutrition/menus', { preHandler: athleteOnly }, async (req, reply) => {
-    const q = parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), req.query, reply);
+    const q = parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), shuffle: z.coerce.number().int().min(0).max(1000).default(0) }), req.query, reply);
     if (!q) return;
     const t = await latestTarget(req.user!.id);
     if (!t) return reply.code(409).send({ error: 'no_target' });
     const day = dayNumberOf(new Date((q.date ?? now().slice(0, 10)) + 'T12:00:00Z'));
-    return { kcal: t.kcal, menus: menusForDay(day, t.kcal, t.diet ?? []) };
+    // `shuffle` skips ahead in the 30-menu rotation: each step shows the next three menus
+    return { kcal: t.kcal, shuffle: q.shuffle, menus: menusForDay(day + q.shuffle, t.kcal, t.diet ?? []) };
   });
 
   /** Rule-based, evidence-ranked supplement advice (works without the AI key). */
@@ -387,26 +401,36 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       distanceM: z.number().int().min(0).max(400000), avgPaceSecKm: z.number().int().min(0).max(3600), elevGainM: z.number().int().min(0).max(10000),
       route: z.array(z.tuple([z.number().min(-90).max(90), z.number().min(-180).max(180)])).max(600).default([]),
       recoveredGapM:z.number().int().min(0).max(30000).default(0),
+      /** manual / imported activities (done with another app): the user's own calories, when they know them */
+      kcal: z.number().int().min(0).max(8000).optional(), source: z.enum(['gps', 'manual', 'import']).default('gps'),
     }), req.body, reply);
     if (!b) return;
     const durationPace=b.distanceM>0?Math.round(b.durationSec*1000/b.distanceM):0;
     const weightKg=await profileWeight(req.user!.id);
-    const estimatedKcal=weightKg?activityEnergy(b.sport,b.distanceM,b.durationSec,weightKg):null;
-    const r = await db.prepare('INSERT INTO activities(user_id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m,route,created_at) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id').get(req.user!.id, b.sport, b.startedAt, b.durationSec, b.movingSec, b.distanceM, durationPace, b.elevGainM, JSON.stringify(b.route), now()) as { id: number };
+    const estimatedKcal=b.kcal ?? (weightKg?activityEnergy(b.sport,b.distanceM,b.durationSec,weightKg):null);
+    const r = await db.prepare('INSERT INTO activities(user_id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m,route,created_at,kcal_manual,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id').get(req.user!.id, b.sport, b.startedAt, b.durationSec, b.movingSec, b.distanceM, durationPace, b.elevGainM, JSON.stringify(b.route), now(), b.kcal ?? null, b.source) as { id: number };
     if(estimatedKcal!==null)await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'exercise',?,?)").run(req.user!.id,JSON.stringify({kind:'gps',activityId:r.id,kcal:estimatedKcal,sport:b.sport}),now());
     return { id:r.id,estimatedKcal,avgPaceSecKm:durationPace };
   });
   app.get('/api/activities', { preHandler: athleteOnly }, async (req) => {
     const uid = req.user!.id;
-    const rows = await db.prepare('SELECT id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m FROM activities WHERE user_id=? ORDER BY id DESC LIMIT 30').all(uid) as Record<string, number | string>[];
+    const rows = await db.prepare('SELECT id,sport,started_at,duration_sec,moving_sec,distance_m,avg_pace_sec_km,elev_gain_m,kcal_manual,source FROM activities WHERE user_id=? ORDER BY id DESC LIMIT 30').all(uid) as Record<string, number | string>[];
     const weightKg=await profileWeight(uid);
     const activities=rows.map(r=>{
       const meters=Number(r.distance_m)||0,seconds=Number(r.duration_sec)||0;
-      return {...r,avg_pace_sec_km:meters>0?Math.round(seconds*1000/meters):0,estimated_kcal:weightKg?activityEnergy(String(r.sport),meters,seconds,weightKg):null};
+      return {...r,avg_pace_sec_km:meters>0?Math.round(seconds*1000/meters):0,estimated_kcal:r.kcal_manual!==null&&r.kcal_manual!==undefined?Number(r.kcal_manual):weightKg?activityEnergy(String(r.sport),meters,seconds,weightKg):null,manual:r.source==='manual'||r.source==='import'};
     });
     const km = async (from: string, to: string) => ((await db.prepare("SELECT CAST(COALESCE(SUM(distance_m),0) AS DOUBLE PRECISION) k FROM activities WHERE user_id=? AND sport='run' AND created_at>=? AND created_at<?").get(uid, from, to) as { k: number }).k) / 1000;
     const thisWeek = await km(weekStart(0), '9999'), prev = await km(weekStart(1), weekStart(0));
     return { activities, weekRunKm: Math.round(thisWeek * 10) / 10, alerts: runningLoadAlert(prev, thisWeek) };
+  });
+  /** Remove an activity (e.g. logged twice, or recorded by mistake). */
+  app.delete('/api/activities/:id', { preHandler: athleteOnly }, async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const r = await db.prepare('DELETE FROM activities WHERE id=? AND user_id=?').run(id, req.user!.id);
+    if (!r.changes) return reply.code(404).send({ error: 'not_found' });
+    await db.prepare("DELETE FROM nutrition WHERE user_id=? AND kind='exercise' AND data LIKE ?").run(req.user!.id, `%\"activityId\":${id},%`);
+    return { ok: true };
   });
   app.get('/api/activities/:id', { preHandler: athleteOnly }, async (req, reply) => {
     const r = await db.prepare('SELECT * FROM activities WHERE id=? AND user_id=?').get(Number((req.params as { id: string }).id), req.user!.id) as { route: string } | undefined;
@@ -421,9 +445,9 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const nowLocal=new Date(Date.now()-offset*60000),today=nowLocal.toISOString().slice(0,10);
     const start=new Date(Date.parse(today+'T00:00:00Z')+offset*60000).toISOString();
     const end=new Date(Date.parse(today+'T00:00:00Z')+offset*60000+86400000).toISOString();
-    const rows=await db.prepare('SELECT id,sport,started_at,duration_sec,distance_m,moving_sec,elev_gain_m FROM activities WHERE user_id=? AND started_at>=? AND started_at<? ORDER BY id DESC').all(uid,start,end) as {id:number;sport:string;started_at:string;duration_sec:number;distance_m:number;moving_sec:number;elev_gain_m:number}[];
+    const rows=await db.prepare('SELECT id,sport,started_at,duration_sec,distance_m,moving_sec,elev_gain_m,kcal_manual FROM activities WHERE user_id=? AND started_at>=? AND started_at<? ORDER BY id DESC').all(uid,start,end) as {id:number;kcal_manual?:number|null;sport:string;started_at:string;duration_sec:number;distance_m:number;moving_sec:number;elev_gain_m:number}[];
     const weightKg=await profileWeight(uid);
-    const activities=rows.map(r=>({...r,avg_pace_sec_km:r.distance_m?Math.round(r.duration_sec*1000/r.distance_m):0,estimated_kcal:weightKg?activityEnergy(r.sport,r.distance_m,r.duration_sec,weightKg):null}));
+    const activities=rows.map(r=>({...r,avg_pace_sec_km:r.distance_m?Math.round(r.duration_sec*1000/r.distance_m):0,estimated_kcal:r.kcal_manual!==null&&r.kcal_manual!==undefined?Number(r.kcal_manual):weightKg?activityEnergy(r.sport,r.distance_m,r.duration_sec,weightKg):null}));
     const totalKcal=activities.reduce((n,r)=>n+(r.estimated_kcal??0),0);
     return {date:today,activities,totalKcal,estimated:weightKg!==null};
   });
@@ -449,7 +473,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const start=new Date(Date.UTC(year,month-1,1)+q.timezoneOffset*60000).toISOString();
     const end=new Date(Date.UTC(year,month,1)+q.timezoneOffset*60000).toISOString();
     const rows=await db.prepare('SELECT kind,data,created_at FROM nutrition WHERE user_id=? AND created_at>=? AND created_at<? ORDER BY created_at').all(req.user!.id,start,end) as {kind:string;data:string;created_at:string}[];
-    const activities=await db.prepare('SELECT sport,started_at,duration_sec,distance_m FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(req.user!.id,start,end) as {sport:string;started_at:string;duration_sec:number;distance_m:number}[];
+    const activities=await db.prepare('SELECT sport,started_at,duration_sec,distance_m,kcal_manual FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(req.user!.id,start,end) as {sport:string;started_at:string;duration_sec:number;distance_m:number;kcal_manual:number|null}[];
     const targetRow=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(req.user!.id) as {data:string}|undefined;
     const target=targetRow?JSON.parse(targetRow.data) as {explain?:{bmr:number;lifeKcal:number;trainKcal:number;tdee:number};kcal?:number}:null;
     const weight=await profileWeight(req.user!.id);
@@ -461,7 +485,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       if(row.kind==='log'){entry.intake+=Number(data.kcal)||0;entry.meals.push({name:data.meal??'Comida',kcal:Number(data.kcal)||0});}
       if(row.kind==='exercise'&&data.kind==='blocks'){entry.exerciseKcal+=Number(data.kcal)||0;entry.sessions.push(...(data.blocks??[]).map(x=>x.name));}
     }
-    for(const a of activities){const entry=get(a.started_at);const kcal=weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0;entry.exerciseKcal+=kcal;entry.sessions.push(a.sport==='run'?'Corrida':a.sport==='bike'?'Bicicleta':'Caminata');}
+    for(const a of activities){const entry=get(a.started_at);const kcal=a.kcal_manual!==null&&a.kcal_manual!==undefined?Number(a.kcal_manual):weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0;entry.exerciseKcal+=kcal;entry.sessions.push(a.sport==='run'?'Corrida':a.sport==='bike'?'Bicicleta':'Caminata');}
     const bmr=target?.explain?.bmr??0,base=bmr>0?bmr*1.2:0;
     const summary=[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(item=>{
       const expense=Math.round(base+item.exerciseKcal),balance=base>0?Math.round(item.intake-expense):null;
@@ -488,12 +512,15 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const neatProxy=Math.max(0,lifeDaily-bmr);
     const mealRows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='log' AND created_at>=? AND created_at<?").all(uid,start,end) as {data:string}[];
     const eaten=Math.round(mealRows.reduce((n,r)=>n+Math.max(0,Number((JSON.parse(r.data) as {kcal?:number}).kcal)||0),0));
-    const activityRows=await db.prepare('SELECT sport,distance_m,duration_sec FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(uid,start,end) as {sport:string;distance_m:number;duration_sec:number}[];
+    const activityRows=await db.prepare('SELECT sport,distance_m,duration_sec,kcal_manual FROM activities WHERE user_id=? AND started_at>=? AND started_at<?').all(uid,start,end) as {sport:string;distance_m:number;duration_sec:number;kcal_manual:number|null}[];
     const weight=await profileWeight(uid);
-    const gpsKcal=activityRows.reduce((n,a)=>n+(weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0),0);
+    const gpsKcal=activityRows.reduce((n,a)=>n+(a.kcal_manual!==null&&a.kcal_manual!==undefined?Number(a.kcal_manual):weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0),0);
     const blockRows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='exercise' AND created_at>=? AND created_at<?").all(uid,start,end) as {data:string}[];
     const blocksKcal=blockRows.reduce((n,r)=>{const d=JSON.parse(r.data) as {kind?:string;kcal?:number};return n+(d.kind==='blocks'?Math.max(0,Number(d.kcal)||0):0);},0);
-    const exerciseKcal=Math.round(gpsKcal+blocksKcal);
+    // strength sessions logged today: ≈45 min at ~4.5 MET above resting (a stated assumption, not a measurement)
+    const strengthCount=(await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM workouts WHERE user_id=? AND created_at>=? AND created_at<?').get(uid,start,end) as {c:number}).c;
+    const strengthKcal=weight?strengthCount*Math.round((4.5-1)*3.5*weight/200*45):0;
+    const exerciseKcal=Math.round(gpsKcal+blocksKcal+strengthKcal);
     const basalSoFar=Math.round(bmr*dayFraction),neatSoFar=Math.round(neatProxy*dayFraction);
     const burnedSoFar=basalSoFar+neatSoFar+exerciseKcal;
     // Replace planned-training average with exercises actually registered; retain goal adjustment.
@@ -671,7 +698,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   registerMemory({ app, db, parse, audit, now, athleteOnly });
   registerPlans({ app, db, parse, audit, now, athleteOnly, needHealth, latestPlan, savePlan });
   registerPro({ app, db, parse, audit, now, proOnly, athleteOnly, hasConsent, savePlan });
-  registerFood({ app, db, parse, audit, now, athleteOnly, needHealth, profileWeight, activityEnergy });
+  registerFood({ app, db, parse, audit, now, athleteOnly, needHealth, profileWeight, activityEnergy, ai: opts.coach });
 
   // Serve the built PWA from the same origin (single-service deploy).
   if (opts.staticDir && existsSync(opts.staticDir)) {

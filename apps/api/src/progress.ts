@@ -95,6 +95,39 @@ export function registerProgress(c: ProgressCtx) {
     return { exerciseId: id, series };
   });
 
+  /** Last logged sets per exercise ("last time: 40 kg × 8") for the session screen. */
+  app.get('/api/progress/last', { preHandler: athleteOnly }, async (req, reply) => {
+    const q = c.parse(z.object({ ids: z.string().max(1500) }), req.query, reply);
+    if (!q) return;
+    const want = new Set(q.ids.split(',').filter(Boolean).slice(0, 40));
+    const out: Record<string, { at: string; sets: { weight: number; reps: number; rir: number }[] }> = {};
+    for (const w of (await workouts(req.user!.id)).reverse()) for (const it of w.items) if (want.has(it.exerciseId) && !out[it.exerciseId]) out[it.exerciseId] = { at: w.at, sets: it.sets };
+    return { last: out };
+  });
+
+  /** Progress toward the measurable targets chosen in the assessment (all values are estimates, labelled as such in the UI). */
+  app.get('/api/goals', { preHandler: athleteOnly }, async (req) => {
+    const uid = req.user!.id;
+    const a = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id ASC LIMIT 1').get(uid) as { data: string } | undefined;
+    const latestA = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined;
+    if (!latestA) return { goal: null, secondary: [], targets: [] };
+    const cur = JSON.parse(latestA.data) as { goal: string; secondaryGoals?: string[]; targets?: ({ metric: 'weight'; targetKg: number; byDate?: string } | { metric: 'run5k'; targetSec: number; byDate?: string } | { metric: 'lift'; exerciseId: string; targetKg: number; byDate?: string })[]; profile: { weightKg: number } };
+    const first = a ? (JSON.parse(a.data) as { profile: { weightKg: number } }) : cur;
+    const ms = (await db.prepare('SELECT day,data FROM measurements WHERE user_id=? ORDER BY day, id').all(uid) as { day: string; data: string }[]).map((m) => ({ day: m.day, ...(JSON.parse(m.data) as { weightKg?: number }) })).filter((m) => m.weightKg !== undefined);
+    const weights = ms.map((m) => m.weightKg!);
+    const startW = first.profile.weightKg, nowW = weights[weights.length - 1] ?? cur.profile.weightKg;
+    const runs = await db.prepare("SELECT distance_m,duration_sec FROM activities WHERE user_id=? AND sport='run' AND distance_m>=5000").all(uid) as { distance_m: number; duration_sec: number }[];
+    const best5k = runs.length ? Math.min(...runs.map((r) => Math.round((r.duration_sec * 5000) / r.distance_m))) : null;
+    const wk = await workouts(uid);
+    const out = cur.targets?.map((t) => {
+      if (t.metric === 'weight') { const total = startW - t.targetKg; const pct = total === 0 ? 100 : Math.max(0, Math.min(100, Math.round(((startW - nowW) / total) * 100))); return { ...t, current: nowW, start: startW, pct }; }
+      if (t.metric === 'run5k') return { ...t, current: best5k, pct: best5k ? Math.min(100, Math.round((t.targetSec / best5k) * 100)) : 0, projected: true };
+      const e1 = Math.max(0, ...wk.flatMap((w) => w.items.filter((i) => i.exerciseId === t.exerciseId).flatMap((i) => i.sets.filter((s) => s.reps >= 1 && s.reps <= 12).map((s) => estimate1RM(s.weight, s.reps)))));
+      return { ...t, current: e1 || null, pct: e1 ? Math.min(100, Math.round((e1 / t.targetKg) * 100)) : 0, projected: true };
+    }) ?? [];
+    return { goal: cur.goal, secondary: cur.secondaryGoals ?? [], targets: out };
+  });
+
   /* ----- running / cycling weekly series ----- */
   app.get('/api/progress/running', { preHandler: athleteOnly }, async (req) => {
     const rows = await db.prepare('SELECT sport,started_at,moving_sec,duration_sec,distance_m FROM activities WHERE user_id=? ORDER BY started_at').all(req.user!.id) as { sport: string; started_at: string; moving_sec: number; duration_sec: number; distance_m: number }[];

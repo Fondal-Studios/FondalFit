@@ -1,63 +1,121 @@
-import {CustomBlocks} from './ActivityBlocks';
-import { Bar, Loading, useLoad, useT, type Me } from '../ctx';
+import { useState } from 'react';
+import { api } from '../api';
+import { Bar, Loading, useApp, useLoad, useT } from '../ctx';
+import { Ring } from '../charts';
+import { useNav } from '../nav';
+import { dayMinutes, dayMuscles } from './Train';
+import type { Plan } from '@fondal/engine';
 
-export function Home({ me, go }: { me: Me; go: (tab: string) => void }) {
-  const t = useT();
-  const plan = useLoad<{ version?: number; plan: { days: { name: string; kind?: string; items: unknown[]; cardio?: { modality: string; type: string; durationMin: number } }[] } | null }>('/api/plan');
-  const nut = useLoad<{ target: { kcal: number } | null; today: { kcal: number } }>('/api/nutrition');
-  const prog = useLoad<{ total: number }>('/api/progress');
-  const act = useLoad<{ activities: unknown[] }>('/api/activities');
+interface PlanRes {
+  plan: Plan | null; version?: number;
+  current?: { label: string; weekIndex: number; weekCount: number; ramp: boolean };
+  advice?: { mode: 'normal' | 'light' | 'rest'; reason: string } | null;
+  away?: { gapDays: number; options: { weeks: number; setsMult: number } | null };
+  week?: { doneDays: number[]; nextIndex: number | null };
+}
+interface Energy { eaten: number; targetBudget: number | null; remaining: number | null; exerciseKcal: number; burnedSoFar: number; basalSoFar: number; neatSoFar: number; dailyBmr: number }
+interface Challenge { id: string; target: number; value: number; pct: number; done: boolean; metric: string }
+
+/** "Hoy": what to do now (one tap), how the day's energy stands, and what changed since last time. */
+export function Home() {
+  const t = useT(), nav = useNav(), { me, toast } = useApp();
+  const plan = useLoad<PlanRes>('/api/plan');
+  const energy = useLoad<Energy>('/api/energy/today?timezoneOffset=' + new Date().getTimezoneOffset());
+  const daily = useLoad<{ activities: { id: number; sport: string; duration_sec: number; distance_m: number; avg_pace_sec_km: number; estimated_kcal: number | null }[]; totalKcal: number }>('/api/activity/today?timezoneOffset=' + new Date().getTimezoneOffset());
+  const ch = useLoad<{ challenges: Challenge[]; points: number }>('/api/challenges');
+  const goals = useLoad<{ targets: { metric: string; pct: number; targetKg?: number; targetSec?: number; exerciseId?: string; current: number | null; byDate?: string; projected?: boolean }[] }>('/api/goals');
   const gam = useLoad<{ level: number; xp: number; streakWeeks: number }>('/api/gamification');
-  const energy=useLoad<{date:string;basalSoFar:number;neatSoFar:number;exerciseKcal:number;burnedSoFar:number;eaten:number;dailyBmr:number;dailyNeatProxy:number;targetBudget:number|null;remaining:number|null;complete:boolean;note:string}>('/api/energy/today?timezoneOffset='+new Date().getTimezoneOffset());
-  const daily = useLoad<{date:string;totalKcal:number;estimated:boolean;activities:{id:number;sport:string;started_at:string;duration_sec:number;distance_m:number;avg_pace_sec_km:number;estimated_kcal:number|null;elev_gain_m:number}[]}>('/api/activity/today?timezoneOffset='+new Date().getTimezoneOffset());
-  const fmtPace=(sec:number)=>sec>0?`${Math.floor(sec/60)}:${String(Math.round(sec%60)).padStart(2,'0')}`:'—';
+  const [busy, setBusy] = useState(false);
 
-  if (!plan.data || !nut.data) return <Loading err={plan.err || nut.err} retry={() => { plan.reload(); nut.reload(); }} />;
-  if (!plan.data.plan) return <><HomeEnergy data={energy.data} reload={energy.reload} go={go}/><DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/><div className="card"><h2>{t('hi')}, {me.name}</h2><p>{t('noPlanYet')}</p><button className="primary" onClick={() => go('wizard')}>{t('createPlan')}</button></div></>;
-  const days = plan.data.plan.days;
-  const done = (prog.data?.total ?? 0) + (act.data?.activities.length ?? 0);
-  const next = days[done % days.length]!;
-  const tg = nut.data.target;
+  if (!plan.data) return <Loading err={plan.err} retry={() => { plan.reload(); energy.reload(); }} />;
+  const p = plan.data;
+
+  const doReturn = async (mode: 'resume' | 'adapted' | 'restart') => {
+    setBusy(true);
+    try { await api('POST', '/api/plan/return', { mode }); toast(t('returnDone')); plan.reload(); } catch { toast(t('netError')); } finally { setBusy(false); }
+  };
+
+  const hello = <div><p className="muted small" style={{ margin: 0 }}>{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p><h2>{t('hi')}, {me.name}</h2></div>;
+
+  if (!p.plan) return (
+    <div className="stack">{hello}
+      <div className="card hero"><h3>{t('welcomeTitle')}</h3><p>{t('noPlanYet')}</p><p className="muted">{t('planWizardIntro')}</p><button className="primary big" onClick={() => nav.push('wizard')}>{t('createPlan')}</button></div>
+      <div className="grid2"><button className="tile" onClick={() => nav.push('routines')}><b>📚</b><span>{t('orPickRoutine')}</span></button><button className="tile" onClick={() => nav.push('exercises')}><b>🏋️</b><span>{t('exercises')}</span></button></div>
+      <button className="primary" onClick={() => nav.go('food')}>{t('trackFoodFirst')}</button>
+    </div>
+  );
+
+  const days = p.plan.days;
+  const idx = p.week?.nextIndex ?? null;
+  const next = idx !== null ? days[idx]! : null;
+  const e = energy.data;
+  const doneAll = idx === null;
+
   return (
-    <>
-      <h2>{t('hi')}, {me.name}</h2>
-      <HomeEnergy data={energy.data} reload={energy.reload} go={go}/>
-      <DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/>
-      <CustomBlocks onSaved={()=>{daily.reload();energy.reload();}}/>
-      <div className="card">
-        <p className="muted">{(daily.data?.activities.length??0)>0?'Actividad registrada hoy · Próxima sugerencia opcional':t('nextSession')}</p>
-        <h3>{next.name} · {next.kind === 'cardio' && next.cardio ? `${t(next.cardio.modality)} · ${t('ct_' + next.cardio.type)} · ${next.cardio.durationMin} ${t('minutes_short')}` : `${next.items.length} ${t('ex_count')}`}</h3>
-        <button className="primary" onClick={() => go(next.kind === 'cardio' ? 'cardio' : 'train')}>{t('startNow')}</button>
+    <div className="stack">
+      {hello}
+
+      {p.away && p.away.gapDays >= 10 && p.away.options && (
+        <div className="card alert"><h3>{t('welcomeBack')} · {p.away.gapDays} {t('daysAway')}</h3><p>{t('returnIntro')}</p>
+          <div className="stack"><button className="primary" disabled={busy} onClick={() => doReturn('adapted')}>{t('returnAdapted')} <span className="small">({p.away.options.weeks} {t('weeks')}, −{Math.round((1 - p.away.options.setsMult) * 100)}% {t('volume')})</span></button>
+            <button disabled={busy} onClick={() => doReturn('resume')}>{t('returnResume')}</button><button disabled={busy} onClick={() => doReturn('restart')}>{t('returnRestart')}</button></div></div>
+      )}
+      {p.advice && p.advice.mode !== 'normal' && <div className={'card alert' + (p.advice.mode === 'rest' ? ' bad' : '')} role="status"><p style={{ margin: 0 }}>{p.advice.mode === 'rest' ? t('adviceRest') : t('adviceLight')}</p></div>}
+
+      <div className="card hero">
+        {doneAll ? (<><p className="muted">{t('weekComplete')}</p><h3>🎉 {t('weekCompleteTitle')}</h3><div className="row"><button onClick={() => nav.go('train')}>{t('nav_train')}</button><button onClick={() => nav.push('routines')}>{t('routines')}</button></div></>) : next && (
+          <>
+            <div className="row between"><span className="muted small">{p.current && p.current.weekCount > 1 ? `${p.current.label === 'program' ? t('weekN') : t('block')} ${p.current.weekIndex + 1}/${p.current.weekCount} · ${t('phase_' + p.current.label)}` : t('nextSession')}</span>{p.current?.ramp && <span className="badge lv2">{t('rampShort')}</span>}</div>
+            <h3>{next.name} · {t(next.kind === 'cardio' && next.cardio ? next.cardio.modality : 'kind_' + (next.kind ?? 'strength'))}</h3>
+            <p className="muted">{dayMinutes(next)} {t('minutes_short')}{next.kind === 'cardio' && next.cardio ? ` · ${t('ct_' + next.cardio.type)}` : ` · ${dayMuscles(next).map((m) => t('m_' + m)).join(', ')} · ${next.items.length} ${t('ex_count')}`}</p>
+            <button className="primary big" onClick={() => (next.kind === 'cardio' ? nav.go('cardio') : nav.push('session', { day: next, index: idx }))}>▶ {t('startNow')}</button>
+            <p className="small" style={{ margin: '8px 0 0' }}><button className="link" onClick={() => nav.go('train')}>{t('seeWeek')} →</button></p>
+          </>)}
       </div>
-      {tg && <div className="card" onClick={() => go('food')} role="button" tabIndex={0}>
-        <p>{t('eaten')}: <b>{nut.data.today.kcal}</b> / {tg.kcal} {t('kcalShort')}</p><Bar pct={(nut.data.today.kcal / tg.kcal) * 100} />
-        <button className="link">{t('seeMenus')} →</button></div>}
-      {gam.data && <p className="muted">{t('level')} {gam.data.level} · {gam.data.xp} XP · {t('streak')}: {gam.data.streakWeeks}</p>}
-    </>
+
+      <div className="card">
+        <div className="row" style={{ alignItems: 'center' }}>
+          {e && e.targetBudget !== null ? (
+            <Ring pct={(e.eaten / e.targetBudget) * 100} size={118}><b>{Math.abs(e.remaining ?? 0)}</b><small>{(e.remaining ?? 0) >= 0 ? t('remaining') : t('over')}</small></Ring>
+          ) : <div className="skeleton" style={{ width: 118, height: 118, borderRadius: '50%' }} />}
+          <div style={{ flex: 1 }}>
+            <h3 style={{ margin: 0 }}>{t('energyToday')}</h3>
+            {e && <><p style={{ margin: '4px 0' }}>{t('eaten')} <b>{e.eaten}</b>{e.targetBudget !== null && <> / {e.targetBudget} {t('kcalShort')}</>}</p>
+              <p className="muted small" style={{ margin: 0 }}>{t('burnedSoFar')} ≈ {e.burnedSoFar} · 🏃 {e.exerciseKcal}</p></>}
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 10 }}><button className="primary" onClick={() => nav.push('addFood')}>＋ {t('addFood')}</button><button onClick={() => nav.go('food')}>{t('nav_nutrition')}</button></div>
+        <details><summary className="muted small">{t('energyWhat')}</summary><p className="muted small">{t('energyExplain')}</p></details>
+      </div>
+
+      {daily.data && daily.data.activities.length > 0 && (
+        <div className="card"><h3>{t('activityToday')}</h3>
+          {daily.data.activities.map((a) => <p key={a.id} style={{ margin: '4px 0' }}><b>{t(a.sport)}</b> · {(a.distance_m / 1000).toFixed(2)} km · {Math.floor(a.duration_sec / 60)} min{a.estimated_kcal ? ` · ≈${a.estimated_kcal} ${t('kcalShort')}` : ''}</p>)}
+          <button className="link" onClick={() => nav.push('progress')}>{t('progress')} →</button></div>
+      )}
+
+      {goals.data && goals.data.targets.length > 0 && (
+        <div className="card"><div className="row between"><h3>{t('myGoals')}</h3><button className="link" onClick={() => nav.push('wizard')}>{t('edit')}</button></div>
+          {goals.data.targets.map((g, i) => (
+            <div key={i} style={{ margin: '8px 0' }}>
+              <div className="row between small"><span>{g.metric === 'weight' ? `${t('goal_weight')} → ${g.targetKg} kg` : g.metric === 'run5k' ? `${t('goal_5k')} → ${fmtMin(g.targetSec!)}` : `${t('ex_' + g.exerciseId)} → ${g.targetKg} kg`}</span><span>{g.pct}%</span></div>
+              <Bar pct={g.pct} />{g.projected && <p className="muted small" style={{ margin: 0 }}>{t('estimateNote')}</p>}
+            </div>))}</div>
+      )}
+
+      {ch.data && (
+        <div className="card"><div className="row between"><h3>{t('weekChallenges')}</h3><button className="link" onClick={() => nav.push('challenges')}>{t('ranking')} →</button></div>
+          {ch.data.challenges.map((c) => <div key={c.id} style={{ margin: '8px 0' }}><div className="row between small"><span>{c.done ? '✅ ' : ''}{t('ch_' + c.id)}</span><span>{c.value}/{c.target}</span></div><Bar pct={c.pct} /></div>)}
+          {gam.data && <p className="muted small">{t('level')} {gam.data.level} · {gam.data.xp} XP · {t('streak')}: {gam.data.streakWeeks} · {ch.data.points} {t('weekPoints')}</p>}</div>
+      )}
+
+      <div className="grid2">
+        <button className="tile" onClick={() => nav.push('progress')}><b>📈</b><span>{t('progress')}</span></button>
+        <button className="tile" onClick={() => nav.push('routines')}><b>📚</b><span>{t('routines')}</span></button>
+        <button className="tile" onClick={() => nav.push('exercises')}><b>🏋️</b><span>{t('exercises')}</span></button>
+        <button className="tile" onClick={() => nav.push('recovery')}><b>😴</b><span>{t('recovery')}</span></button>
+      </div>
+    </div>
   );
 }
-
-function DailySummary({activities,totalKcal,estimated,go}:{activities:{id:number;sport:string;started_at:string;duration_sec:number;distance_m:number;avg_pace_sec_km:number;estimated_kcal:number|null;elev_gain_m:number}[];totalKcal:number;estimated:boolean;go:(tab:string)=>void}){
- const date=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
- const fmtPace=(sec:number)=>sec>0?`${Math.floor(sec/60)}:${String(Math.round(sec%60)).padStart(2,'0')}`:'—';
- return <section className="card daily-home"><div className="row between"><div><p className="muted">TU ACTIVIDAD DIARIA</p><h2 style={{textTransform:'capitalize'}}>{date}</h2></div><button onClick={()=>go('cardio')}>Ver cardio →</button></div>
-  {activities.length?<><p className="daily-kcal">≈{totalKcal} kcal <small>{estimated?'estimadas en actividades registradas':'sin estimación de peso'}</small></p>
-   {activities.map(a=><div className="daily-activity" key={a.id}><strong>{a.sport==='run'?'Corrida':a.sport==='bike'?'Bicicleta':'Caminata'}</strong><p>{(a.distance_m/1000).toFixed(2)} km · {Math.floor(a.duration_sec/60)} min · ritmo {fmtPace(a.avg_pace_sec_km)} min/km</p><p>Desnivel +{a.elev_gain_m} m · {a.estimated_kcal===null?'Calorías sin estimar':`≈${a.estimated_kcal} kcal`}</p></div>)}
-  </>:<><p className="muted">Todavía no registraste actividades hoy.</p><button className="primary" onClick={()=>go('cardio')}>Registrar una caminata o corrida</button></>}
-  <div className="daily-suggestion"><h3>{activities.length?'Ya hiciste actividad hoy':'Sugerencias para hoy'}</h3><p>{activities.length?'Tu corrida ya quedó contabilizada. Si estás recuperado podés completar una sesión corta de fuerza o calistenia; también podés descansar.':'Podés iniciar una caminata, correr o hacer fuerza. Elegí según tu objetivo y recuperación.'}</p><div className="row"><button onClick={()=>go('train')}>Mi entrenamiento</button><button onClick={()=>go('food')}>Ver alimentación</button></div></div>
- </section>;
-}
-
-function HomeEnergy({data,reload,go}:{data:{basalSoFar:number;neatSoFar:number;exerciseKcal:number;burnedSoFar:number;eaten:number;dailyBmr:number;dailyNeatProxy:number;targetBudget:number|null;remaining:number|null;complete:boolean;note:string}|null;reload:()=>void;go:(tab:string)=>void}){
- if(!data)return <section className="card"><h2>Balance calórico de hoy</h2><p className="muted">Cargando tu energía diaria…</p></section>;
- const fmt=(v:number)=>Math.round(v).toLocaleString('es-AR');
- return <section className="card home-energy">
-   <div className="row between"><div><p className="muted">ENERGÍA DE HOY</p><h2>Tu balance calórico</h2></div><button onClick={reload} aria-label="Actualizar balance calórico">Actualizar ↻</button></div>
-   <div className="energy-hero"><div><small>Gasto estimado hasta ahora</small><strong>{fmt(data.burnedSoFar)} <small>kcal</small></strong></div><div><small>Disponible para comer hoy*</small><strong>{data.remaining===null?'—':fmt(data.remaining)} <small>kcal</small></strong></div></div>
-   <div className="energy-breakdown"><div><span>Metabolismo basal acumulado</span><strong>{fmt(data.basalSoFar)} kcal</strong></div><div><span>NEAT y actividad cotidiana estimados</span><strong>{fmt(data.neatSoFar)} kcal</strong></div><div><span>Entrenamientos registrados</span><strong>{fmt(data.exerciseKcal)} kcal</strong></div><div><span>Comidas registradas</span><strong>−{fmt(data.eaten)} kcal</strong></div></div>
-   <p className="muted">BMR diario: ≈{fmt(data.dailyBmr)} kcal. Actividad cotidiana diaria estimada: ≈{fmt(data.dailyNeatProxy)} kcal. Estos dos valores se acumulan durante el día; el entrenamiento se suma cuando lo registrás.</p>
-   {data.targetBudget!==null?<p className="home-energy-goal">Presupuesto diario orientativo según objetivo y actividad registrada: <strong>{fmt(data.targetBudget)} kcal</strong>.</p>:<p className="warn">Completá tu evaluación física para calcular tu presupuesto energético.</p>}
-   <div className="row"><button className="primary" onClick={()=>go('food')}>Agregar comida</button><button onClick={()=>go('cardio')}>Registrar actividad</button></div>
-   <details><summary>¿Qué significan BMR, NEAT y el saldo?</summary><p>BMR es el gasto basal en reposo. NEAT es el movimiento cotidiano fuera del deporte; aquí usamos una aproximación por factor de actividad, no una medición directa. *El saldo para comer proyecta el día completo y no equivale a calorías que ya hayas gastado. Puede variar y no se debe interpretar como una autorización automática para restringir la comida.</p><p className="muted">{data.note}</p></details>
- </section>;
-}
+const fmtMin = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

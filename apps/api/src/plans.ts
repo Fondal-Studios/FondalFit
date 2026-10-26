@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { adaptedReturn, adviseDay, materialize, resumeShift, routineById, routineWeekDays, type Experience, type Plan } from '@fondal/engine';
+import { adaptedReturn, adviseDay, materialize, weekStartUtc, resumeShift, routineById, routineWeekDays, type Experience, type Plan } from '@fondal/engine';
 import type { RouteCtx } from './admin';
 
 type Guard = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -37,6 +37,13 @@ export function registerPlans(c: PlanCtx) {
     const rec = await db.prepare('SELECT score,alerts,created_at FROM recovery WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { score: number; alerts: string; created_at: string } | undefined;
     const fresh = rec && Date.now() - Date.parse(rec.created_at) < 36 * 3600e3;
     const { gapDays } = await lastActivityGap(uid, p.created_at);
+    // which sessions of the displayed week are done: strength by day index, cardio by number of GPS activities this week
+    const wk = weekStartUtc(new Date()).toISOString();
+    const doneStrength = new Set((await db.prepare('SELECT DISTINCT day_index FROM workouts WHERE user_id=? AND created_at>=? AND day_index<99').all(uid, wk) as { day_index: number }[]).map((r) => r.day_index));
+    const cardioDone = (await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM activities WHERE user_id=? AND started_at>=?').get(uid, wk) as { c: number }).c;
+    let seenCardio = 0;
+    const doneDays = m.days.flatMap((d, i) => (d.kind === 'cardio' ? (seenCardio++ < cardioDone ? [i] : []) : doneStrength.has(i) ? [i] : []));
+    const nextIndex = m.days.findIndex((_, i) => !doneDays.includes(i));
     const routineId = stored.program?.routineId ?? (p.source.startsWith('routine:') ? p.source.slice(8) : null);
     return {
       version: p.version, source: p.source, proName: pro?.name ?? null, routineId,
@@ -44,6 +51,7 @@ export function registerPlans(c: PlanCtx) {
       current: { label: m.label, weekIndex: m.weekIndex, weekCount: m.weekCount, ramp: m.ramp },
       advice: fresh ? adviseDay(rec.score, JSON.parse(rec.alerts)) : null,
       away: { gapDays, options: gapDays >= 10 ? adaptedReturn(gapDays) : null },
+      week: { doneDays, nextIndex: nextIndex >= 0 ? nextIndex : null },
     };
   });
 

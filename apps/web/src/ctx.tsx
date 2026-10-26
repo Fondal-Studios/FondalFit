@@ -15,7 +15,12 @@ export const initialLang = (): Lang => {
   return (LANGS as string[]).includes(n) ? (n as Lang) : 'es';
 };
 
-export interface Me { id: number; name: string; role: 'athlete' | 'pro' | 'admin'; lang: Lang; subscription: { plan: string; trialEndsAt: string; active: boolean; canceled: boolean }; consents: Record<string, boolean> }
+export interface Me { id: number; name: string; email?: string; role: 'athlete' | 'pro' | 'admin'; mode: 'athlete' | 'pro'; canPro: boolean; isAdmin: boolean; proCode: string | null; lang: Lang; subscription: { plan: string; trialEndsAt: string; active: boolean; canceled: boolean }; consents: Record<string, boolean> }
+
+/** Signed-in user + actions, available to every screen without prop drilling. */
+export interface AppApi { me: Me; refresh: () => Promise<void> | void; onLang: (l: Lang) => void; onLogout: () => void; toast: (msg: string) => void }
+export const AppCtx = createContext<AppApi | null>(null);
+export const useApp = () => { const a = useContext(AppCtx); if (!a) throw new Error('AppCtx'); return a; };
 
 export function LangPicker({ lang, onLang }: { lang: Lang; onLang: (l: Lang) => void }) {
   const t = useT();
@@ -52,7 +57,9 @@ export function useLoad<T>(url: string, deps: unknown[] = []) {
 
 export function Loading({ err, retry }: { err: boolean; retry: () => void }) {
   const t = useT();
-  return err ? <div className="card"><p className="warn" role="alert">{t('netError')}</p><button onClick={retry}>{t('retry')}</button></div> : <p className="muted" role="status">{t('loading')}</p>;
+  return err
+    ? <div className="card"><p className="warn" role="alert">{t('netError')}</p><button onClick={retry}>{t('retry')}</button></div>
+    : <div role="status" aria-label={t('loading')}><div className="skeleton" /><div className="skeleton" style={{ height: 120 }} /><div className="skeleton" /></div>;
 }
 
 export const Stack = ({ children }: { children: ReactNode }) => <div className="stack">{children}</div>;

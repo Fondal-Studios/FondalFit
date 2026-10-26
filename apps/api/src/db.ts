@@ -61,6 +61,8 @@ async function migrate(db: DB) {
   await ensureColumn(db, 'users', 'mode', 'TEXT');
   await ensureColumn(db, 'users', 'last_seen_at', 'TEXT');
   await ensureColumn(db, 'users', 'pro_code', 'TEXT');
+  await ensureColumn(db, 'activities', 'kcal_manual', 'INTEGER');
+  await ensureColumn(db, 'activities', 'source', 'TEXT');
 }
 
 const ddl = (d: DB['dialect']) =>

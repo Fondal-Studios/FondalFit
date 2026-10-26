@@ -1,107 +1,68 @@
-import { useEffect, useState } from 'react';
-import { api, ApiError } from '../api';
-import { byId, hrZones, schemeFor, weeklyVolume, type Goal, type Plan, type PlanDay, type Prescription } from '@fondal/engine';
+import { useState } from 'react';
+import { byId, hrZones, schemeFor, weeklyVolume, type Goal, type Plan, type PlanDay } from '@fondal/engine';
 import { Bar, Loading, useLoad, useT } from '../ctx';
+import { useNav } from '../nav';
+import { fmtReps } from './Library';
 
-interface PlanRes { version?: number; plan: Plan | null }
-
-export function Train({ onWizard, onCardio }: { onWizard: () => void; onCardio: () => void }) {
-  const t = useT();
-  const { data, err, reload } = useLoad<PlanRes>('/api/plan');
-  const asm = useLoad<{ assessment: any }>('/api/assessment');
-  const [session, setSession] = useState<number | null>(null);
-  const [msg, setMsg] = useState('');
-  const [why, setWhy] = useState(false);
-  if (!data) return <Loading err={err} retry={reload} />;
-  if (!data.plan) return <div className="card"><p>{t('noPlan')}</p><button className="primary" onClick={onWizard}>{t('createPlan')}</button></div>;
-  const plan = data.plan;
-  if (session !== null) return <Session day={plan.days[session]!} index={session} onDone={(m) => { setMsg(m); setSession(null); reload(); }} />;
-  const sch = schemeFor(plan.goal as Goal);
-  const vol = weeklyVolume(plan);
-  const age = asm.data?.assessment?.profile?.age as number | undefined;
-  return (
-    <>
-      <div className="row between"><p className="muted">{t('planVersion')} {data.version} · {t('g_' + plan.goal)}</p><button onClick={onWizard}>{t('editPlan')}</button></div>
-      {msg && <p className="ok" role="status">{msg}</p>}
-      {plan.days.map((d, i) => (
-        <div className="card" key={i}>
-          <div className="row between"><h3>{d.name} · {t(d.kind === 'cardio' ? 'cardioSession' : 'nav_train')}</h3>
-            {d.kind === 'cardio' ? <button className="primary" onClick={onCardio}>{t('startCardio')}</button> : <button className="primary" onClick={() => setSession(i)}>{t('startSession')}</button>}</div>
-          {d.kind === 'cardio' && d.cardio ? <CardioInfo d={d} age={age} /> : d.items.map((it) => (
-            <p key={it.exerciseId}>{t('ex_' + it.exerciseId)} <span className="muted">· {it.sets}×{it.repMin}-{it.repMax} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${Math.round(it.restSec / 60 * 10) / 10}′` : ''}{it.load ? ` · ${it.load} kg` : ''}</span></p>
-          ))}
-        </div>
-      ))}
-      {vol.length > 0 && <div className="card"><h3>{t('weeklyVolume')}</h3>
-        {vol.map((v) => <div key={v.muscle}><span className="muted">{t('m_' + v.muscle)}: {v.sets} · {t('vol_' + v.status)}</span><Bar pct={(v.sets / 20) * 100} /></div>)}</div>}
-      <div className="card"><div className="row between"><h3>{t('whyPlan')}</h3><button onClick={() => setWhy(!why)}>{why ? '−' : '+'}</button></div>
-        {why && <><p>{t('yourGoal')}: <b>{t('g_' + plan.goal)}</b></p><p className="muted">{t('gd_' + plan.goal)}</p>
-          <p>{t('fiberFocus')}: {t('f_' + sch.fiber)}</p><p className="muted">{sch.repMin}–{sch.repMax} {t('reps')} · {t('rir')} {sch.rir} · {t('restTime')} {sch.restSec / 60}′</p></>}</div>
-    </>
-  );
+interface PlanRes {
+  version?: number; source?: string; proName?: string | null; routineId?: string | null; plan: Plan | null;
+  current?: { label: string; weekIndex: number; weekCount: number; ramp: boolean };
+  advice?: { mode: 'normal' | 'light' | 'rest'; reason: string } | null;
 }
 
-function CardioInfo({ d, age }: { d: PlanDay; age?: number }) {
-  const t = useT();
-  const c = d.cardio!;
-  const z = age ? hrZones(age) : null;
+export const dayMinutes = (d: PlanDay) => (d.kind === 'cardio' && d.cardio ? d.cardio.durationMin : Math.round(d.items.reduce((a, i) => a + i.sets * (1.0 + (i.restSec ?? 90) / 60), 0) + 8));
+export const dayMuscles = (d: PlanDay) => [...new Set(d.items.map((i) => byId(i.exerciseId)?.muscle).filter((m): m is NonNullable<typeof m> => !!m && m !== 'full'))].slice(0, 4);
+
+export function Train() {
+  const t = useT(), nav = useNav();
+  const { data, err, reload } = useLoad<PlanRes>('/api/plan');
+  const asm = useLoad<{ assessment: { profile?: { age: number } } | null }>('/api/assessment');
+  const [why, setWhy] = useState(false);
+  if (!data) return <Loading err={err} retry={reload} />;
+  if (!data.plan) return (
+    <div className="stack"><h2>{t('nav_train')}</h2>
+      <div className="card hero"><h3>{t('noPlanYet')}</h3><p className="muted">{t('planWizardIntro')}</p><button className="primary" onClick={() => nav.push('wizard')}>{t('createPlan')}</button></div>
+      <div className="card"><h3>{t('orPickRoutine')}</h3><button onClick={() => nav.push('routines')}>{t('routines')} →</button></div>
+    </div>
+  );
+  const plan = data.plan, cur = data.current;
+  const sch = schemeFor(plan.goal as Goal);
+  const vol = weeklyVolume(plan);
+  const age = asm.data?.assessment?.profile?.age;
   return (
-    <div>
-      <p><b>{t(c.modality)}</b> · {t('ct_' + c.type)} · {c.durationMin} {t('minutes_short')}</p>
-      {c.intervals && <p className="muted">{t('intervalsDesc', { n: c.intervals.reps, w: fmtSec(c.intervals.workSec), r: fmtSec(c.intervals.restSec) })}</p>}
-      {z && (c.type === 'zone2' || c.type === 'long' || c.type === 'walkrun') && <p className="muted">{t('hrEstimate')}: {z.z2[0]}–{z.z2[1]} bpm. {t('hrNote')}</p>}
+    <div className="stack">
+      <div className="row between"><h2>{t('nav_train')}</h2><button onClick={() => nav.push('wizard')}>{t('editPlan')}</button></div>
+      <div className="card hero">
+        <p className="muted small">{data.proName ? `${t('byPro')} ${data.proName}` : data.routineId ? t('routine') : t('generatedPlan')} · v{data.version}</p>
+        <h3>{t('g_' + plan.goal)}</h3>
+        {cur && cur.weekCount > 1 && <><div className="row between"><span>{cur.label === 'program' ? t('weekN') : t('block')} {cur.weekIndex + 1}/{cur.weekCount}</span><span className="badge">{t('phase_' + cur.label)}</span></div><Bar pct={((cur.weekIndex + 1) / cur.weekCount) * 100} /></>}
+        {cur?.label === 'deload' && <p className="muted">{t('deloadExplain')}</p>}
+        {cur?.ramp && <p className="warn">{t('rampActive')}</p>}
+        {data.advice && data.advice.mode !== 'normal' && <p className="warn" role="status">{data.advice.mode === 'rest' ? t('adviceRest') : t('adviceLight')}</p>}
+        <div className="row"><button onClick={() => nav.push('routines')}>{t('changeRoutine')}</button><button onClick={() => nav.push('exercises')}>{t('exercises')}</button></div>
+      </div>
+      {plan.days.map((d, i) => (
+        <div className="card" key={i}>
+          <div className="row between top"><div><h3 style={{ margin: 0 }}>{d.name} · {t('kind_' + (d.kind ?? 'strength'))}</h3><p className="muted small">{dayMinutes(d)} {t('minutes_short')}{d.kind !== 'cardio' ? ` · ${dayMuscles(d).map((m) => t('m_' + m)).join(', ')}` : ''}</p></div>
+            {d.kind === 'cardio' ? <button className="primary" onClick={() => nav.go('cardio')}>{t('startCardio')}</button> : <button className="primary" onClick={() => nav.push('session', { day: d, index: i })}>{t('startSession')}</button>}</div>
+          {d.kind === 'cardio' && d.cardio ? (
+            <div><p><b>{t(d.cardio.modality)}</b> · {t('ct_' + d.cardio.type)} · {d.cardio.durationMin} {t('minutes_short')}</p>
+              {d.note && <p className="muted">{d.note}</p>}
+              {d.cardio.intervals && <p className="muted">{t('intervalsDesc', { n: d.cardio.intervals.reps, w: fmtSec(d.cardio.intervals.workSec), r: fmtSec(d.cardio.intervals.restSec) })}</p>}
+              {age && ['zone2', 'long', 'walkrun'].includes(d.cardio.type) && <p className="muted small">{t('hrEstimate')}: {hrZones(age).z2[0]}–{hrZones(age).z2[1]} bpm. {t('hrNote')}</p>}</div>
+          ) : (
+            <div className="list">{d.items.map((it) => (
+              <button key={it.exerciseId} onClick={() => nav.push('exercise', { id: it.exerciseId })}>
+                <span><b>{t('ex_' + it.exerciseId)}</b><span className="sub">{it.sets} × {fmtReps(byId(it.exerciseId), it.repMin, it.repMax)} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${it.restSec >= 60 ? Math.round(it.restSec / 6) / 10 + '′' : it.restSec + ' s'}` : ''}{it.load ? ` · ${it.load} kg` : ''}</span></span><span aria-hidden>›</span></button>))}</div>
+          )}
+        </div>
+      ))}
+      {vol.length > 0 && <div className="card"><h3>{t('weeklyVolume')}</h3><p className="muted small">{t('volumeRef')}</p>
+        {vol.map((v) => <div key={v.muscle}><span className="muted">{t('m_' + v.muscle)}: {v.sets} {t('sets')} · {t('vol_' + v.status)}</span><Bar pct={(v.sets / 20) * 100} /></div>)}</div>}
+      <div className="card"><div className="row between"><h3>{t('whyPlan')}</h3><button onClick={() => setWhy(!why)} aria-expanded={why}>{why ? '−' : '+'}</button></div>
+        {why && <><p>{t('yourGoal')}: <b>{t('g_' + plan.goal)}</b></p><p className="muted">{t('gd_' + plan.goal)}</p>
+          <p>{t('fiberFocus')}: {t('f_' + sch.fiber)}</p><p className="muted">{sch.repMin}–{sch.repMax} {t('reps')} · {t('rir')} {sch.rir} · {t('restTime')} {sch.restSec / 60}′</p><button className="link" onClick={() => nav.push('science')}>{t('science')} →</button></>}</div>
     </div>
   );
 }
 const fmtSec = (s: number) => (s >= 60 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-
-function RestTimer({ seconds }: { seconds: number }) {
-  const t = useT();
-  const [left, setLeft] = useState(0);
-  useEffect(() => { if (left <= 0) return; const id = setTimeout(() => setLeft((l) => l - 1), 1000); return () => clearTimeout(id); }, [left]);
-  useEffect(() => { if (left === 0) return; if (left === 1 && 'vibrate' in navigator) navigator.vibrate?.(200); }, [left]);
-  return (
-    <div className="card row"><h3>{t('rest')}</h3>
-      <button onClick={() => setLeft(seconds)}>{seconds}s</button>
-      {[60, 90, 120, 180].filter((s) => s !== seconds).map((s) => <button key={s} onClick={() => setLeft(s)}>{s}s</button>)}
-      <span role="timer" aria-live="off" style={{ fontVariantNumeric: 'tabular-nums' }}>{left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''}</span></div>
-  );
-}
-
-function Session({ day, index, onDone }: { day: PlanDay; index: number; onDone: (msg: string) => void }) {
-  const t = useT();
-  const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
-    Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
-  const [fatigue, setFatigue] = useState(5);
-  const [busy, setBusy] = useState(false);
-  const set = (id: string, i: number, k: 'weight' | 'reps' | 'rir', v: string) => setSets({ ...sets, [id]: sets[id]!.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
-  const rest = day.items.find((i) => i.restSec)?.restSec ?? 90;
-  const submit = async () => {
-    const items = day.items.map((it: Prescription) => ({ exerciseId: it.exerciseId, sets: sets[it.exerciseId]!.filter((s) => s.reps !== '').map((s) => ({ weight: Number(s.weight || 0), reps: Number(s.reps), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
-    if (!items.length) return;
-    setBusy(true);
-    try {
-      const r = await api('POST', '/api/workouts', { dayIndex: index, fatigue, items });
-      onDone([r.applied ? t('applied') : t('needsApproval'), r.deloadSuggested ? t('deloadSuggested') : ''].filter(Boolean).join(' '));
-    } catch (e) { onDone(e instanceof ApiError ? t('invalid') : t('offline')); }
-  };
-  return (
-    <>
-      <h2>{day.name}</h2>
-      {day.items.map((it) => (
-        <div className="card" key={it.exerciseId}>
-          <h3>{t('ex_' + it.exerciseId)} <span className="badge">{t('m_' + byId(it.exerciseId)?.muscle)}</span></h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
-          {sets[it.exerciseId]!.map((s, i) => (
-            <div className="set" key={i}><span>{i + 1}</span>
-              <input aria-label={t('weight')} placeholder={t('weight')} inputMode="decimal" value={s.weight} onChange={(e) => set(it.exerciseId, i, 'weight', e.target.value)} />
-              <input aria-label={t('reps')} placeholder={t('reps')} inputMode="numeric" value={s.reps} onChange={(e) => set(it.exerciseId, i, 'reps', e.target.value)} />
-              <input aria-label={t('rir')} placeholder={t('rir')} inputMode="numeric" value={s.rir} onChange={(e) => set(it.exerciseId, i, 'rir', e.target.value)} /></div>
-          ))}
-        </div>
-      ))}
-      <RestTimer seconds={rest} />
-      <label htmlFor="fat">{t('fatigue')}: {fatigue}</label><input id="fat" type="range" min={1} max={10} value={fatigue} onChange={(e) => setFatigue(Number(e.target.value))} />
-      <p><button className="primary" disabled={busy} onClick={submit}>{t('finish')}</button></p>
-    </>
-  );
-}

@@ -81,3 +81,68 @@ nav.tabs button span { display:block; font-size:1.2rem; line-height:1 }
 .home-energy-goal{padding:12px;border-radius:12px;background:#172720}
 .home-energy details{margin-top:12px}
 @media(max-width:370px){.home-energy .energy-hero{grid-template-columns:1fr}}
+
+/* ===== Fondal Fit UI v3: pages, nav, charts, desktop layout ===== */
+:root { --card2:#10151a; --accent2:#22c55e; --info:#60a5fa; --radius:16px; }
+body { -webkit-tap-highlight-color: transparent; }
+h2 { font-size:1.25rem; margin:0 } h3 { font-size:1.02rem }
+.page { margin-top:4px } .pagebar { display:flex; align-items:center; gap:10px; margin:6px 0 14px } .pagetitle { flex:1; min-width:0 } .pagetitle h2 { overflow-wrap:anywhere } .pagetitle p { margin:0 }
+button.iconbtn { flex:none; width:44px; padding:0; font-size:1.3rem; border-radius:12px }
+.stack > * + * { margin-top:12px }
+.card { border-radius:var(--radius) }
+.card.hero { background:linear-gradient(160deg,#16261c 0%,#131a20 70%); border-color:#24402f } .card.hero h3 { font-size:1.15rem; margin:.3rem 0 .5rem }
+.card.alert { border-color:#5a4a1d; background:#1d1a10 } .card.alert.bad { border-color:#5a2424; background:#1d1010 }
+.chip.on { box-shadow:0 0 0 1px var(--accent) inset }
+.tabs-inline { display:flex; gap:6px; margin:8px 0 } .tabs-inline button { flex:1; border-radius:999px; min-height:40px; font-size:.9rem } .tabs-inline button.on { background:var(--accent); color:#06210f; border-color:var(--accent); font-weight:600 }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px } .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:10px }
+.tile { background:var(--card2); border:1px solid var(--line); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:2px; min-height:76px; text-align:left } .tile b { font-size:1.35rem } .tile span { color:var(--muted); font-size:.78rem }
+button.tile { cursor:pointer; align-items:flex-start }
+.catgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px } .catgrid button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:84px; font-size:.82rem; padding:8px } .catgrid .em { font-size:1.6rem; line-height:1 }
+.list > button, .list > a { display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; gap:8px; margin:6px 0; padding:12px 14px }
+.list .sub { color:var(--muted); font-size:.8rem; display:block }
+.searchbar { position:sticky; top:0; z-index:5; background:var(--bg); padding:6px 0 }
+.sheet { position:fixed; left:0; right:0; bottom:0; z-index:30; background:#12181e; border-top:1px solid var(--line); border-radius:20px 20px 0 0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow:0 -12px 40px #000a; max-width:720px; margin:0 auto }
+.scrim { position:fixed; inset:0; background:#0009; z-index:25 }
+.platebar { position:fixed; left:0; right:0; bottom:calc(58px + env(safe-area-inset-bottom)); z-index:20; padding:0 12px; max-width:720px; margin:0 auto } .platebar button { width:100%; min-height:52px; box-shadow:0 8px 24px #000a }
+.badge.lv1 { color:var(--accent); border-color:var(--accent) } .badge.lv2 { color:var(--warn); border-color:var(--warn) } .badge.lv3 { color:var(--bad); border-color:var(--bad) }
+ol.steps { padding-left:1.2rem; margin:.4rem 0 } ol.steps li { margin:.5rem 0; line-height:1.4 }
+.cue { border-left:3px solid var(--accent); padding:6px 10px; background:#0f1a14; border-radius:0 10px 10px 0; margin:10px 0 }
+.chart { margin:8px 0 } .chart svg { width:100%; height:auto; background:#0f1317; border-radius:12px } .chart .grid { stroke:#232a32; stroke-width:1 } .chart .tick { fill:#8b97a5; font-size:10px } .chart .unit { fill:#8b97a5; font-size:10px; font-weight:600 } .chart .target { stroke:var(--warn); stroke-dasharray:5 4; stroke-width:1.5 } .chart figcaption { font-size:.85rem; color:var(--muted); margin-top:4px }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap }
+.ring { position:relative; flex:none } .ring svg { display:block } .ringlabel { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; line-height:1.15 } .ringlabel b { font-size:1.35rem } .ringlabel small { color:var(--muted); font-size:.7rem }
+.row.top { align-items:flex-start } .nowrap { white-space:nowrap }
+.skeleton { background:linear-gradient(90deg,#141a20,#1b232b,#141a20); background-size:200% 100%; animation:sk 1.2s infinite; border-radius:12px; height:80px; margin:10px 0 } @keyframes sk { to { background-position:-200% 0 } }
+.toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(76px + env(safe-area-inset-bottom)); background:#1b2d22; border:1px solid var(--accent); color:var(--text); padding:10px 16px; border-radius:999px; z-index:40; box-shadow:0 8px 24px #000a }
+.modepill { display:flex; background:#0f1317; border:1px solid var(--line); border-radius:999px; padding:3px } .modepill button { min-height:34px; border:0; border-radius:999px; background:none; padding:4px 12px; font-size:.82rem; color:var(--muted) } .modepill button.on { background:var(--accent); color:#06210f; font-weight:600 }
+header.top { gap:8px; margin-bottom:4px } header.top h1 { margin:0; font-size:1.15rem; flex:1 }
+.setrow { display:grid; grid-template-columns:1.6rem 1fr 1fr 1fr 44px; gap:6px; align-items:center; margin:5px 0 } .setrow .n { color:var(--muted) } .setrow.done input { opacity:.6 } .setrow button { padding:0; min-height:44px } .setrow button.on { background:var(--accent); color:#06210f; border-color:var(--accent) }
+.prev { font-size:.78rem; color:var(--muted) }
+.progressbar { position:sticky; top:0; z-index:6; background:var(--bg); padding:6px 0 }
+table.simple { width:100%; border-collapse:collapse; font-size:.85rem } table.simple th, table.simple td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line) } table.simple th { color:var(--muted); font-weight:600 }
+a.link, button.link { color:var(--accent) }
+.empty { text-align:center; padding:24px 12px; color:var(--muted) } .empty .em { font-size:2rem }
+
+/* desktop: sidebar nav + wider content */
+@media (min-width: 900px) {
+  main { max-width:1040px; padding:24px 24px 48px 220px }
+  nav.tabs { top:0; bottom:0; right:auto; width:200px; flex-direction:column; justify-content:flex-start; padding:76px 10px 10px; border-top:0; border-right:1px solid var(--line) }
+  nav.tabs button { flex:none; min-height:48px; flex-direction:row; display:flex; align-items:center; gap:10px; justify-content:flex-start; padding:0 14px; border-radius:12px; font-size:.95rem } nav.tabs button span { display:inline; font-size:1.15rem }
+  nav.tabs button.on { background:#16261c }
+  header.top { position:fixed; top:0; left:0; width:200px; padding:16px 14px; z-index:11; flex-wrap:wrap }
+  .platebar { bottom:16px; left:220px; right:24px; max-width:none }
+  .sheet { left:220px; max-width:560px; border-radius:20px; bottom:24px }
+  .toast { bottom:24px }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start }
+}
+@media (max-width: 899px) { .two-col > * + * { margin-top:12px } }
+
+.waterbar { margin:10px 0 22px } .wtrack { position:relative; height:16px; border-radius:8px; overflow:visible; background:#0f1317 } .wtrack > span { position:absolute; top:0; bottom:0; opacity:.28 } .wtrack > span:first-child { border-radius:8px 0 0 8px } .wtrack > span:nth-child(5) { border-radius:0 8px 8px 0 }
+.wtrack > i { position:absolute; top:-4px; width:4px; height:24px; background:#fff; border-radius:2px; transform:translateX(-2px); box-shadow:0 0 0 2px #0b0d10 } .wtrack > b { position:absolute; top:-2px; width:2px; height:20px; border-left:2px dashed #fff8; transform:translateX(-1px) }
+.wticks { position:relative; height:14px; margin-top:6px } .wticks span { position:absolute; transform:translateX(-50%); font-size:.7rem; color:var(--muted) }
+.waterbar .wtrack > span { opacity:.35 }
+button.linkbtn { background:none; border:1px solid var(--line); color:var(--accent); min-height:36px; padding:4px 12px; border-radius:999px; font-size:.82rem }
+
+.row.between > button { flex:none } .row.between > h2, .row.between > h3 { flex:1; min-width:0 }
+@media (min-width: 900px) { nav.tabs { padding-top:132px } header.top { flex-direction:column; align-items:flex-start } }
+
+.chart svg { max-width:560px; display:block }

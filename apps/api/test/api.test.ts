@@ -530,6 +530,65 @@ describe('progress: lifts, running, body measurements', () => {
   });
 });
 
+describe('free sessions, previous performance and goals', () => {
+  it('logs a one-off session without a plan and without touching the plan', async () => {
+    const t = await reg('free@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    const r = await call('POST', '/api/workouts', t, { dayIndex: 99, name: 'Pecho y tríceps', fatigue: 4, items: [{ exerciseId: 'bench_press', sets: [{ weight: 50, reps: 8, rir: 2 }] }] });
+    expect(r.body).toMatchObject({ free: true, applied: false });
+    expect((await call('GET', '/api/plan', t)).body.plan).toBeNull();
+    expect((await call('GET', '/api/progress/exercises', t)).body.exercises[0]).toMatchObject({ id: 'bench_press', sessions: 1 });
+  });
+  it('returns the last sets per exercise', async () => {
+    const { t } = await athleteWithPlan();
+    await call('POST', '/api/workouts', t, { dayIndex: 99, fatigue: 4, items: [{ exerciseId: 'bench_press', sets: [{ weight: 50, reps: 8, rir: 2 }] }] });
+    await call('POST', '/api/workouts', t, { dayIndex: 99, fatigue: 4, items: [{ exerciseId: 'bench_press', sets: [{ weight: 55, reps: 6, rir: 1 }] }] });
+    const l = (await call('GET', '/api/progress/last?ids=bench_press,unknown', t)).body.last;
+    expect(l.bench_press.sets[0]).toMatchObject({ weight: 55, reps: 6 });
+    expect(l.unknown).toBeUndefined();
+  });
+  it('stores a primary goal, secondary goals and measurable targets', async () => {
+    const t = await reg('goals@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    const body = { ...assessment, secondaryGoals: ['endurance'], targets: [{ metric: 'weight', targetKg: 58, byDate: '2027-02-01' }, { metric: 'run5k', targetSec: 1700 }, { metric: 'lift', exerciseId: 'back_squat', targetKg: 80 }] };
+    expect((await call('POST', '/api/assessment', t, body)).status).toBe(200);
+    const a = (await call('GET', '/api/assessment', t)).body.assessment;
+    expect(a.secondaryGoals).toEqual(['endurance']);
+    expect(a.targets).toHaveLength(3);
+    expect((await call('POST', '/api/assessment', t, { ...body, targets: [{ metric: 'run5k', targetSec: 100 }] })).status).toBe(400);
+    expect((await call('POST', '/api/assessment', t, { ...body, targets: [{ metric: 'mystery', x: 1 }] })).status).toBe(400);
+  });
+});
+
+describe('week status and goals', () => {
+  it('marks done sessions of the week and points to the next one', async () => {
+    const { t, plan } = await athleteWithPlan();
+    expect((await call('GET', '/api/plan', t)).body.week).toEqual({ doneDays: [], nextIndex: 0 });
+    await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
+    expect((await call('GET', '/api/plan', t)).body.week).toEqual({ doneDays: [0], nextIndex: 1 });
+  });
+  it('tracks weight, 5K and lift targets honestly', async () => {
+    const t = await reg('g2@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    await call('POST', '/api/assessment', t, { ...assessment, profile: { ...profile, weightKg: 80 }, targets: [{ metric: 'weight', targetKg: 70 }, { metric: 'run5k', targetSec: 1500 }, { metric: 'lift', exerciseId: 'bench_press', targetKg: 100 }] });
+    await call('POST', '/api/measurements', t, { weightKg: 77, day: '2026-10-20' });
+    await call('POST', '/api/activities', t, { sport: 'run', startedAt: new Date().toISOString(), durationSec: 1800, movingSec: 1800, distanceM: 5000, avgPaceSecKm: 360, elevGainM: 0, route: [] });
+    await call('POST', '/api/workouts', t, { dayIndex: 99, fatigue: 4, items: [{ exerciseId: 'bench_press', sets: [{ weight: 60, reps: 5, rir: 2 }] }] });
+    const g = (await call('GET', '/api/goals', t)).body;
+    expect(g.targets[0]).toMatchObject({ metric: 'weight', current: 77, pct: 30 });
+    expect(g.targets[1]).toMatchObject({ metric: 'run5k', current: 1800, pct: 83, projected: true });
+    expect(g.targets[2].current).toBeCloseTo(70, 0);
+    expect(g.targets[2].pct).toBe(70);
+  });
+  it('counts strength sessions in today\'s energy estimate', async () => {
+    const { t, plan } = await athleteWithPlan();
+    const before = (await call('GET', '/api/energy/today?timezoneOffset=0', t)).body.exerciseKcal;
+    await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
+    const after = (await call('GET', '/api/energy/today?timezoneOffset=0', t)).body.exerciseKcal;
+    expect(after).toBeGreaterThan(before);
+  });
+});
+
 describe('weekly challenges and opt-in zone ranking', () => {
   it('serves 3 challenges anchored on 150 active minutes, with live progress', async () => {
     const { t } = await athleteWithPlan();
@@ -600,6 +659,120 @@ describe('coach memory and personality', () => {
     expect((await call('DELETE', '/api/coach/memory', t)).status).toBe(200);
     expect((await call('GET', '/api/coach/memory', t)).body.memory).toEqual([]);
     expect((await call('GET', '/api/coach/history', t)).body.messages).toEqual([]);
+  });
+});
+
+describe('daily budget, AI meal interpretation, menu rotation and water', () => {
+  it('builds the food budget step by step: basal + daily life + logged exercise + goal adjustment', async () => {
+    const { t, plan } = await athleteWithPlan();
+    const d0 = (await call('GET', '/api/day', t)).body;
+    const e0 = d0.energy;
+    expect(e0.bmr).toBeGreaterThan(1000);
+    expect(e0.neat).toBe(d0.target.explain.lifeKcal - d0.target.explain.bmr);
+    expect(e0.budget).toBe(Math.max(e0.bmr, Math.round(d0.target.explain.lifeKcal + e0.exercise + e0.goalAdjustment)));
+    expect(e0.remaining).toBe(e0.budget);
+    expect(e0.dayFraction).toBeGreaterThanOrEqual(0); expect(e0.dayFraction).toBeLessThanOrEqual(1);
+    // exercise already done raises the budget; eating lowers what remains
+    await call('POST', '/api/activities', t, { sport: 'run', startedAt: new Date().toISOString(), durationSec: 3000, movingSec: 3000, distanceM: 8000, avgPaceSecKm: 375, elevGainM: 0, route: [] });
+    await call('POST', '/api/workouts', t, sessionFor(plan, 10, 2));
+    await call('POST', '/api/nutrition/log', t, { items: [{ foodId: 'rice_white', grams: 200 }] });
+    const e1 = (await call('GET', '/api/day', t)).body.energy;
+    expect(e1.exercise).toBeGreaterThan(300);
+    expect(e1.budget).toBeGreaterThan(e0.budget);
+    expect(e1.remaining).toBe(e1.budget - 260);
+    // a past day is complete (all of the basal counted)
+    const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    expect((await call('GET', `/api/day?date=${y}`, t)).body.energy.dayFraction).toBe(1);
+  });
+  it('keeps water separate from the calorie counter and lets you undo it', async () => {
+    const { t } = await athleteWithPlan();
+    await call('POST', '/api/nutrition/log', t, { waterMl: 500, meal: 'water' });
+    const w = await call('POST', '/api/nutrition/log', t, { waterMl: 250, meal: 'water' });
+    await call('POST', '/api/nutrition/log', t, { items: [{ foodId: 'egg', grams: 100 }] });
+    const d = (await call('GET', '/api/day', t)).body;
+    expect(d.intake.waterMl).toBe(750);
+    expect(d.intake.kcal).toBe(143);
+    expect(d.waterLogs.map((x: any) => x.ml)).toEqual([500, 250]);
+    await call('DELETE', `/api/nutrition/log/${w.body.id}`, t);
+    expect((await call('GET', '/api/day', t)).body.intake.waterMl).toBe(500);
+  });
+  it('rotates the three daily menus on demand through all 30', async () => {
+    const { t } = await athleteWithPlan();
+    const seen = new Set<number>();
+    for (let n = 0; n < 10; n++) (await call('GET', `/api/nutrition/menus?date=2026-10-25&shuffle=${n}`, t)).body.menus.forEach((m: any) => seen.add(m.index));
+    expect(seen.size).toBe(30);
+    const a = (await call('GET', '/api/nutrition/menus?date=2026-10-25&shuffle=0', t)).body.menus.map((m: any) => m.index);
+    const b = (await call('GET', '/api/nutrition/menus?date=2026-10-25&shuffle=1', t)).body.menus.map((m: any) => m.index);
+    expect(a).not.toEqual(b);
+  });
+  it('interprets free text with the rule parser when no AI is configured', async () => {
+    const { t } = await athleteWithPlan();
+    const r = (await call('POST', '/api/nutrition/interpret', t, { text: '200g de pollo con 150 g de arroz y una banana' })).body;
+    expect(r.source).toBe('rules');
+    expect(r.items.map((i: any) => i.foodId)).toEqual(['chicken_breast', 'rice_white', 'banana']);
+    expect(r.total.kcal).toBe(330 + 195 + 107);
+    expect(r.low).toBeLessThan(r.total.kcal); expect(r.high).toBeGreaterThan(r.total.kcal);
+  });
+  it('with AI: validates the model output, recomputes numbers itself, labels custom foods, and falls back safely', async () => {
+    const ai = JSON.stringify({ items: [
+      { raw: 'plato de milanesa con puré', foodId: 'milanesa_beef', grams: 160, confidence: 'medium' },
+      { raw: 'puré de papas', foodId: null, grams: 200, confidence: 'low', custom: { name: 'Puré de papas', kcalPer100: 90, proteinPer100: 2, carbsPer100: 15, fatPer100: 2.5 } },
+      { raw: 'x', foodId: 'ghost', grams: 50, confidence: 'high' },
+      { raw: 'bad', foodId: 'egg', grams: 99999, confidence: 'high' },
+    ] });
+    app = buildApp({ db, rateLimitMax: 100000, coach: async () => 'Aquí tienes:\n' + ai });
+    const { t } = await athleteWithPlan();
+    const r = (await call('POST', '/api/nutrition/interpret', t, { text: 'milanesa con puré' })).body;
+    expect(r.source).toBe('ai');
+    expect(r.items).toHaveLength(3); // absurd grams discarded; an unknown id is returned unmatched so the user can pick manually
+    expect(r.items[2]).toMatchObject({ foodId: null, grams: 0, kcal: 0 });
+    expect(r.total.kcal).toBe(464 + 180);
+    expect(r.items[0]).toMatchObject({ foodId: 'milanesa_beef', grams: 160, kcal: Math.round(290 * 1.6) });
+    expect(r.items[1]).toMatchObject({ foodId: null, name: 'Puré de papas', kcal: 180, custom: { kcalPer100: 90 } });
+    expect((r.items[1].high - r.items[1].low) / r.items[1].kcal).toBeGreaterThan((r.items[0].high - r.items[0].low) / r.items[0].kcal); // custom, low confidence ⇒ wider relative range
+    // custom foods can be logged; totals come from the server
+    const log = await call('POST', '/api/nutrition/log', t, { items: [{ foodId: 'milanesa_beef', grams: 160 }], custom: [{ name: 'Puré de papas', grams: 200, kcalPer100: 90, proteinPer100: 2, carbsPer100: 15, fatPer100: 2.5 }] });
+    expect(log.body.kcal).toBe(464 + 180);
+    expect(log.body.items.some((i: any) => i.custom)).toBe(true);
+    // a model that returns garbage or throws never breaks the feature
+    app = buildApp({ db, rateLimitMax: 100000, coach: async () => 'no json here' });
+    const f1 = (await call('POST', '/api/nutrition/interpret', t, { text: '2 huevos' })).body;
+    expect(f1.source).toBe('rules_fallback'); expect(f1.items[0].foodId).toBe('egg');
+    app = buildApp({ db, rateLimitMax: 100000, coach: async () => { throw new Error('down'); } });
+    expect((await call('POST', '/api/nutrition/interpret', t, { text: '2 huevos' })).body.source).toBe('rules_fallback');
+  });
+});
+
+describe('manual activities and food: add what you did elsewhere, and remove mistakes', () => {
+  it('adds a run recorded in another app with the user\'s own calories, counts it in the day, and can delete it', async () => {
+    const { t } = await athleteWithPlan();
+    const base = (await call('GET', '/api/day', t)).body.energy;
+    const r = await call('POST', '/api/activities', t, { sport: 'run', source: 'manual', startedAt: new Date().toISOString(), durationSec: 2700, movingSec: 2700, distanceM: 8000, avgPaceSecKm: 0, elevGainM: 0, route: [], kcal: 640 });
+    expect(r.body.estimatedKcal).toBe(640);
+    const list = (await call('GET', '/api/activities', t)).body.activities;
+    expect(list[0]).toMatchObject({ estimated_kcal: 640, manual: true, distance_m: 8000 });
+    expect(list[0].avg_pace_sec_km).toBe(Math.round((2700 * 1000) / 8000));
+    const after = (await call('GET', '/api/day', t)).body.energy;
+    expect(after.exercise).toBe(640);
+    expect(after.budget).toBe(base.budget + 640);
+    expect((await call('GET', '/api/energy/today?timezoneOffset=0', t)).body.exerciseKcal).toBeGreaterThanOrEqual(640);
+    expect((await call('DELETE', `/api/activities/${r.body.id}`, t)).status).toBe(200);
+    expect((await call('GET', '/api/activities', t)).body.activities).toHaveLength(0);
+    expect((await call('GET', '/api/day', t)).body.energy.exercise).toBe(0);
+    expect((await call('DELETE', `/api/activities/${r.body.id}`, t)).status).toBe(404);
+  });
+  it('a user cannot delete someone else\'s activity', async () => {
+    const a = await athleteWithPlan('m1@x.com'), b = await athleteWithPlan('m2@x.com');
+    const r = await call('POST', '/api/activities', a.t, { sport: 'walk', source: 'manual', startedAt: new Date().toISOString(), durationSec: 1800, movingSec: 1800, distanceM: 2000, avgPaceSecKm: 0, elevGainM: 0, route: [] });
+    expect((await call('DELETE', `/api/activities/${r.body.id}`, b.t)).status).toBe(404);
+  });
+  it('adds a food by calories (manual) and removes it, restoring the balance', async () => {
+    const { t } = await athleteWithPlan();
+    const before = (await call('GET', '/api/day', t)).body.energy.remaining;
+    const r = await call('POST', '/api/nutrition/log', t, { meal: 'Almuerzo en un restaurante', kcal: 900, proteinG: 40, mealType: 'lunch' });
+    expect((await call('GET', '/api/day', t)).body.energy.remaining).toBe(before - 900);
+    await call('DELETE', `/api/nutrition/log/${r.body.id}`, t);
+    expect((await call('GET', '/api/day', t)).body.energy.remaining).toBe(before);
   });
 });
 

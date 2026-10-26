@@ -20,6 +20,13 @@ describe('exercise library content', () => {
     }
     expect(missing).toEqual([]);
   });
+  it('names are in the right language (es/en/pt not swapped)', () => {
+    expect(dict.es['ex_assisted_pull_up']).toBe('Dominada asistida');
+    expect(dict.en['ex_assisted_pull_up']).toBe('Assisted pull-up');
+    expect(dict.pt['ex_assisted_pull_up']).toBe('Barra fixa assistida');
+    expect(dict.es['ex_leg_press']).toBe('Prensa de piernas');
+    expect(dict.en['ex_leg_press']).toBe('Leg press');
+  });
   it('has no orphan entries (info for exercises that do not exist)', () => {
     const ids = new Set(CATALOG.map((c) => c.id));
     expect(Object.keys(EXINFO).filter((k) => !ids.has(k))).toEqual([]);
