@@ -12,6 +12,7 @@ import {
 import type { DB } from './db';
 import { COACH_SYSTEM, type CoachFn } from './coach';
 import { registerAdmin } from './admin';
+import {registerDirectory} from './directory';
 import { registerFood } from './food';
 import { registerPro } from './pro';
 import { registerPlans } from './plans';
@@ -27,7 +28,7 @@ export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_mem
 interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null; pro_enabled: number; mode: string | null; last_seen_at: string | null; pro_code: string | null }
 
 /** One account can be athlete and professional: `mode` is the hat currently worn. Legacy rows (mode NULL) fall back to their role. */
-export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' => (u.mode === 'pro' && (u.pro_enabled || u.role === 'pro') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
+export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' | 'medical' | 'admin' => (u.mode === 'medical' ? 'medical' : u.mode === 'admin' && u.role === 'admin' ? 'admin' : u.mode === 'pro' && (u.pro_enabled || u.role === 'pro') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
 export const canPro = (u: Pick<User, 'role' | 'pro_enabled'>) => !!u.pro_enabled || u.role === 'pro' || u.role === 'admin';
 declare module 'fastify' { interface FastifyRequest { user?: User } }
 
@@ -144,15 +145,18 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   app.get('/api/me', { preHandler: auth }, async (req) => {
     const u = req.user!;
-    return { id: u.id, email: u.email, name: u.name, role: u.role, mode: modeOf(u), canPro: canPro(u), isAdmin: isAdmin(u), proCode: u.pro_code, lang: u.lang, subscription: { plan: u.plan, trialEndsAt: u.trial_ends_at, active: subscriptionActive(u), canceled: !!u.canceled_at }, consents: await consentsOf(u.id) };
+    const medicalProfile=await db.prepare("SELECT verified FROM professional_profiles WHERE user_id=? AND category='medical'").get(u.id) as {verified:number}|undefined;
+    return { id: u.id, email: u.email, name: u.name, role: u.role, mode: modeOf(u), canPro: canPro(u), canMedical:!!medicalProfile,medicalVerified:!!medicalProfile?.verified,isAdmin:isAdmin(u),availableModes:['athlete','pro',...(medicalProfile?['medical']:[]),...(isAdmin(u)?['admin']:[])], proCode: u.pro_code, lang: u.lang, subscription: { plan: u.plan, trialEndsAt: u.trial_ends_at, active: subscriptionActive(u), canceled: !!u.canceled_at }, consents: await consentsOf(u.id) };
   });
   const consentsOf = async (uid: number) => Object.fromEntries((await db.prepare('SELECT scope,granted FROM consents WHERE user_id=?').all(uid) as { scope: string; granted: number }[]).map((r) => [r.scope, !!r.granted]));
 
   /** Switch hat. Becoming a professional is self-serve; students only see your data after they accept your link. */
   app.post('/api/me/mode', { preHandler: auth }, async (req, reply) => {
-    const b = parse(z.object({ mode: z.enum(['athlete', 'pro']) }), req.body, reply);
+    const b = parse(z.object({ mode: z.enum(['athlete', 'pro', 'medical', 'admin']) }), req.body, reply);
     if (!b) return;
     if (b.mode === 'pro' && !canPro(req.user!)) return reply.code(403).send({ error: 'pro_not_enabled' });
+    if(b.mode==='admin'&&!isAdmin(req.user!))return reply.code(403).send({error:'admin_only'});
+    if(b.mode==='medical'&&!await db.prepare("SELECT 1 AS x FROM professional_profiles WHERE user_id=? AND category='medical'").get(req.user!.id))return reply.code(403).send({error:'medical_profile_required'});
     await db.prepare('UPDATE users SET mode=? WHERE id=?').run(b.mode, req.user!.id);
     await audit(req.user!.id, null, `mode:${b.mode}`);
     return { mode: b.mode };
@@ -706,6 +710,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.get('/api/health', async () => ({ ok: true }));
 
   registerAdmin({ app, db, adminOnly, parse, audit, now });
+  registerDirectory({app,db,auth,adminOnly,audit,now});
   registerProgress({ app, db, parse, audit, now, athleteOnly, needHealth });
   registerSocial({ app, db, parse, audit, now, athleteOnly, hasConsent });
   registerMemory({ app, db, parse, audit, now, athleteOnly });
