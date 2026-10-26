@@ -43,6 +43,23 @@ CREATE TABLE IF NOT EXISTS pro_templates(id @ID, pro_id INTEGER NOT NULL REFEREN
 CREATE TABLE IF NOT EXISTS measurements(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS coach_memory(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(user_id, key));
 CREATE TABLE IF NOT EXISTS coach_messages(id @ID, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS gyms(
+ id @ID,owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ name TEXT NOT NULL,city TEXT NOT NULL,area TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_gyms_owner ON gyms(owner_id);
+CREATE TABLE IF NOT EXISTS gym_members(
+ gym_id INTEGER NOT NULL REFERENCES gyms(id) ON DELETE CASCADE,
+ user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ member_type TEXT NOT NULL CHECK(member_type IN ('coach','athlete')),
+ status TEXT NOT NULL CHECK(status IN ('pending','active','revoked')),
+ assigned_coach_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+ joined_at TEXT NOT NULL,
+ PRIMARY KEY(gym_id,user_id));
+CREATE INDEX IF NOT EXISTS idx_gym_members_user ON gym_members(user_id,status);
+CREATE TABLE IF NOT EXISTS gym_billing(
+ gym_id INTEGER PRIMARY KEY REFERENCES gyms(id) ON DELETE CASCADE,
+ plan TEXT NOT NULL DEFAULT 'beta_free',status TEXT NOT NULL DEFAULT 'beta',
+ updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS professional_profiles(
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   category TEXT NOT NULL CHECK(category IN ('medical','fitness')),
