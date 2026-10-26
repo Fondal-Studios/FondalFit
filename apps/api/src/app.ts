@@ -130,7 +130,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   /* ---------------- Auth ---------------- */
   app.post('/api/auth/register', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const b = parse(z.object({ email: z.string().email(), password: z.string().min(8), name: z.string().min(1), role: z.enum(['athlete', 'pro']), lang: z.enum(['es', 'pt', 'en']).default('es') }), req.body, reply);
+    const b = parse(z.object({ email: z.string().email(), password: z.string().min(8), name: z.string().min(1), role: z.enum(['athlete', 'pro']), profession: z.enum(['coach','physician','kinesiologist','dietitian']).optional(), lang: z.enum(['es', 'pt', 'en']).default('es') }), req.body, reply);
     if (!b) return;
     const salt = randomBytes(16).toString('hex');
     const hash = scryptSync(b.password, salt, 64).toString('hex');
@@ -138,7 +138,11 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     try {
       const r = await db.prepare('INSERT INTO users(email,name,role,lang,pass_hash,salt,created_at,trial_ends_at,pro_enabled,mode) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id').get(b.email.toLowerCase(), b.name, b.role, b.lang, hash, salt, now(), trial, b.role === 'pro' ? 1 : 0, b.role) as { id: number };
       await audit(r.id, null, 'register');
-      return { token: await newToken(r.id) };
+      if(b.role==='pro'&&b.profession){
+      // Keep the selected profession as onboarding metadata until a complete profile is submitted.
+      await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'professional_onboarding',?,?)").run(r.id,JSON.stringify({profession:b.profession}),now());
+    }
+    return { token: await newToken(r.id) };
     } catch { return reply.code(409).send({ error: 'email_taken' }); }
   });
 
