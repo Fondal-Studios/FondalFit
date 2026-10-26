@@ -54,7 +54,7 @@ export function MyProfessionalProfile({me,category,onSaved}:{me:Me;category:Cate
    <label>Especialidad<input placeholder={category==='medical'?'Medicina del ejercicio, nutrición clínica…':'Calistenia, fuerza, running…'} value={profile.specialty} onChange={e=>set('specialty',e.target.value)}/></label>
    <label>Formación / título<input value={profile.credentials} onChange={e=>set('credentials',e.target.value)}/></label>
    <label>{category==='medical'?'Matrícula profesional':'Certificación (si corresponde)'}<input value={profile.license??''} onChange={e=>set('license',e.target.value)}/></label>
-   <label>WhatsApp internacional (solo números, ej. 5493875466419)<input inputMode="tel" value={profile.phone} onChange={e=>set('phone',e.target.value)}/></label>
+   <label>WhatsApp internacional (solo números, ej. 5493875467519)<input inputMode="tel" value={profile.phone} onChange={e=>set('phone',e.target.value)}/></label>
    <label>Ciudad<input value={profile.city} onChange={e=>set('city',e.target.value)}/></label>
    <label>Zona o barrio<input value={profile.area} onChange={e=>set('area',e.target.value)}/></label>
    <label>Modalidad<select value={profile.modality} onChange={e=>set('modality',e.target.value as Profile['modality'])}><option value="both">Presencial y virtual</option><option value="in_person">Presencial</option><option value="online">Virtual</option></select></label>
