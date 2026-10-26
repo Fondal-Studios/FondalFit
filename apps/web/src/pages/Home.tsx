@@ -26,7 +26,7 @@ export function Home() {
   const ch = useLoad<{ challenges: Challenge[]; points: number }>('/api/challenges');
   const goals = useLoad<{ targets: { metric: string; pct: number; targetKg?: number; targetSec?: number; exerciseId?: string; current: number | null; byDate?: string; projected?: boolean }[] }>('/api/goals');
   const history = useLoad<{sessions:{dayIndex:number;name:string;date:string;durationMin:number;sets:number;volumeKg:number;estimatedKcal:number|null}[]}>('/api/plan/workout-history');
-  const menus = useLoad<{menus:{name?:string;title?:string;kcal:number;p:number}[]}>('/api/nutrition/menus');
+  const menus = useLoad<{menus:{id:string;p:number;c:number;f:number}[]}>('/api/nutrition/menus');
   const gam = useLoad<{ level: number; xp: number; streakWeeks: number }>('/api/gamification');
   const [busy, setBusy] = useState(false);
 
@@ -83,7 +83,7 @@ export function Home() {
         {p.week&&<p><strong>{p.week.doneDays.length} de {days.length} jornadas completadas esta semana.</strong></p>}
         <button onClick={()=>nav.go('train')}>Ver mis entrenamientos</button>
       </section>
-      {menus.data?.menus?.length>0&&<section className="card"><h3>Idea de comida para hoy</h3><p>{menus.data.menus[0]?.name??menus.data.menus[0]?.title??'Plato sugerido'} · ≈{menus.data.menus[0]?.kcal} kcal</p><p className="muted small">Ejemplo informativo, no una dieta prescrita.</p><button onClick={()=>nav.go('food')}>Ver alimentos y platos</button></section>}
+      {menus.data?.menus?.length>0&&<section className="card"><h3>Idea de comida para hoy</h3><p>{t('dish_'+menus.data.menus[0]!.id)} · ≈{Math.round(4*menus.data.menus[0]!.p+4*menus.data.menus[0]!.c+9*menus.data.menus[0]!.f)} kcal</p><p className="muted small">Ejemplo informativo, no una dieta prescrita.</p><button onClick={()=>nav.go('food')}>Ver alimentos y platos</button></section>}
 
       {p.away && p.away.gapDays >= 10 && p.away.options && (
         <div className="card alert"><h3>{t('welcomeBack')} · {p.away.gapDays} {t('daysAway')}</h3><p>{t('returnIntro')}</p>
