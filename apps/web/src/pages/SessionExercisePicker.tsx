@@ -5,7 +5,7 @@ import {useT} from '../ctx';
 type Preview={version:number;toId:string;explanation:string};
 type Alternative={id:string;muscle:string;equipment:string[];level:number;available:boolean;equipmentRegistered:boolean;risk:'green'|'yellow'|'red';restrictions:string[];reason:string|null};
 type Alternatives={version:number;sourceId:string;goal:string;alternatives:Alternative[]};
-type Props={dayIndex:number;itemIndex:number;exerciseId:string;onCancel:()=>void;onSaved:()=>void};
+type Props={dayIndex:number;itemIndex:number;exerciseId:string;onCancel:()=>void;onSaved:()=>void;onSessionChoice?:(id:string)=>void};
 const messages:Record<string,string>={
  professional_plan_requires_approval:'Esta rutina fue indicada por tu profesional. Solicitale que autorice la modificación.',
  program_requires_professional_review:'Esta rutina tiene una progresión por semanas. Solicitá revisión antes de sustituir ejercicios.',
@@ -18,7 +18,7 @@ const messages:Record<string,string>={
  exercise_not_found:'No encontramos el ejercicio en la rutina activa.',
  same_exercise:'Ya estás realizando ese ejercicio.',
 };
-export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,onSaved}:Props){
+export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,onSaved,onSessionChoice}:Props){
  const t=useT();
  const [version,setVersion]=useState<number|null>(null);
  const [choices,setChoices]=useState<Alternative[]>([]);
@@ -38,7 +38,7 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
    setPreview(p);
   }catch(e){
    const code=(e as {body?:{error?:string}}).body?.error??'';
-   setError(messages[code]??'No se pudo evaluar este ejercicio. Intentá con otra alternativa.');
+   setError(messages[code]??'No se pudo modificar el plan. Podés registrar el ejercicio elegido para esta sesión.');
   }finally{setBusy(false);}
  };
  const confirm=async()=>{
@@ -51,6 +51,13 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
    const code=(e as {body?:{error?:string}}).body?.error??'';
    setError(messages[code]??'No se pudo guardar el cambio. Intentá de nuevo.');setPreview(null);
   }finally{setBusy(false);}
+ };
+ const recordChoice=async()=>{
+  if(!selected||version===null||busy)return;
+  setBusy(true);setError('');
+  try{await api('POST','/api/plan/exercise-swap/session-choice',{dayIndex,itemIndex,replacementId:selected,expectedVersion:version,riskAcknowledged:true});onSessionChoice?.(selected);}
+  catch{setError('No se pudo registrar el ejercicio de esta sesión.');}
+  finally{setBusy(false);}
  };
  const visible=choices.filter(x=>t('ex_'+x.id).toLowerCase().includes(search.toLowerCase())||x.id.includes(search.toLowerCase())).slice(0,35);
  return <div className="exercise-swap-overlay" role="presentation" onClick={e=>{if(e.target===e.currentTarget)onCancel();}}>
@@ -76,6 +83,7 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
    </>}
    {busy&&<p role="status">{preview?'Guardando el cambio…':'Verificando compatibilidad…'}</p>}
    {error&&<p className="warn" role="alert">{error}</p>}
+   {selected&&onSessionChoice&&<div className="card"><p><strong>Registrar lo que voy a hacer hoy</strong></p><p className="muted">Si el ejercicio entra en conflicto con una lesión registrada, Fondal Fit no lo recomienda. Podés documentar tu elección para esta sesión sin modificar tu plan ni afirmar que es seguro.</p><button type="button" disabled={busy} onClick={()=>void recordChoice()}>Registrar este ejercicio para la sesión</button></div>}
    <p className="muted small">No se modifica ningún ejercicio hasta que confirmes. Si el plan fue asignado por un profesional, el cambio requiere su revisión.</p>
   </section>
  </div>;
