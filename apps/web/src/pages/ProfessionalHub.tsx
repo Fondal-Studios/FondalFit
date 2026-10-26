@@ -13,6 +13,7 @@ export function ProfessionalHub(){
  const [status,setStatus]=useState(''),[email,setEmail]=useState(''),[busy,setBusy]=useState(false);
  const [section,setSection]=useState<'students'|'plans'|'connect'>('students');
  const [search,setSearch]=useState('');
+ const [professionalNotices,setProfessionalNotices]=useState<{code:string;category?:string;message:string}[]>([]);
  const [filter,setFilter]=useState<'all'|'inactive'|'pending'>('all');
  const [loading,setLoading]=useState(true);
  const visible=athletes.filter(a=>(a.name+' '+a.email).toLowerCase().includes(search.toLowerCase())&&(filter==='all'||(filter==='inactive'&&a.sessions30===0)||(filter==='pending'&&a.pendingApprovals>0)));
@@ -22,11 +23,13 @@ export function ProfessionalHub(){
   api<{code:string}>('GET','/api/pro/code').then(x=>setCode(x.code)).catch(()=>{});
  };
  useEffect(()=>{refresh();api<{id:string;name:string}[]>('GET','/api/exercises').then(setExercises).catch(()=>{});},[]);
+ useEffect(()=>{api<{notifications:typeof professionalNotices}>('GET','/api/profiles/notifications').then(r=>setProfessionalNotices(r.notifications)).catch(()=>{});},[]);
  useEffect(()=>{if(selected!==null)api<Feedback>('GET',`/api/pro/athletes/${selected}/training-feedback`).then(setFeedback).catch(()=>setFeedback(null));},[selected]);
  const patchDay=(i:number,p:Partial<Day>)=>setDays(v=>v.map((d,j)=>i===j?{...d,...p}:d));
  const save=async()=>{setBusy(true);try{await api('POST','/api/pro/templates',{name,goal,days});setStatus('Rutina guardada. Elegí un alumno para asignarla.');refresh();}catch{setStatus('Revisá la rutina: cada jornada debe tener ejercicios o cardio.');}finally{setBusy(false);}};
  const assign=async(id:number)=>{if(selected===null)return;try{await api('POST',`/api/pro/templates/${id}/assign`,{athleteId:selected});setStatus('Rutina asignada al alumno; se conservan las versiones anteriores.');setSection('students');refresh();}catch{setStatus('No se pudo asignar la rutina.');}};
  return <div className="professional-hub">
+  {professionalNotices.length>0&&<section className="card" role="status"><h2>Notificaciones de tu perfil ({professionalNotices.length})</h2><ul>{professionalNotices.map((n,i)=><li key={n.code+'-'+(n.category??i)}>{n.message}</li>)}</ul><p className="muted">Completá tu perfil profesional desde el menú de tu cuenta para solicitar la verificación y aparecer en el directorio.</p><button type="button" onClick={()=>api<{notifications:typeof professionalNotices}>('GET','/api/profiles/notifications').then(r=>setProfessionalNotices(r.notifications)).catch(()=>{})}>Actualizar avisos</button></section>
   <div className="card pro-workflow-intro"><h2>Estudio del entrenador</h2><p className="muted">1. Compartí tu código · 2. Vinculá un alumno · 3. Creá una rutina · 4. Asignala · 5. Revisá su progreso.</p>
     <div className="pro-workflow-tabs" role="group" aria-label="Herramientas profesionales">
       <button className={section==='students'?'on':''} onClick={()=>setSection('students')}>Mis alumnos</button>
