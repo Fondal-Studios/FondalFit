@@ -4,9 +4,9 @@ import type {DB} from './db';
 type Guard=(req:FastifyRequest,reply:FastifyReply)=>Promise<unknown>;
 type Context={app:FastifyInstance;db:DB;auth:Guard;adminOnly:Guard;audit:(actor:number|null,subject:number|null,action:string)=>Promise<unknown>;now:()=>string};
 const categories=['medical','fitness'] as const;
-const healthProfessions=['physician','kinesiologist','other_health'] as const;
+const healthProfessions=['physician','kinesiologist','dietitian','other_health'] as const;
 const profileInput=z.object({
- category:z.enum(categories),profession:z.enum(['physician','kinesiologist','other_health','coach']).optional(),displayName:z.string().trim().min(3).max(90),
+ category:z.enum(categories),profession:z.enum(['physician','kinesiologist','dietitian','other_health','coach']).optional(),displayName:z.string().trim().min(3).max(90),
  specialty:z.string().trim().min(3).max(100),credentials:z.string().trim().max(180).default(''),
  license:z.string().trim().max(80).default(''),description:z.string().trim().max(700).default(''),
  phone:z.string().regex(/^\+?[0-9 ]{8,22}$/),city:z.string().trim().min(2).max(100),
@@ -23,10 +23,10 @@ const distanceKm=(lat1:number,lon1:number,lat2:number,lon2:number)=>{
 };
 export function registerDirectory({app,db,auth,adminOnly,audit,now}:Context){
  app.get('/api/directory',{preHandler:auth},async(req,reply)=>{
-  const q=z.object({category:z.enum(['medical','fitness','kinesiology','all']).default('all'),city:z.string().max(100).default(''),lat:z.coerce.number().min(-90).max(90).optional(),lon:z.coerce.number().min(-180).max(180).optional()}).safeParse(req.query);
+  const q=z.object({category:z.enum(['medical','fitness','kinesiology','nutrition','all']).default('all'),city:z.string().max(100).default(''),lat:z.coerce.number().min(-90).max(90).optional(),lon:z.coerce.number().min(-180).max(180).optional()}).safeParse(req.query);
   if(!q.success)return reply.code(400).send({error:'invalid_filters'});
   const rows=await db.prepare('SELECT * FROM professional_profiles WHERE verified=1 AND published=1 ORDER BY updated_at DESC').all() as Record<string,unknown>[];
-  const items=rows.filter(p=>(q.data.category==='all'||(q.data.category==='kinesiology' ? p.category==='medical'&&p.profession==='kinesiologist' : p.category===q.data.category))&&(!q.data.city||String(p.city).toLowerCase().includes(q.data.city.toLowerCase())))
+  const items=rows.filter(p=>(q.data.category==='all'||(q.data.category==='kinesiology' ? p.category==='medical'&&p.profession==='kinesiologist' : q.data.category==='nutrition' ? p.category==='medical'&&p.profession==='dietitian' : p.category===q.data.category))&&(!q.data.city||String(p.city).toLowerCase().includes(q.data.city.toLowerCase())))
     .map(p=>({...rowToPublic(p),distanceKm:q.data.lat!==undefined&&q.data.lon!==undefined&&p.lat!==null&&p.lon!==null?Math.round(distanceKm(q.data.lat,q.data.lon,Number(p.lat),Number(p.lon))*10)/10:null}))
     .sort((a,b)=>(a.distanceKm??99999)-(b.distanceKm??99999));
   return {items:items.slice(0,100),note:'Solo profesionales verificados. La distancia se estima en línea recta cuando se comparte ubicación.'};
