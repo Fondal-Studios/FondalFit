@@ -14,7 +14,7 @@ interface PlanRes {
   away?: { gapDays: number; options: { weeks: number; setsMult: number } | null };
   week?: { doneDays: number[]; nextIndex: number | null };
 }
-interface Energy { eaten: number; targetBudget: number | null; remaining: number | null; exerciseKcal: number; burnedSoFar: number; basalSoFar: number; neatSoFar: number; dailyBmr: number }
+interface Energy { eaten: number; targetBudget: number | null; remaining: number | null; exerciseKcal: number; burnedSoFar: number; basalSoFar: number; neatSoFar: number; dailyBmr: number; plannedTdee?:number;goalAdjustment?:number;goal?:string;lifeFactor?:number|null;dailyNeatProxy?:number }
 interface Challenge { id: string; target: number; value: number; pct: number; done: boolean; metric: string }
 
 /** "Hoy": what to do now (one tap), how the day's energy stands, and what changed since last time. */
@@ -25,6 +25,8 @@ export function Home() {
   const daily = useLoad<{ activities: { id: number; sport: string; duration_sec: number; distance_m: number; avg_pace_sec_km: number; estimated_kcal: number | null }[]; totalKcal: number }>('/api/activity/today?timezoneOffset=' + new Date().getTimezoneOffset());
   const ch = useLoad<{ challenges: Challenge[]; points: number }>('/api/challenges');
   const goals = useLoad<{ targets: { metric: string; pct: number; targetKg?: number; targetSec?: number; exerciseId?: string; current: number | null; byDate?: string; projected?: boolean }[] }>('/api/goals');
+  const history = useLoad<{sessions:{dayIndex:number;name:string;date:string;durationMin:number;sets:number;volumeKg:number;estimatedKcal:number|null}[]}>('/api/plan/workout-history');
+  const menus = useLoad<{menus:{name?:string;title?:string;kcal:number;p:number}[]}>('/api/nutrition/menus');
   const gam = useLoad<{ level: number; xp: number; streakWeeks: number }>('/api/gamification');
   const [busy, setBusy] = useState(false);
 
@@ -56,6 +58,32 @@ export function Home() {
   return (
     <div className="stack">
       {hello}
+
+      <section className="card" aria-label="Resumen energético del día">
+        <h3>Tu balance de hoy</h3>
+        {e?<>
+          <div className="grid2">
+            <div><span className="muted small">Consumidas</span><h2>{e.eaten} kcal</h2></div>
+            <div><span className="muted small">Actividad registrada</span><h2>≈{e.exerciseKcal} kcal</h2></div>
+            <div><span className="muted small">Mantenimiento estimado hoy</span><h2>≈{Math.round((e.dailyBmr+ (e.dailyNeatProxy??0))+e.exerciseKcal)} kcal</h2></div>
+            <div><span className="muted small">Meta orientativa de ingesta</span><h2>{e.targetBudget??'—'} kcal</h2></div>
+          </div>
+          <p><strong>{(e.goalAdjustment??0)<0?'Déficit previsto':(e.goalAdjustment??0)>0?'Superávit previsto':'Mantenimiento previsto'}</strong> · {e.goalAdjustment===undefined?'Sin ajuste disponible':`${e.goalAdjustment>0?'+':''}${e.goalAdjustment} kcal/día`} respecto del gasto semanal estimado.</p>
+          <p className="muted small">Meta = gasto cotidiano estimado + ejercicio registrado + ajuste del objetivo. La cifra puede variar según la actividad; no es una prescripción ni un balance definitivo.</p>
+          <p><strong>{e.targetBudget===null?'Registrá tu evaluación para calcular la meta':e.eaten<=e.targetBudget?`Te quedan aproximadamente ${e.targetBudget-e.eaten} kcal hasta la meta orientativa`:`Superaste la meta orientativa en ${e.eaten-e.targetBudget} kcal`}</strong></p>
+          <details><summary>¿Cómo se calcula?</summary><p className="muted small">TMB (Mifflin-St Jeor): {e.dailyBmr} kcal. Actividad cotidiana estimada: {e.dailyNeatProxy??'—'} kcal. Ejercicio registrado: ≈{e.exerciseKcal} kcal. Mantenimiento semanal medio estimado: ≈{e.plannedTdee??'—'} kcal. Ajuste de objetivo: {e.goalAdjustment??0} kcal. No confundir el gasto acumulado hasta ahora con el gasto esperado al final del día.</p></details>
+        </>:<p className="muted">Cargando estimaciones…</p>}
+      </section>
+      <section className="card" aria-label="Estado de entrenamiento">
+        <h3>Entrenamientos y gasto estimado</h3>
+        {history.data?.sessions.length?<>
+          {history.data.sessions.slice(0,3).map((x,i)=><p key={i}><strong>{x.name}</strong> · {new Date(x.date).toLocaleDateString()} · {x.durationMin} min · {x.sets} series · ≈{x.estimatedKcal??'—'} kcal</p>)}
+          <p className="muted small">Historial de sesiones registradas. Las calorías son aproximaciones, no mediciones.</p>
+        </>:<p className="muted">Todavía no hay sesiones de fuerza registradas.</p>}
+        {p.week&&<p><strong>{p.week.doneDays.length} de {days.length} jornadas completadas esta semana.</strong></p>}
+        <button onClick={()=>nav.go('train')}>Ver mis entrenamientos</button>
+      </section>
+      {menus.data?.menus?.length>0&&<section className="card"><h3>Idea de comida para hoy</h3><p>{menus.data.menus[0]?.name??menus.data.menus[0]?.title??'Plato sugerido'} · ≈{menus.data.menus[0]?.kcal} kcal</p><p className="muted small">Ejemplo informativo, no una dieta prescrita.</p><button onClick={()=>nav.go('food')}>Ver alimentos y platos</button></section>}
 
       {p.away && p.away.gapDays >= 10 && p.away.options && (
         <div className="card alert"><h3>{t('welcomeBack')} · {p.away.gapDays} {t('daysAway')}</h3><p>{t('returnIntro')}</p>
