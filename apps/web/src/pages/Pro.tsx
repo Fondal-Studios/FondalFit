@@ -6,7 +6,7 @@ import { Page, useNav } from '../nav';
 
 interface Student { linkId: number; id: number; name: string; email: string; limits: { maxLoadIncreasePct: number; maxWeeklyVolumeDeltaPct: number; maxSessionsPerWeek: number; allowAutoDeload: boolean }; lastSession: string | null; sessions30: number; recovery: { score: number; alerts: string[] } | null; pendingApprovals: number }
 interface TplItem { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; restSec?: number; load: number }
-interface TplDay { name: string; kind: 'strength' | 'cardio'; items: TplItem[]; cardio?: { modality: 'run' | 'bike'; type: 'zone2' | 'intervals' | 'tempo' | 'long' | 'walkrun'; durationMin: number } }
+interface TplDay { name: string; kind: 'strength' | 'cardio'; format?: 'standard'|'superset'|'circuit'; items: TplItem[]; cardio?: { modality: 'run' | 'bike'; type: 'zone2' | 'intervals' | 'tempo' | 'long' | 'walkrun'; durationMin: number } }
 interface Tpl { id?: number; name: string; goal: string; notes?: string; days: TplDay[] }
 const GOALS = ['hypertrophy', 'strength', 'recomposition', 'fat_loss', 'endurance', 'vo2max', 'general', 'mobility'];
 const ago = (iso: string | null) => (iso ? Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 864e5)) : null);
@@ -160,7 +160,7 @@ export function StudioEditor({ id }: { id?: number }) {
   const setItem = (di: number, ii: number, p: Partial<TplItem>) => setDay(di, { items: cur.days[di]!.items.map((x, j) => (j === ii ? { ...x, ...p } : x)) });
   const save = async () => {
     setBusy(true);
-    const body = { name: cur.name, goal: cur.goal, notes: cur.notes, days: cur.days.map((d) => (d.kind === 'cardio' ? { name: d.name, kind: 'cardio', items: [], cardio: d.cardio ?? { modality: 'run', type: 'zone2', durationMin: 40 } } : { name: d.name, kind: 'strength', items: d.items })) };
+    const body = { name: cur.name, goal: cur.goal, notes: cur.notes, days: cur.days.map((d) => (d.kind === 'cardio' ? { name: d.name, kind: 'cardio', items: [], cardio: d.cardio ?? { modality: 'run', type: 'zone2', durationMin: 40 } } : { name: d.name, kind: 'strength', format:d.format??'standard', items: d.items })) };
     try { if (id) await api('PUT', `/api/pro/templates/${id}`, body); else await api('POST', '/api/pro/templates', body); toast(t('saved')); nav.back(); }
     catch (e) { toast(e instanceof ApiError ? t('invalid') : t('netError')); } finally { setBusy(false); }
   };
@@ -175,6 +175,7 @@ export function StudioEditor({ id }: { id?: number }) {
         <div className="card" key={di}>
           <div className="row between"><input aria-label={t('name')} value={d.name} maxLength={60} onChange={(e) => setDay(di, { name: e.target.value })} /><button style={{ flex: 'none' }} aria-label={t('remove')} disabled={cur.days.length === 1} onClick={() => set({ days: cur.days.filter((_, j) => j !== di) })}>✕</button></div>
           <div className="tabs-inline"><button className={d.kind === 'strength' ? 'on' : ''} onClick={() => setDay(di, { kind: 'strength' })}>{t('kind_strength')}</button><button className={d.kind === 'cardio' ? 'on' : ''} onClick={() => setDay(di, { kind: 'cardio', cardio: d.cardio ?? { modality: 'run', type: 'zone2', durationMin: 40 } })}>{t('kind_cardio')}</button></div>
+          {d.kind!=='cardio'&&<div className="card"><label>Organización de la jornada<select value={d.format??'standard'} onChange={e=>setDay(di,{format:e.target.value as 'standard'|'superset'|'circuit'})}><option value="standard">Series individuales</option><option value="superset">Superseries (alternar parejas)</option><option value="circuit">Circuito (una ronda de todos)</option></select></label><p className="muted small">{d.format==='circuit'?'Una ronda por ejercicio y después repetir hasta completar las series.':d.format==='superset'?'Alterná dos ejercicios antes del descanso largo, sin añadir volumen.':'Completá todas las series de un ejercicio antes de seguir.'}</p></div>}
           {d.kind === 'cardio' && d.cardio ? (
             <div className="grid3"><label>{t('cardioMods')}<select value={d.cardio.modality} onChange={(e) => setDay(di, { cardio: { ...d.cardio!, modality: e.target.value as 'run' | 'bike' } })}><option value="run">{t('run')}</option><option value="bike">{t('bike')}</option></select></label>
               <label>{t('type')}<select value={d.cardio.type} onChange={(e) => setDay(di, { cardio: { ...d.cardio!, type: e.target.value as CardioType } })}>{['zone2', 'intervals', 'tempo', 'long', 'walkrun'].map((x) => <option key={x} value={x}>{t('ct_' + x)}</option>)}</select></label>
