@@ -56,7 +56,7 @@ export function registerPlans(c: PlanCtx) {
   });
 
   /** Two-stage exercise swap: never allow the language model to write the plan directly. */
-  const swapSchema=z.object({dayIndex:z.number().int().min(0).max(6),itemIndex:z.number().int().min(0).max(30),replacementId:z.string().max(60),equipmentConfirmed:z.boolean().default(false),expectedVersion:z.number().int().positive().optional()});
+  const swapSchema=z.object({dayIndex:z.number().int().min(0).max(6),itemIndex:z.number().int().min(0).max(30),replacementId:z.string().max(60),equipmentConfirmed:z.boolean().default(false),clinicianApproved:z.boolean().default(false),expectedVersion:z.number().int().positive().optional()});
   const evaluateSwap=async(uid:number,b:z.infer<typeof swapSchema>)=>{
     const latest=await c.latestPlan(uid);
     if(!latest)return {error:'no_plan'} as const;
@@ -76,7 +76,7 @@ export function registerPlans(c: PlanCtx) {
     if(hasCondition||Object.values(a.redFlags??{}).some(Boolean))return {error:'professional_clearance_required'} as const;
     const available=new Set([...(a.equipment??[]),'none']);
     if(!to.equipment.some(x=>available.has(x))&&!b.equipmentConfirmed)return {error:'equipment_confirmation_required'} as const;
-    if(to.stresses.some(x=>(a.restrictions??[]).includes(x)))return {error:'exercise_conflicts_with_restriction'} as const;
+    if(to.stresses.some(x=>(a.restrictions??[]).includes(x))&&!b.clinicianApproved)return {error:'exercise_conflicts_with_restriction'} as const;
     const maxLevel=a.experience==='advanced'?3:a.experience==='intermediate'?2:1;
     if(to.level>maxLevel)return {error:'exercise_too_advanced'} as const;
     if(from.id===to.id)return {error:'same_exercise'} as const;
@@ -84,7 +84,7 @@ export function registerPlans(c: PlanCtx) {
     const proposed=structuredClone(plan);
     const item=proposed.days[b.dayIndex]!.items[b.itemIndex]!;
     item.exerciseId=to.id;item.load=0;
-    const explanation=(b.equipmentConfirmed?'Confirmaste que disponés del equipamiento necesario. ':'')+'Ambos ejercicios trabajan principalmente '+to.muscle+' y comparten el patrón '+to.pattern+'. La sustitución es compatible con el objetivo '+plan.goal+'. Se conserva la cantidad de series y repeticiones, y se reinicia la carga para evitar trasladar automáticamente un peso inseguro. Revisá la técnica antes de comenzar.';
+    const explanation=(b.clinicianApproved?'Declaraste que un profesional responsable autorizó específicamente este movimiento. ':'')+(b.equipmentConfirmed?'Confirmaste que disponés del equipamiento necesario. ':'')+'Ambos ejercicios trabajan principalmente '+to.muscle+' y comparten el patrón '+to.pattern+'. La sustitución es compatible con el objetivo '+plan.goal+'. Se conserva la cantidad de series y repeticiones, y se reinicia la carga para evitar trasladar automáticamente un peso inseguro. Revisá la técnica antes de comenzar.';
     return {plan:proposed,version:latest.version,fromId:from.id,toId:to.id,explanation} as const;
   };
   /** Catalog-based alternatives, excluding exercises already scheduled in this workout. */
@@ -103,7 +103,9 @@ export function registerPlans(c: PlanCtx) {
     const maxLevel=a.experience==='advanced'?3:a.experience==='intermediate'?2:1;
     const choices=CATALOG.filter(x=>!scheduled.has(x.id)&&x.pattern===source.pattern&&x.muscle===source.muscle&&!!x.timed===!!source.timed)
       .map(x=>({id:x.id,muscle:x.muscle,pattern:x.pattern,equipment:x.equipment,level:x.level,
-        available:x.level<=maxLevel&&!x.stresses.some(area=>(a.restrictions??[]).includes(area)),
+        available:true,
+        risk:x.stresses.some(area=>(a.restrictions??[]).includes(area))?'red':x.level>maxLevel||!x.equipment.some(eq=>available.has(eq))?'yellow':'green',
+        restrictions:x.stresses.filter(area=>(a.restrictions??[]).includes(area)),
         equipmentRegistered:x.equipment.some(eq=>available.has(eq)),
         reason:!x.equipment.some(eq=>available.has(eq))?'equipment_unavailable':x.level>maxLevel?'exercise_too_advanced':x.stresses.some(area=>(a.restrictions??[]).includes(area))?'exercise_conflicts_with_restriction':null}))
       .sort((x,y)=>Number(y.available)-Number(x.available)||x.level-y.level||x.id.localeCompare(y.id));
