@@ -286,3 +286,9 @@ nav.tabs button {min-width:0;flex:1 1 0;padding:8px 3px;overflow-wrap:anywhere}
 .tutor-roster .card button {width:100%;min-width:0;white-space:normal;font-size:.82rem;overflow-wrap:anywhere}
 .tutor-card-sprite {width:112px;max-width:100%;height:75px;margin:0 auto 8px;background-repeat:no-repeat;background-position:0 0;background-size:400% 900%;image-rendering:pixelated;border-radius:10px;background-color:#243229}
 @media (max-width:390px) {.tutor-companion-head{gap:8px}.tutor-mini-sprite{width:58px;height:40px;flex-basis:58px}.tutor-roster{gap:7px}.tutor-roster .card{padding:8px 6px}.tutor-companion-actions button{flex:1 1 100%}}
+
+/* Athlete plan editor: exercise info and persistent change action remain independently clickable. */
+.athlete-exercise-row{display:flex;align-items:stretch;gap:8px;border-bottom:1px solid var(--line);min-width:0;padding:5px 0}
+.athlete-exercise-row>button:first-child{flex:1;min-width:0;text-align:left;display:flex;justify-content:space-between;align-items:center}
+.athlete-exercise-edit{flex:0 0 auto;align-self:center;font-size:.83rem;padding:8px 10px}
+@media(max-width:430px){.athlete-exercise-row{flex-wrap:wrap}.athlete-exercise-row>button:first-child{flex:1 1 100%}.athlete-exercise-edit{flex:1 1 100%}}
