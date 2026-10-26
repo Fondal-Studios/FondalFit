@@ -7,6 +7,7 @@ import { Home } from './pages/Home';
 import { More } from './pages/More';
 import {ProfessionalHub} from './pages/ProfessionalHub';
 import {WeeklyRankings} from './pages/WeeklyRankings';
+import {GymStudio} from './pages/GymStudio';
 import {Directory,MyProfessionalProfile,MedicalPanel,AdminPanel} from './pages/Directory';
 
 // Heavier screens load on demand: faster first paint on the free server and slow phones.
@@ -80,12 +81,12 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 }
 
 const ATHLETE_TABS = ['home', 'train', 'cardio', 'food', 'more'];
-const MORE_TABS = ['coach', 'science', 'recovery', 'progress', 'rankings', 'directory', 'profile', 'settings'];
-const PRO_TABS = ['athletes', 'approvals', 'directory', 'settings'];
+const MORE_TABS = ['coach', 'science', 'recovery', 'progress', 'rankings', 'directory', 'gyms', 'profile', 'settings'];
+const PRO_TABS = ['athletes', 'gyms', 'approvals', 'directory', 'settings'];
 const MEDICAL_TABS=['medical_panel','directory','settings'];
 const ADMIN_TABS=['admin_panel','directory','settings'];
-const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', athletes: 'athletes', approvals: 'approvals', settings: 'settings', rankings:'rankings',directory:'Profesionales',profile:'Afiliarme',medical_panel:'Salud',admin_panel:'Administración' };
-const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', athletes: '👥', approvals: '✅', settings: '⚙️',rankings:'🏆',directory:'🔎',profile:'🩺',medical_panel:'🩺',admin_panel:'🛡️' };
+const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', athletes: 'athletes', approvals: 'approvals', settings: 'settings', rankings:'rankings',gyms:'Gimnasios',directory:'Profesionales',profile:'Afiliarme',medical_panel:'Salud',admin_panel:'Administración' };
+const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', athletes: '👥', approvals: '✅', settings: '⚙️',rankings:'🏆',gyms:'🏢',directory:'🔎',profile:'🩺',medical_panel:'🩺',admin_panel:'🛡️' };
 
 function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void; onLang: (l: Lang) => void; onLogout: () => void }) {
   const t = useT();
@@ -127,6 +128,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           {tab === 'recovery' && <><BackToMore go={go} /><Recovery /></>}
           {tab === 'progress' && <><BackToMore go={go} /><Progress /></>}
           {tab === 'athletes' && <ProfessionalHub />}
+          {tab === 'gyms' && <GymStudio athlete={me.mode==='athlete'}/>}
           {tab === 'directory' && <Directory />}
           {tab === 'profile' && <MyProfessionalProfile me={me} category="medical" onSaved={refresh}/>}
           {tab === 'medical_panel' && <MedicalPanel me={me}/>}
@@ -134,7 +136,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
           {tab === 'rankings' && <WeeklyRankings />}
           {tab === 'approvals' && <ProApprovals />}
           {tab === 'settings' && <><section className="card"><h2>Mi cuenta · Cambiar interfaz</h2><p className="muted">Elegí qué herramientas querés usar. El cambio no borra entrenamientos ni vínculos.</p><div className="mode-selector">{(['athlete','pro','medical','admin'] as const).map(m=><button key={m} className={me.mode===m?'on':''} disabled={switching||(m==='medical'&&!me.canMedical)||(m==='admin'&&!me.isAdmin)} onClick={()=>void switchMode(m)}>{({athlete:'Deportista',pro:'Entrenador físico',medical:'Profesional de salud',admin:'Administrador'} as const)[m]}{me.mode===m?' ✓':''}</button>)}</div>{!me.canMedical&&<p className="muted">Para habilitar Salud, completá tu perfil profesional y solicitá verificación.</p>}</section>{me.mode==='athlete'&&<MyProfessionalProfile me={me} category="medical" onSaved={refresh}/>}<Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} onWizard={() => go('wizard')} /></>}
-          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{['directory','profile','medical_panel','admin_panel'].includes(k)?NAV[k]:k==='rankings'?'Ranking':t(NAV[k]!)}</button>)}</nav>
+          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={navActive === k ? 'on' : ''} aria-current={navActive === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{['directory','profile','medical_panel','admin_panel','gyms'].includes(k)?NAV[k]:k==='rankings'?'Ranking':t(NAV[k]!)}</button>)}</nav>
         </Suspense>
       )}
     </>
