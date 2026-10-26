@@ -60,6 +60,10 @@ export function MyProfessionalProfile({me,category,onSaved}:{me:Me;category:Cate
    <label>Modalidad<select value={profile.modality} onChange={e=>set('modality',e.target.value as Profile['modality'])}><option value="both">Presencial y virtual</option><option value="in_person">Presencial</option><option value="online">Virtual</option></select></label>
    <label>Presentación<textarea rows={3} value={profile.description} onChange={e=>set('description',e.target.value)}/></label>
   </div>
+  <div className="card"><strong>Ubicación aproximada en el mapa (opcional)</strong><p className="muted">Si querés aparecer por cercanía, podés compartir una zona aproximada. Redondeamos la ubicación a unos 1 km; no guardamos tu dirección exacta.</p>
+    <button onClick={()=>{if(!navigator.geolocation){setStatus('GPS no disponible. Podés mantener solo la ciudad.');return;}navigator.geolocation.getCurrentPosition(pos=>{setProfile(p=>({...p,lat:Math.round(pos.coords.latitude*100)/100,lon:Math.round(pos.coords.longitude*100)/100}));setStatus('Zona aproximada cargada. Guardá el perfil para enviarla a verificación.');},()=>setStatus('No se pudo obtener ubicación. La ciudad alcanza para el buscador.'),{enableHighAccuracy:false,timeout:10000});}}>Usar mi zona aproximada</button>
+    {profile.lat!==null&&<p className="muted">Zona aproximada: {profile.lat}, {profile.lon} <button onClick={()=>setProfile(p=>({...p,lat:null,lon:null}))}>Quitar ubicación</button></p>}
+  </div>
   <label className="check"><input type="checkbox" checked={!!profile.published} onChange={e=>set('published',e.target.checked)}/>Quiero aparecer en el buscador una vez verificado</label>
   <button className="primary" disabled={saving||!profile.specialty.trim()||!profile.phone.trim()} onClick={()=>void save()}>{saving?'Guardando…':'Guardar y solicitar verificación'}</button>
   {status&&<p role="status">{status}</p>}
