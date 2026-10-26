@@ -23,6 +23,7 @@ export function ProStudents() {
   return (
     <div className="stack">
       <h2>{t('athletes')}</h2>
+      <section className="card hero"><h3>Diseñá las rutinas de tus alumnos</h3><p className="muted">Desde el Creador de rutinas podés armar programas de fuerza y cardio, guardarlos y asignarlos a cualquier deportista vinculado.</p><button className="primary" onClick={()=>nav.go('studio')}>Abrir creador de rutinas →</button></section>
       <div className="card hero"><p className="muted small">{t('yourCode')}</p>
         <p className="big" style={{ letterSpacing: '.18em', fontFamily: 'monospace' }}>{code.data?.code ?? '········'}</p>
         <p className="muted">{t('codeHelp')}</p>
@@ -166,9 +167,10 @@ export function StudioEditor({ id }: { id?: number }) {
   const num = (v: string, d: number) => (v === '' ? d : Math.max(0, Number(v) || d));
   return (
     <Page title={id ? t('editRoutine') : t('newRoutine')}>
-      <div className="card"><label>{t('name')}<input value={cur.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} /></label>
+      <div className="card"><h3>Paso 1 · Identificá el programa</h3><p className="muted">Poné un nombre reconocible, elegí el objetivo y agregá instrucciones para el alumno. Los datos se guardan como plantilla reutilizable.</p><label>{t('name')}<input value={cur.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} /></label>
         <label>{t('goal')}</label><Chips options={GOALS} value={[cur.goal]} onChange={(v) => set({ goal: v[0]! })} label={(g) => t('g_' + g)} />
         <label>{t('notes')}<input value={cur.notes ?? ''} maxLength={1000} onChange={(e) => set({ notes: e.target.value })} /></label></div>
+      <div className="card"><h3>Paso 2 · Armá las jornadas</h3><p className="muted">Seleccioná Fuerza o Cardio por día. Para fuerza, agregá cada ejercicio y configurá series, rango de repeticiones, RIR y descanso. Podés crear hasta 7 jornadas.</p></div>
       {cur.days.map((d, di) => (
         <div className="card" key={di}>
           <div className="row between"><input aria-label={t('name')} value={d.name} maxLength={60} onChange={(e) => setDay(di, { name: e.target.value })} /><button style={{ flex: 'none' }} aria-label={t('remove')} disabled={cur.days.length === 1} onClick={() => set({ days: cur.days.filter((_, j) => j !== di) })}>✕</button></div>
@@ -193,7 +195,12 @@ export function StudioEditor({ id }: { id?: number }) {
         </div>
       ))}
       <button onClick={() => set({ days: [...cur.days, { name: `Día ${cur.days.length + 1}`, kind: 'strength', items: [] }] })} disabled={cur.days.length >= 7}>＋ {t('addDay')}</button>
-      <p><button className="primary big" disabled={busy || !cur.name.trim() || cur.days.some((d) => d.kind === 'strength' && d.items.length === 0)} onClick={save}>{t('save')}</button></p>
+      <div className="card"><h3>Paso 3 · Revisá y guardá</h3><p className="muted">Después de guardar, volvé al Creador de rutinas para asignar este programa a un alumno vinculado.</p>
+        <p><strong>{cur.name||'Rutina sin nombre'}</strong> · {cur.days.length} jornada(s) · {cur.days.reduce((n,d)=>n+d.items.length,0)} ejercicios</p>
+        {cur.days.map((d,i)=><p key={i} className="muted small">{d.name}: {d.kind==='cardio'?`Cardio ${d.cardio?.durationMin??0} minutos`:d.items.map(it=>t('ex_'+it.exerciseId)).join(', ')||'Agregá ejercicios'}</p>)}
+        <button className="primary big" disabled={busy || !cur.name.trim() || cur.days.some((d) => d.kind === 'strength' && d.items.length === 0)} onClick={save}>{busy?'Guardando…':'Guardar rutina profesional'}</button>
+        {cur.days.some(d=>d.kind==='strength'&&d.items.length===0)&&<p className="warn">Completá los ejercicios de todas las jornadas de fuerza para guardar.</p>}
+      </div>
       {picking !== null && <ExercisePicker onClose={() => setPicking(null)} onPick={(exId) => { const ex = byId(exId)!; setDay(picking, { items: [...cur.days[picking]!.items, { exerciseId: exId, sets: 3, repMin: ex.timed ? 30 : 8, repMax: ex.timed ? 45 : 12, rirTarget: 2, restSec: 90, load: 0 }] }); setPicking(null); }} />}
     </Page>
   );
