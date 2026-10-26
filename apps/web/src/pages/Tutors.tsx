@@ -36,9 +36,9 @@ export function TutorLounge(){
    <p className="muted">Tu primer tutor es gratis. Podés cambiar entre los que tenés desbloqueados. Ganás experiencia completando días con actividad registrada; no se premia comer menos ni entrenar de más.</p>
    {loading&&<p role="status">Cargando tutores…</p>}
    {catalog&&<p><strong>{catalog.xp} XP disponibles</strong> · {catalog.xpEarned} XP obtenidos</p>}
-   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:12}}>
+   <div className="tutor-roster">
     {catalog?.tutors.map(t=><article key={t.id} className="card" style={{textAlign:'center',border:t.id===catalog.selectedId?'2px solid currentColor':undefined}}>
-      <div aria-hidden="true" style={{width:76,height:88,margin:'auto',backgroundImage:'url('+sprite(t.sprite)+')',backgroundRepeat:'no-repeat',backgroundPosition:'0 0',backgroundSize:'400% 900%',imageRendering:'pixelated'}}/>
+      <div className="tutor-card-sprite" aria-hidden="true" style={{backgroundImage:'url('+sprite(t.sprite)+')'}}/>
       <h3>{t.name}</h3><p className="muted small">{t.role}</p>
       {t.owned?<button disabled={busy||t.id===catalog.selectedId} onClick={()=>void choose(t.id)}>{t.id===catalog.selectedId?'Elegido':'Elegir tutor'}</button>:<button disabled={busy||catalog.xp<t.priceXp} onClick={()=>void unlock(t.id)}>Desbloquear · {t.priceXp} XP</button>}
     </article>)}
