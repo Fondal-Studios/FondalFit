@@ -42,6 +42,7 @@ const assessmentSchema = z.object({
   sessionMinutes: z.number().int().min(20).max(120).optional(),
   preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
   daysPerWeek: z.number().int().min(1).max(6),
+  programWeeks: z.union([z.literal(4),z.literal(8),z.literal(12)]).optional(),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
   equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar', 'rings'])),
   restrictions: z.array(z.enum(['knee', 'shoulder', 'lower_back', 'hip', 'ankle', 'wrist', 'neck'])),
