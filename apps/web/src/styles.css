@@ -303,3 +303,9 @@ nav.tabs button {min-width:0;flex:1 1 0;padding:8px 3px;overflow-wrap:anywhere}
 .exercise-swap-options button.on{border-color:var(--accent);background:#173326}
 .exercise-swap-options button span{display:block}
 @media(max-width:390px){.exercise-swap-options{grid-template-columns:1fr}.exercise-swap-dialog{padding:12px 12px calc(18px + env(safe-area-inset-bottom))}}
+
+/* Exercise swap confirmation is the main action, immediately visible after a choice. */
+.exercise-swap-confirm{margin:14px 0;border:2px solid var(--accent);background:#12271d;padding:14px}
+.exercise-swap-confirm h3{margin:0 0 6px}
+.exercise-swap-confirm-actions{display:flex;gap:8px;flex-wrap:wrap}
+.exercise-swap-confirm-actions button{flex:1 1 160px;white-space:normal}
