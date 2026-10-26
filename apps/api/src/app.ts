@@ -269,6 +269,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       dayIndex: z.number().int().min(0).max(99),
       name: z.string().trim().max(80).optional(),
       fatigue: z.number().min(1).max(10).default(5),
+      durationMin:z.number().int().min(10).max(240).default(45),
       items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
     if (!b) return;
@@ -559,9 +560,16 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const gpsKcal=activityRows.reduce((n,a)=>n+(a.kcal_manual!==null&&a.kcal_manual!==undefined?Number(a.kcal_manual):weight?activityEnergy(a.sport,a.distance_m,a.duration_sec,weight):0),0);
     const blockRows=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='exercise' AND created_at>=? AND created_at<?").all(uid,start,end) as {data:string}[];
     const blocksKcal=blockRows.reduce((n,r)=>{const d=JSON.parse(r.data) as {kind?:string;kcal?:number};return n+(d.kind==='blocks'?Math.max(0,Number(d.kcal)||0):0);},0);
-    // strength sessions logged today: ≈45 min at ~4.5 MET above resting (a stated assumption, not a measurement)
-    const strengthCount=(await db.prepare('SELECT CAST(COUNT(*) AS INTEGER) c FROM workouts WHERE user_id=? AND created_at>=? AND created_at<?').get(uid,start,end) as {c:number}).c;
-    const strengthKcal=weight?strengthCount*Math.round((4.5-1)*3.5*weight/200*45):0;
+    // Net activity energy above resting baseline; volume is not a reliable calorimetry proxy.
+    // A user-entered session duration takes precedence over app elapsed time.
+    const strengthRows=await db.prepare('SELECT data FROM workouts WHERE user_id=? AND created_at>=? AND created_at<?').all(uid,start,end) as {data:string}[];
+    const strengthKcal=weight?strengthRows.reduce((sum,row)=>{
+      const w=JSON.parse(row.data) as {durationMin?:number;fatigue?:number;items?:{sets?:unknown[]}[]};
+      const duration=Math.max(10,Math.min(240,Number(w.durationMin)||45));
+      const sets=(w.items??[]).reduce((n,i)=>n+(i.sets?.length??0),0);
+      const met=sets>=12?4.5:sets>=6?4:3.5;
+      return sum+Math.round((met-1)*3.5*weight/200*duration);
+    },0):0;
     const exerciseKcal=Math.round(gpsKcal+blocksKcal+strengthKcal);
     const basalSoFar=Math.round(bmr*dayFraction),neatSoFar=Math.round(neatProxy*dayFraction);
     const burnedSoFar=basalSoFar+neatSoFar+exerciseKcal;
