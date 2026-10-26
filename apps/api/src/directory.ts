@@ -22,7 +22,7 @@ const distanceKm=(lat1:number,lon1:number,lat2:number,lon2:number)=>{
 };
 export function registerDirectory({app,db,auth,adminOnly,audit,now}:Context){
  app.get('/api/directory',{preHandler:auth},async(req,reply)=>{
-  const q=z.object({category:z.enum([...categories,'all']).default('all'),city:z.string().max(100).default(''),lat:z.coerce.number().min(-90).max(90).optional(),lon:z.coerce.number().min(-180).max(180).optional()}).safeParse(req.query);
+  const q=z.object({category:z.enum(['medical','fitness','all']).default('all'),city:z.string().max(100).default(''),lat:z.coerce.number().min(-90).max(90).optional(),lon:z.coerce.number().min(-180).max(180).optional()}).safeParse(req.query);
   if(!q.success)return reply.code(400).send({error:'invalid_filters'});
   const rows=await db.prepare('SELECT * FROM professional_profiles WHERE verified=1 AND published=1 ORDER BY updated_at DESC').all() as Record<string,unknown>[];
   const items=rows.filter(p=>(q.data.category==='all'||p.category===q.data.category)&&(!q.data.city||String(p.city).toLowerCase().includes(q.data.city.toLowerCase())))
