@@ -7,7 +7,7 @@ import { EXINFO } from '../exinfo';
 import { Page, useNav } from '../nav';
 import { fmtReps } from './Library';
 import { dayMuscles } from './Train';
-import {TutorExerciseSwap} from './TutorExerciseSwap';
+import {SessionExercisePicker} from './SessionExercisePicker';
 
 interface SetRow { weight: string; reps: string; rir: string; done: boolean }
 type Last = Record<string, { at: string; sets: { weight: number; reps: number; rir: number }[] }>;
@@ -92,7 +92,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
             <div className="row between top"><div><h3 style={{ margin: 0 }}>{t('ex_' + it.exerciseId)}</h3><p className="muted small">{it.sets} × {fmtReps(ex, it.repMin, it.repMax)} · {t('rir')} {it.rirTarget}{it.restSec ? ` · ${t('restTime')} ${it.restSec >= 60 ? Math.round(it.restSec / 6) / 10 + '′' : it.restSec + ' s'}` : ''}</p></div>
               <button className="linkbtn" aria-label={t('technique')} onClick={() => setTech(it.exerciseId)}>🎯 {t('technique')}</button></div>
             {!free&&index!==99&&<div className="row"><button type="button" disabled={busy||rows[it.exerciseId]?.some(x=>x.done)} onClick={()=>setChanging(exerciseIndex)} aria-label={'Cambiar '+t('ex_'+it.exerciseId)}>Cambiar ejercicio · Ver alternativas</button></div>}
-            {changing===exerciseIndex&&<div className="card"><button type="button" onClick={()=>setChanging(null)}>Cerrar alternativas</button><TutorExerciseSwap initialDay={index} initialItem={exerciseIndex} compact onSaved={()=>{void api<{plan:{days:PlanDay[]}|null}>('GET','/api/plan').then(r=>{const updated=r.plan?.days[index];if(updated){setActiveDay(updated);setRows(previous=>Object.fromEntries(updated.items.map(x=>[x.exerciseId,previous[x.exerciseId]??Array.from({length:x.sets},()=>({weight:String(x.load||''),reps:'',rir:'',done:false}))])));}setChanging(null);toast('Rutina actualizada. El ejercicio nuevo ya está en esta sesión.');}).catch(()=>toast('Cambio guardado. Reabrí la sesión para ver la rutina nueva.'));}}/></div>}
+
             {prev && <p className="prev">{t('lastTime')}: {prev.sets.map((s) => `${s.weight}${ex?.timed ? '' : 'kg'}×${s.reps}`).join(' · ')}</p>}
             {rows[it.exerciseId]!.map((s, i) => (
               <div className={'setrow' + (s.done ? ' done' : '')} key={i}>
@@ -106,6 +106,7 @@ export function Session({ day, index, free, name }: { day: PlanDay; index: numbe
           </div>
         );
       })}
+      {changing!==null&&activeDay.items[changing]&&<SessionExercisePicker key={index+'-'+changing} dayIndex={index} itemIndex={changing} exerciseId={activeDay.items[changing]!.exerciseId} onCancel={()=>setChanging(null)} onSaved={()=>{void api<{plan:{days:PlanDay[]}|null}>('GET','/api/plan').then(r=>{const updated=r.plan?.days[index];if(updated){setActiveDay(updated);setRows(previous=>Object.fromEntries(updated.items.map(x=>[x.exerciseId,previous[x.exerciseId]??Array.from({length:x.sets},()=>({weight:String(x.load||''),reps:'',rir:'',done:false}))])));}setChanging(null);toast('Ejercicio actualizado en tu sesión y rutina.');}).catch(()=>{setChanging(null);toast('Cambio guardado; reabrí la sesión para actualizarla.');});}}/>}
       <label htmlFor="fat">{t('fatigue')}: {fatigue}</label><input id="fat" type="range" min={1} max={10} value={fatigue} onChange={(e) => setFatigue(Number(e.target.value))} />
       <p><button className="primary" disabled={busy || done === 0} onClick={finish}>{t('finish')}</button></p>
       {rest && <div className="toast" role="timer" aria-live="off">⏱ {t('rest')} {Math.floor(rest.left / 60)}:{String(rest.left % 60).padStart(2, '0')} <button className="link" onClick={() => setRest(null)}>{t('skip')}</button></div>}
