@@ -3,7 +3,7 @@ import {api} from '../api';
 import {useT} from '../ctx';
 
 type Preview={version:number;toId:string;explanation:string};
-type Alternative={id:string;muscle:string;equipment:string[];level:number;available:boolean;equipmentRegistered:boolean;reason:string|null};
+type Alternative={id:string;muscle:string;equipment:string[];level:number;available:boolean;equipmentRegistered:boolean;risk:'green'|'yellow'|'red';restrictions:string[];reason:string|null};
 type Alternatives={version:number;sourceId:string;goal:string;alternatives:Alternative[]};
 type Props={dayIndex:number;itemIndex:number;exerciseId:string;onCancel:()=>void;onSaved:()=>void};
 const messages:Record<string,string>={
@@ -26,6 +26,7 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
  const [search,setSearch]=useState('');
  const [selected,setSelected]=useState('');
  const [equipmentConfirmed,setEquipmentConfirmed]=useState(false);
+ const [clinicianApproved,setClinicianApproved]=useState(false);
  const [preview,setPreview]=useState<Preview|null>(null);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
@@ -33,7 +34,7 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
  const choose=async(id:string)=>{
   setSelected(id);setError('');setPreview(null);setBusy(true);
   try{
-   const p=await api<Preview>('POST','/api/plan/exercise-swap/preview',{dayIndex,itemIndex,replacementId:id,equipmentConfirmed,...(version?{expectedVersion:version}:{})});
+   const p=await api<Preview>('POST','/api/plan/exercise-swap/preview',{dayIndex,itemIndex,replacementId:id,equipmentConfirmed,clinicianApproved,...(version?{expectedVersion:version}:{})});
    setPreview(p);
   }catch(e){
    const code=(e as {body?:{error?:string}}).body?.error??'';
@@ -44,7 +45,7 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
   if(!preview||busy)return;
   setBusy(true);setError('');
   try{
-   await api('POST','/api/plan/exercise-swap/confirm',{dayIndex,itemIndex,replacementId:preview.toId,equipmentConfirmed,expectedVersion:preview.version});
+   await api('POST','/api/plan/exercise-swap/confirm',{dayIndex,itemIndex,replacementId:preview.toId,equipmentConfirmed,clinicianApproved,expectedVersion:preview.version});
    onSaved();
   }catch(e){
    const code=(e as {body?:{error?:string}}).body?.error??'';
@@ -63,12 +64,13 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
      <div className="exercise-swap-confirm-actions"><button type="button" className="primary" disabled={busy} onClick={()=>void confirm()}>{busy?'Guardando…':'Confirmar y guardar cambio'}</button><button type="button" disabled={busy} onClick={()=>{setPreview(null);setSelected('');}}>Elegir otro ejercicio</button></div>
    </div> : <>
      <label className="check"><input type="checkbox" checked={equipmentConfirmed} onChange={e=>setEquipmentConfirmed(e.target.checked)}/> Confirmo que tengo el equipamiento necesario para el ejercicio elegido.</label>
+     <label className="check"><input type="checkbox" checked={clinicianApproved} onChange={e=>{setClinicianApproved(e.target.checked);setPreview(null);}}/> Un profesional tratante me autorizó específicamente este ejercicio pese a la restricción registrada.</label>
      <label>Buscar alternativa<input type="search" placeholder="Ej.: press inclinado, mancuernas…" value={search} onChange={e=>setSearch(e.target.value)}/></label>
      {loading&&<p role="status">Buscando ejercicios similares en el catálogo…</p>}
      {!loading&&visible.length===0&&<p className="muted">No hay alternativas compatibles fuera de tu jornada con ese patrón y grupo muscular.</p>}
      <div className="exercise-swap-options">
-       {visible.map(x=><button type="button" key={x.id} disabled={busy||!x.available||(!x.equipmentRegistered&&!equipmentConfirmed)} className={selected===x.id?'on':''} onClick={()=>void choose(x.id)}>
-         <strong>{t('ex_'+x.id)}</strong><span className="muted small">{x.equipment.map(k=>t(k)).join(', ')} · {t('m_'+x.muscle)}{!x.equipmentRegistered?' · Requiere confirmar equipamiento':''}{!x.available?' · '+(messages[x.reason??'']??'Requiere revisión'):''}</span>
+       {visible.map(x=><button type="button" key={x.id} disabled={busy||(!x.equipmentRegistered&&!equipmentConfirmed)||(x.risk==='red'&&!clinicianApproved)} className={'swap-risk-'+x.risk+(selected===x.id?' on':'')} onClick={()=>void choose(x.id)}>
+         <strong>{x.risk==='green'?'🟢':x.risk==='yellow'?'🟡':'🔴'} {t('ex_'+x.id)}</strong><span className="muted small">{x.equipment.map(k=>t(k)).join(', ')} · {t('m_'+x.muscle)}{!x.equipmentRegistered?' · Requiere confirmar equipamiento':''}{x.restrictions.length?' · Restricción: '+x.restrictions.join(', '):''}{x.risk==='red'?' · Requiere autorización profesional':''}</span>
        </button>)}
      </div>
    </>}
