@@ -224,6 +224,24 @@ Rules: prefer a table foodId. Use "custom" (foodId null) ONLY for foods missing 
     }
   });
 
+  /** Personal frequent foods: computed from the signed-in user's own logs, never from other accounts. */
+  app.get('/api/nutrition/frequent-foods', { preHandler: athleteOnly }, async (req) => {
+    const rows = await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='log' ORDER BY id DESC LIMIT 500").all(req.user!.id) as {data:string}[];
+    const counts = new Map<string,{foodId:string;name:string;count:number;grams:number;lastSeen:number}>();
+    rows.forEach((row,index) => {
+      let data: {items?:{foodId?:string;grams?:number}[]};
+      try { data=JSON.parse(row.data); } catch { return; }
+      for(const item of data.items??[]) {
+        if(!item.foodId || !foodById(item.foodId) || !Number.isFinite(item.grams) || (item.grams??0)<=0)continue;
+        const current=counts.get(item.foodId);
+        if(current){current.count++;current.grams+=item.grams!;}
+        else counts.set(item.foodId,{foodId:item.foodId,name:foodName(foodById(item.foodId)!,'es'),count:1,grams:item.grams!,lastSeen:index});
+      }
+    });
+    const foods=[...counts.values()].sort((a,b)=>b.count-a.count||a.lastSeen-b.lastSeen).slice(0,20).map(x=>({foodId:x.foodId,name:x.name,count:x.count,suggestedGrams:Math.round(x.grams/x.count)}));
+    return {foods,note:'Tus alimentos más registrados. Las cantidades son las que utilizaste habitualmente, no una recomendación nutricional.'};
+  });
+
   /** Recently logged distinct meals, for one-tap re-logging. */
   app.get('/api/nutrition/recent', { preHandler: athleteOnly }, async (req) => {
     const rows = await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='log' ORDER BY id DESC LIMIT 120").all(req.user!.id) as { data: string }[];
