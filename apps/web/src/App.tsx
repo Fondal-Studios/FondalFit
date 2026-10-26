@@ -151,7 +151,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
         {!me.canPro && me.mode === 'athlete' && <button className="linkbtn" onClick={() => nav.push('settings')}>🎓 {t('proModeShort')}</button>}
         {(me.canPro || me.mode === 'medical' || me.mode === 'admin') && <div className="modepill" role="group" aria-label={t('accountMode')}>{modes.map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={() => void switchMode(m as 'athlete' | 'pro')}>{t(m === 'pro' ? 'pro' : m === 'medical' ? 'navHealth' : m === 'admin' ? 'admin' : 'athlete')}</button>)}</div>}
       </header>
-      {professionalNotices.length>0&&<section className="card" role="status" aria-label="Notificaciones profesionales"><h2>Notificaciones profesionales ({professionalNotices.length})</h2><ul>{professionalNotices.map((n,i)=><li key={n.code+'-'+(n.category??i)}>{n.message}</li>)}</ul><button type="button" onClick={()=>nav.push('profile')}>Completar mi perfil profesional</button><button type="button" onClick={()=>api<{notifications:typeof professionalNotices}>('GET','/api/profiles/notifications').then(r=>setProfessionalNotices(r.notifications)).catch(()=>{})}>Actualizar avisos</button></section>}
+      {professionalNotices.length>0&&<section className="card" role="status" aria-label="Notificaciones profesionales"><h2>Notificaciones profesionales ({professionalNotices.length})</h2><ul>{professionalNotices.map((n,i)=><li key={n.code+'-'+(n.category??i)}>{n.message}</li>)}</ul><button type="button" onClick={()=>nav.push('profile',{category:professionalNotices.find(n=>n.category)?.category??(me.mode==='pro'?'fitness':'medical')})}>Completar mi perfil profesional</button><button type="button" onClick={()=>api<{notifications:typeof professionalNotices}>('GET','/api/profiles/notifications').then(r=>setProfessionalNotices(r.notifications)).catch(()=>{})}>Actualizar avisos</button></section>}
       {!needsConsent&&tutorial.open&&<Tutorial initial onClose={tutorial.hide}/>}
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<div className="skeleton" role="status" aria-label={t('loading')} />}>
@@ -208,7 +208,7 @@ function ScreenView({ s }: { s: Screen }): ReactNode {
     case 'recovery': return <Recovery />;
     case 'rankings': return <Page title={t('ranking')}><WeeklyRankings /></Page>;
     case 'directory': return <Page title={t('navDirectory')}><Directory /></Page>;
-    case 'profile': return <Page title={t('affiliate')}><MyProfessionalProfile me={me} category="medical" onSaved={refresh} /></Page>;
+    case 'profile': return <Page title={t('affiliate')}><MyProfessionalProfile me={me} category={p.category==='fitness'?'fitness':me.mode==='pro'?'fitness':'medical'} onSaved={refresh} /></Page>;
     case 'hub': return <Page title={t('athletes')}><ProfessionalHub /></Page>;
     case 'gyms': return <Page title="Gimnasios"><GymStudio athlete={me.mode==='athlete'}/></Page>;
     case 'settings': return <Settings />;
