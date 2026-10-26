@@ -8,6 +8,7 @@ import { NavProvider, Page, type Screen, useNav } from './nav';
 import { Consents, Recovery } from './pages/Legacy';
 import { More } from './pages/More';
 import { ProfessionalHub } from './pages/ProfessionalHub';
+import {TutorCompanion} from './pages/TutorCompanion';
 import { WeeklyRankings } from './pages/WeeklyRankings';
 import { Directory, MyProfessionalProfile, MedicalPanel, AdminPanel } from './pages/Directory';
 
@@ -154,6 +155,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
       </header>
       {professionalNotices.length>0&&<section className="card" role="status" aria-label="Notificaciones profesionales"><h2>Notificaciones profesionales ({professionalNotices.length})</h2><ul>{professionalNotices.map((n,i)=><li key={n.code+'-'+(n.category??i)}>{n.message}</li>)}</ul><button type="button" onClick={()=>nav.push('profile',{category:professionalNotices.find(n=>n.category)?.category??(me.mode==='pro'?'fitness':'medical')})}>Completar mi perfil profesional</button><button type="button" onClick={()=>api<{notifications:typeof professionalNotices}>('GET','/api/profiles/notifications').then(r=>setProfessionalNotices(r.notifications)).catch(()=>{})}>Actualizar avisos</button></section>}
       {!needsConsent&&tutorial.open&&<Tutorial initial onClose={tutorial.hide}/>}
+      {!needsConsent&&me.mode==='athlete'&&<TutorCompanion tab={top?.name??active} onOpen={()=>nav.push('coach')}/> }
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<div className="skeleton" role="status" aria-label={t('loading')} />}>
           {top ? <ScreenView s={top} /> : <TabView tab={active} />}
