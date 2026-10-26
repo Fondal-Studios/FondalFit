@@ -355,7 +355,20 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const logs = rows.filter((r) => r.kind === 'log').map((r) => ({ ...JSON.parse(r.data), at: r.created_at }));
     const todayLogs = logs.filter((l) => l.at.startsWith(today));
     const sum = (k: string) => todayLogs.reduce((a, l) => a + (l[k] ?? 0), 0);
-    return { target: target ? JSON.parse(target.data) : null, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
+    const assessmentRow = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {data:string}|undefined;
+    const assessment = assessmentRow ? JSON.parse(assessmentRow.data) as AssessmentInput : null;
+    const planRow = await latestPlan(req.user!.id);
+    const trainingPlan = planRow ? JSON.parse(planRow.data) as Plan : null;
+    const suggestedAdjustmentPct = assessment?.goal === 'fat_loss' ? -10 : assessment?.goal === 'hypertrophy' ? 5 : 0;
+    const suggestedNutrition = assessment ? {
+      goal: assessment.goal, secondaryGoals: assessment.secondaryGoals ?? [],
+      weightKg: assessment.baseline?.weightKg ?? null, heightCm: assessment.baseline?.heightCm ?? null,
+      age: assessment.baseline?.age ?? null, suggestedAdjustmentPct,
+      trainingDays: trainingPlan?.days.length ?? assessment.daysPerWeek,
+      trainingGoal: trainingPlan?.goal ?? assessment.goal,
+      note: 'Sugerencia orientativa basada en la evaluación; requiere datos energéticos y confirmación.'
+    } : null;
+    return { target: target ? JSON.parse(target.data) : null, suggestedNutrition, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
   });
 
   /* Calendar: explicit local-time offset; estimated energy balance, not a medical measurement. */
