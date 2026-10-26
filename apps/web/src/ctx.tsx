@@ -15,7 +15,7 @@ export const initialLang = (): Lang => {
   return (LANGS as string[]).includes(n) ? (n as Lang) : 'es';
 };
 
-export interface Me { id: number; name: string; email?: string; role: 'athlete' | 'pro' | 'admin'; mode: 'athlete' | 'pro'; canPro: boolean; isAdmin: boolean; proCode: string | null; lang: Lang; subscription: { plan: string; trialEndsAt: string; active: boolean; canceled: boolean }; consents: Record<string, boolean> }
+export interface Me { id: number; name: string; email?: string; role: 'athlete' | 'pro' | 'admin'; mode: 'athlete' | 'pro' | 'medical' | 'admin'; availableModes?: ('athlete'|'pro'|'medical'|'admin')[]; canMedical?: boolean; medicalVerified?: boolean; canPro: boolean; isAdmin: boolean; proCode: string | null; lang: Lang; subscription: { plan: string; trialEndsAt: string; active: boolean; canceled: boolean }; consents: Record<string, boolean> }
 
 /** Signed-in user + actions, available to every screen without prop drilling. */
 export interface AppApi { me: Me; refresh: () => Promise<void> | void; onLang: (l: Lang) => void; onLogout: () => void; toast: (msg: string) => void }

@@ -1,5 +1,15 @@
 /** More UI strings as [en, es, pt] triples (see i18n2.ts). */
 export const T3: Record<string, [string, string, string]> = {
+  "navHealth": ["Health", "Salud", "Saúde"],
+  "navDirectory": ["Professionals", "Profesionales", "Profissionais"],
+  "navDirectorySub": ["Find verified professionals near you", "Encontrá profesionales verificados cerca tuyo", "Encontre profissionais verificados perto de você"],
+  "navAdminPanel": ["Verification", "Verificación", "Verificação"],
+  "affiliate": ["Join as a health professional", "Afiliarme como profesional de salud", "Afiliar-me como profissional de saúde"],
+  "affiliateSub": ["Create your professional profile and request verification", "Creá tu perfil profesional y pedí verificación", "Crie seu perfil profissional e peça verificação"],
+  "rankingsWeekly": ["Weekly rankings", "Rankings semanales", "Rankings semanais"],
+  "rankingsWeeklySub": ["Public sports rankings (opt-in)", "Rankings deportivos públicos (opcional)", "Rankings esportivos públicos (opcional)"],
+  "hubTitle": ["Coach dashboard", "Panel del entrenador", "Painel do treinador"],
+  "hubSub": ["Student summaries, templates and feedback", "Resumen de alumnos, plantillas y devoluciones", "Resumo de alunos, modelos e retornos"],
   "accountMode": ["Account mode", "Modo de la cuenta", "Modo da conta"],
   "activeDays": ["Active days", "Días activos", "Dias ativos"],
   "activeMinutes": ["Active minutes", "Minutos activos", "Minutos ativos"],

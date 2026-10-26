@@ -4,8 +4,8 @@ import { useNav } from '../nav';
 export function More() {
   const t = useT(), nav = useNav(), { me } = useApp();
   const items: [string, string, string, string][] = me.mode === 'pro'
-    ? [['🧪', 'science', 'science', 'scienceSub'], ['⚙️', 'settings', 'settings', 'settingsSub']]
-    : [['🤖', 'coach', 'coach', 'coachSub'], ['📈', 'progress', 'progress', 'progressSub'], ['🏆', 'challenges', 'challenges', 'challengesSub'], ['📚', 'routines', 'routines', 'routinesSub'], ['🏋️', 'exercises', 'exercises', 'exercisesSub'], ['😴', 'recovery', 'recovery', 'recoverySub'], ['🧪', 'science', 'science', 'scienceSub'], ['⚙️', 'settings', 'settings', 'settingsSub']];
+    ? [['📋', 'hub', 'hubTitle', 'hubSub'], ['🔎', 'directory', 'navDirectory', 'navDirectorySub'], ['🧪', 'science', 'science', 'scienceSub'], ['⚙️', 'settings', 'settings', 'settingsSub']]
+    : [['🤖', 'coach', 'coach', 'coachSub'], ['📈', 'progress', 'progress', 'progressSub'], ['🏆', 'challenges', 'challenges', 'challengesSub'], ['📚', 'routines', 'routines', 'routinesSub'], ['🏋️', 'exercises', 'exercises', 'exercisesSub'], ['😴', 'recovery', 'recovery', 'recoverySub'], ['🏅', 'rankings', 'rankingsWeekly', 'rankingsWeeklySub'], ['🔎', 'directory', 'navDirectory', 'navDirectorySub'], ['🩺', 'profile', 'affiliate', 'affiliateSub'], ['🧪', 'science', 'science', 'scienceSub'], ['⚙️', 'settings', 'settings', 'settingsSub']];
   if (!me.canPro) items.unshift(['🎓', 'settings', 'enablePro', 'enableProShort']);
   if (me.isAdmin) items.push(['📊', 'admin', 'admin', 'adminSub']);
   return (

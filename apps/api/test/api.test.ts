@@ -803,6 +803,49 @@ describe('dual mode: one account, athlete and professional', () => {
   });
 });
 
+describe('end-to-end professional and athlete lifecycle',()=>{
+ it('enables both modes, links by code, assigns and retains a professional plan through workouts, reassessment and login',async()=>{
+  const coach=await reg('coachdual@x.com','athlete');
+  await call('PUT','/api/consents',coach,allConsents);
+  expect((await call('POST','/api/me/pro',coach)).status).toBe(200);
+  expect((await call('POST','/api/me/mode',coach,{mode:'pro'})).status).toBe(200);
+  const code=(await call('GET','/api/pro/code',coach)).body.code;
+  expect(code).toMatch(/^[A-Z2-9]{8}$/);
+  const {t:student}=await athleteWithPlan('dualstudent@x.com');
+  const joined=await call('POST','/api/links/join-code',student,{code});
+  expect(joined.status).toBe(200);
+  const athlete=(await call('GET','/api/pro/athletes',coach)).body[0];
+  const routine={name:'Circuito de prueba',goal:'strength',days:[
+    {name:'Fuerza',kind:'strength',items:[{exerciseId:'back_squat',sets:3,repMin:5,repMax:8,rirTarget:2,load:50}]},
+    {name:'Cardio',kind:'cardio',items:[],cardio:{modality:'run',type:'zone2',durationMin:30}}
+  ]};
+  const template=await call('POST','/api/pro/templates',coach,routine);
+  expect(template.status).toBe(200);
+  expect((await call('POST',`/api/pro/templates/${template.body.id}/assign`,coach,{athleteId:athlete.id})).status).toBe(200);
+  expect((await call('GET','/api/plan',student)).body.proName).toBe('coachdual');
+  const invalid=await call('POST','/api/workouts',student,{dayIndex:1,items:[{exerciseId:'back_squat',sets:[{weight:50,reps:6,rir:2}]}]});
+  expect(invalid.status).toBe(400);
+  expect((await call('GET','/api/progress',student)).body.total).toBe(0);
+  const workout=await call('POST','/api/workouts',student,{dayIndex:0,fatigue:4,items:[{exerciseId:'back_squat',sets:[{weight:50,reps:6,rir:2}]}]});
+  expect(workout.status).toBe(200);
+  expect((await call('GET','/api/plan',student)).body.proName).toBe('coachdual');
+  const reassessed=await call('POST','/api/assessment',student,{...assessment,goal:'recomposition'});
+  expect(reassessed.status).toBe(200);
+  expect(reassessed.body.professionalPlanPreserved).toBe(true);
+  expect((await call('GET','/api/plan',student)).body.plan.days[0].items[0].exerciseId).toBe('back_squat');
+  const feedback=await call('GET',`/api/pro/athletes/${athlete.id}/training-feedback`,coach);
+  expect(feedback.status).toBe(200);
+  expect(feedback.body.workouts).toHaveLength(1);
+  await call('POST','/api/me/mode',coach,{mode:'athlete'});
+  expect((await call('GET','/api/pro/athletes',coach)).status).toBe(403);
+  expect((await call('GET','/api/plan',coach)).status).toBe(200);
+  await call('POST','/api/me/mode',coach,{mode:'pro'});
+  const relogin=await call('POST','/api/auth/login',undefined,{email:'coachdual@x.com',password:'password123'});
+  expect((await call('GET','/api/me',relogin.body.token)).body.mode).toBe('pro');
+  expect((await call('GET','/api/pro/athletes',relogin.body.token)).body).toHaveLength(1);
+ });
+});
+
 describe('admin telemetry', () => {
   const setup = async () => {
     app = buildApp({ db, rateLimitMax: 100000, adminEmails: ['Founder@X.com'] });
@@ -838,6 +881,87 @@ describe('admin telemetry', () => {
   });
 });
 
+describe('weekly ranking opt-in',()=>{
+ it('requires authentication and keeps non-participants private',async()=>{
+   const anon=await call('GET','/api/rankings/weekly?metric=run_distance');
+   expect(anon.status).toBe(401);
+   const {t}=await athleteWithPlan();
+   const result=await call('GET','/api/rankings/weekly?metric=run_distance',t);
+   expect(result.status).toBe(200);
+   expect(result.body.entries).toEqual([]);
+ });
+});
+describe('professional network and four account modes',()=>{
+ it('requires admin authorization and hides unverified professionals',async()=>{
+   const token=await reg('nanogm.test@x.com','athlete');
+   const profile={category:'medical',displayName:'Mariano Jiménez',specialty:'Medicina del ejercicio',credentials:'Médico',license:'Matrícula pendiente de validación',description:'Consultas de entrenamiento y salud',phone:'5493875466419',city:'Cafayate',area:'Vertientes',modality:'both',lat:null,lon:null,published:true};
+   expect((await call('POST','/api/me/mode',token,{mode:'admin'})).status).toBe(403);
+   expect((await call('POST','/api/me/mode',token,{mode:'medical'})).status).toBe(403);
+   expect((await call('PUT','/api/profiles/me',token,profile)).status).toBe(200);
+   expect((await call('POST','/api/me/mode',token,{mode:'medical'})).status).toBe(200);
+   expect((await call('GET','/api/me',token)).body.mode).toBe('medical');
+   const hidden=await call('GET','/api/directory?city=Cafayate',token);
+   expect(hidden.status).toBe(200);expect(hidden.body.items).toHaveLength(0);
+   expect((await call('GET','/api/admin/professionals',token)).status).toBe(403);
+   await db.prepare("UPDATE users SET role='admin' WHERE email=?").run('nanogm.test@x.com');
+   expect((await call('POST','/api/me/mode',token,{mode:'admin'})).status).toBe(200);
+   const user=(await call('GET','/api/me',token)).body;
+   expect(user.mode).toBe('admin');expect(user.isAdmin).toBe(true);
+   const pending=(await call('GET','/api/admin/professionals',token)).body;
+   expect(pending).toHaveLength(1);expect(pending[0].verified).toBe(false);
+   expect((await call('POST','/api/admin/professionals/verify',token,{userId:user.id,category:'medical',verified:true})).status).toBe(200);
+   const visible=(await call('GET','/api/directory?category=medical&city=Cafayate',token)).body;
+   expect(visible.items).toHaveLength(1);expect(visible.items[0].phone).toBe('5493875466419');
+   expect((await call('GET','/api/admin/accounts/lookup?name=nanogm.test',token)).body.users).toHaveLength(1);
+   await call('PUT','/api/profiles/me',token,{...profile,description:'Descripción nueva'});
+   expect((await call('GET','/api/directory?city=Cafayate',token)).body.items).toHaveLength(0);
+ });
+});
+describe('kinesiology affiliation and safety',()=>{
+ it('stores an independent physiotherapist identity and filters it apart from medical doctors',async()=>{
+  const kin=await reg('kin@x.com','athlete');
+  const physician=await reg('physician@x.com','athlete');
+  const admin=await reg('admin.kin@x.com','pro');
+  await db.prepare("UPDATE users SET role='admin' WHERE email=?").run('admin.kin@x.com');
+  const common={category:'medical',displayName:'Kinesiólogo/a de prueba',specialty:'Rehabilitación y ejercicio terapéutico',credentials:'Licenciatura en Kinesiología',license:'7016K',description:'Evaluación funcional y retorno progresivo al deporte',phone:'5493875000000',city:'Cafayate',area:'Centro',modality:'both',lat:-26.07,lon:-65.97,published:true};
+  expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'kinesiologist'})).status).toBe(200);
+  expect((await call('PUT','/api/profiles/me',physician,{...common,profession:'physician',displayName:'Médico de prueba',license:'A-123'})).status).toBe(200);
+  const pending=(await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body;
+  expect(pending.items).toHaveLength(0);
+  const pkin=(await call('GET','/api/me',kin)).body;
+  const pphys=(await call('GET','/api/me',physician)).body;
+  expect((await call('POST','/api/admin/professionals/verify',admin,{userId:pkin.id,category:'medical',verified:true})).status).toBe(200);
+  expect((await call('POST','/api/admin/professionals/verify',admin,{userId:pphys.id,category:'medical',verified:true})).status).toBe(200);
+  const list=(await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body.items;
+  expect(list).toHaveLength(1);expect(list[0].profession).toBe('kinesiologist');expect(list[0].displayName).toBe('Kinesiólogo/a de prueba');
+  expect((await call('GET','/api/directory?category=medical&city=Cafayate',kin)).body.items).toHaveLength(2);
+  const trainer=await reg('legacy.fitness@x.com','athlete');
+  const fitness={...common,category:'fitness',displayName:'Entrenador de prueba',license:'Certificado privado',specialty:'Fuerza y running'};
+  expect((await call('PUT','/api/profiles/me',trainer,fitness)).status).toBe(200);
+  const trainerProfiles=(await call('GET','/api/profiles/me',trainer)).body;
+  expect(trainerProfiles[0].profession).toBe('coach');
+  expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'coach'})).status).toBe(400);
+  expect((await call('PUT','/api/profiles/me',kin,{...common,profession:'kinesiologist',description:'Nueva descripción'})).status).toBe(200);
+  expect((await call('GET','/api/directory?category=kinesiology&city=Cafayate',kin)).body.items).toHaveLength(0);
+ });
+});
+describe('founder account authorization',()=>{
+ it('requires an existing administrator and exact NanoGM identity',async()=>{
+   const target=await reg('founder@x.com','athlete');
+   const actor=await reg('operator@x.com','athlete');
+   const user=(await call('GET','/api/me',target)).body;
+   await db.prepare('UPDATE users SET name=? WHERE id=?').run('NanoGM',user.id);
+   expect((await call('POST','/api/admin/accounts/grant-founder',target,{userId:user.id,expectedEmail:'founder@x.com'})).status).toBe(403);
+   await db.prepare("UPDATE users SET role='admin' WHERE email=?").run('operator@x.com');
+   expect((await call('POST','/api/admin/accounts/grant-founder',actor,{userId:user.id,expectedEmail:'wrong@x.com'})).status).toBe(409);
+   const grant=await call('POST','/api/admin/accounts/grant-founder',actor,{userId:user.id,expectedEmail:'founder@x.com'});
+   expect(grant.status).toBe(200);expect(grant.body.medicalProfileVerified).toBe(false);
+   const me=(await call('GET','/api/me',target)).body;
+   expect(me.isAdmin).toBe(true);expect(me.canPro).toBe(true);expect(me.canMedical).toBe(true);
+   expect(me.mode).toBe('admin');
+   expect((await call('GET','/api/directory?city=Cafayate',target)).body.items).toHaveLength(0);
+ });
+});
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();

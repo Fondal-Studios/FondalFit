@@ -5,6 +5,9 @@ import { translate } from './i18n';
 import { NavProvider, Page, type Screen, useNav } from './nav';
 import { Consents, Recovery } from './pages/Legacy';
 import { More } from './pages/More';
+import { ProfessionalHub } from './pages/ProfessionalHub';
+import { WeeklyRankings } from './pages/WeeklyRankings';
+import { Directory, MyProfessionalProfile, MedicalPanel, AdminPanel } from './pages/Directory';
 
 // Heavier screens load on demand: faster first paint on the free server and slow phones.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,12 +110,14 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 
 const ATHLETE_TABS = ['home', 'train', 'cardio', 'food', 'more'];
 const PRO_TABS = ['students', 'studio', 'approvals', 'more'];
-const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', students: 'athletes', studio: 'studio', approvals: 'approvals' };
-const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', students: '👥', studio: '📝', approvals: '✅' };
+const MEDICAL_TABS = ['medical_panel', 'directory', 'settings'];
+const ADMIN_TABS = ['admin', 'admin_panel', 'directory', 'settings'];
+const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', students: 'athletes', studio: 'studio', approvals: 'approvals', medical_panel: 'navHealth', directory: 'navDirectory', settings: 'settings', admin: 'admin', admin_panel: 'navAdminPanel' };
+const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', students: '👥', studio: '📝', approvals: '✅', medical_panel: '🩺', directory: '🔎', settings: '⚙️', admin: '📊', admin_panel: '🛡️' };
 
 function Shell() {
   const { me } = useApp();
-  const tabs = me.mode === 'pro' ? PRO_TABS : ATHLETE_TABS;
+  const tabs = me.mode === 'admin' ? ADMIN_TABS : me.mode === 'medical' ? MEDICAL_TABS : me.mode === 'pro' ? PRO_TABS : ATHLETE_TABS;
   return <NavProvider initialTab={tabs[0]!} render={(nav, stack) => <Frame tabs={tabs} tab={nav.tab} go={nav.go} stack={stack} />} />;
 }
 
@@ -124,12 +129,13 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
   const top = stack[stack.length - 1];
   const active = tabs.includes(tab) ? tab : tabs[0]!;
   const switchMode = async (m: 'athlete' | 'pro') => { if (m === me.mode) return; await api('POST', '/api/me/mode', { mode: m }); await refresh(); };
+  const modes = me.availableModes ?? (['athlete', 'pro'] as const);
   return (
     <>
       <header className="top">
         <h1>{t('app')}</h1>
         {!me.canPro && me.mode === 'athlete' && <button className="linkbtn" onClick={() => nav.push('settings')}>🎓 {t('proModeShort')}</button>}
-        {me.canPro && <div className="modepill" role="group" aria-label={t('accountMode')}>{(['athlete', 'pro'] as const).map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={() => void switchMode(m)}>{t(m === 'pro' ? 'pro' : 'athlete')}</button>)}</div>}
+        {(me.canPro || me.mode === 'medical' || me.mode === 'admin') && <div className="modepill" role="group" aria-label={t('accountMode')}>{modes.map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={() => void switchMode(m as 'athlete' | 'pro')}>{t(m === 'pro' ? 'pro' : m === 'medical' ? 'navHealth' : m === 'admin' ? 'admin' : 'athlete')}</button>)}</div>}
       </header>
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<div className="skeleton" role="status" aria-label={t('loading')} />}>
@@ -142,6 +148,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
 }
 
 function TabView({ tab }: { tab: string }): ReactNode {
+  const { me } = useApp();
   switch (tab) {
     case 'home': return <Home />;
     case 'train': return <Train />;
@@ -150,12 +157,17 @@ function TabView({ tab }: { tab: string }): ReactNode {
     case 'students': return <ProStudents />;
     case 'studio': return <ProStudio />;
     case 'approvals': return <ProApprovals />;
+    case 'medical_panel': return <MedicalPanel me={me} />;
+    case 'directory': return <Directory />;
+    case 'admin_panel': return <AdminPanel />;
+    case 'settings': return <Settings />;
+    case 'admin': return <Admin />;
     default: return <More />;
   }
 }
 
 function ScreenView({ s }: { s: Screen }): ReactNode {
-  const nav = useNav(), t = useT();
+  const nav = useNav(), t = useT(), { me, refresh } = useApp();
   const p = (s.props ?? {}) as Record<string, any>;
   switch (s.name) {
     case 'wizard': return <Wizard onDone={() => nav.go('home')} onCancel={nav.back} />;
@@ -175,6 +187,10 @@ function ScreenView({ s }: { s: Screen }): ReactNode {
     case 'coach_memory': return <CoachMemory />;
     case 'science': return <Page title={t('science')}><Science /></Page>;
     case 'recovery': return <Recovery />;
+    case 'rankings': return <Page title={t('ranking')}><WeeklyRankings /></Page>;
+    case 'directory': return <Page title={t('navDirectory')}><Directory /></Page>;
+    case 'profile': return <Page title={t('affiliate')}><MyProfessionalProfile me={me} category="medical" onSaved={refresh} /></Page>;
+    case 'hub': return <Page title={t('athletes')}><ProfessionalHub /></Page>;
     case 'settings': return <Settings />;
     case 'admin': return <Admin />;
     case 'student': return <ProStudent id={p.id} />;

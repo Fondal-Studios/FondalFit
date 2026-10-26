@@ -26,7 +26,7 @@ export function Settings() {
       <div className="card"><h3>{t('accountMode')}</h3>
         {me.canPro ? <p className="muted">{t('modeHelp')}</p> : <p className="muted">{t('enableProHelp')}</p>}
         {me.canPro ? <div className="modepill" role="group" aria-label={t('accountMode')} style={{ alignSelf: 'flex-start' }}>
-          {(['athlete', 'pro'] as const).map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={async () => { await api('POST', '/api/me/mode', { mode: m }); await refresh(); nav.go(m === 'pro' ? 'students' : 'home'); }}>{t(m === 'pro' ? 'pro' : 'athlete')}</button>)}
+          {(me.availableModes ?? (['athlete', 'pro'] as const)).map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={async () => { await api('POST', '/api/me/mode', { mode: m }); await refresh(); nav.go(m === 'pro' ? 'students' : m === 'medical' ? 'medical_panel' : m === 'admin' ? 'admin' : 'home'); }}>{t(m === 'pro' ? 'pro' : m === 'medical' ? 'navHealth' : m === 'admin' ? 'admin' : 'athlete')}</button>)}
         </div> : <button className="primary" onClick={async () => { await api('POST', '/api/me/pro'); await api('POST', '/api/me/mode', { mode: 'pro' }); await refresh(); nav.go('students'); }}>{t('enablePro')}</button>}
       </div>
 

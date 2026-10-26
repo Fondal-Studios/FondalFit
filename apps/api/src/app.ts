@@ -6,12 +6,13 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import {
   menusForDay, dayNumberOf, supplementAdvice, simplifyRoute, type DietFlag,
-  materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
+  CATALOG, materialize, gamification, paceMinPerKm, runningLoadAlert, checkAutonomy, DEFAULT_LIMITS, generatePlan, needsDeload, nextLoad, nutritionTarget, recoveryScore, screenSafety, seedLoad,
   type AssessmentInput, type AutonomyLimits, type Plan,
 } from '@fondal/engine';
 import type { DB } from './db';
 import { COACH_SYSTEM, type CoachFn } from './coach';
 import { registerAdmin } from './admin';
+import {registerDirectory} from './directory';
 import { registerFood } from './food';
 import { registerPro } from './pro';
 import { registerPlans } from './plans';
@@ -22,12 +23,12 @@ import { registerMemory, loadMemory, saveMemory, extractMemoryTags, TONE_PROMPT 
 const now = () => new Date().toISOString();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const TRIAL_DAYS = 14;
-export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video'] as const;
+export const CONSENT_SCOPES = ['terms', 'health_data', 'share_with_pro', 'ai_memory', 'camera_video', 'public_ranking'] as const;
 
 interface User { id: number; email: string; name: string; role: 'athlete' | 'pro' | 'admin'; lang: string; trial_ends_at: string; plan: string; canceled_at: string | null; pro_enabled: number; mode: string | null; last_seen_at: string | null; pro_code: string | null }
 
 /** One account can be athlete and professional: `mode` is the hat currently worn. Legacy rows (mode NULL) fall back to their role. */
-export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' => (u.mode === 'pro' && (u.pro_enabled || u.role === 'pro') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
+export const modeOf = (u: Pick<User, 'role' | 'mode' | 'pro_enabled'>): 'athlete' | 'pro' | 'medical' | 'admin' => (u.mode === 'medical' ? 'medical' : u.mode === 'admin' ? 'admin' : u.mode === 'pro' && (u.pro_enabled || u.role === 'pro' || u.role === 'admin') ? 'pro' : u.mode === 'athlete' ? 'athlete' : u.role === 'pro' ? 'pro' : 'athlete');
 export const canPro = (u: Pick<User, 'role' | 'pro_enabled'>) => !!u.pro_enabled || u.role === 'pro' || u.role === 'admin';
 declare module 'fastify' { interface FastifyRequest { user?: User } }
 
@@ -151,15 +152,18 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
 
   app.get('/api/me', { preHandler: auth }, async (req) => {
     const u = req.user!;
-    return { id: u.id, email: u.email, name: u.name, role: u.role, mode: modeOf(u), canPro: canPro(u), isAdmin: isAdmin(u), proCode: u.pro_code, lang: u.lang, subscription: { plan: u.plan, trialEndsAt: u.trial_ends_at, active: subscriptionActive(u), canceled: !!u.canceled_at }, consents: await consentsOf(u.id) };
+    const medicalProfile=await db.prepare("SELECT verified FROM professional_profiles WHERE user_id=? AND category='medical'").get(u.id) as {verified:number}|undefined;
+    return { id: u.id, email: u.email, name: u.name, role: u.role, mode: modeOf(u), canPro: canPro(u), canMedical:!!medicalProfile,medicalVerified:!!medicalProfile?.verified,isAdmin:isAdmin(u),availableModes:['athlete','pro',...(medicalProfile?['medical']:[]),...(isAdmin(u)?['admin']:[])], proCode: u.pro_code, lang: u.lang, subscription: { plan: u.plan, trialEndsAt: u.trial_ends_at, active: subscriptionActive(u), canceled: !!u.canceled_at }, consents: await consentsOf(u.id) };
   });
   const consentsOf = async (uid: number) => Object.fromEntries((await db.prepare('SELECT scope,granted FROM consents WHERE user_id=?').all(uid) as { scope: string; granted: number }[]).map((r) => [r.scope, !!r.granted]));
 
   /** Switch hat. Becoming a professional is self-serve; students only see your data after they accept your link. */
   app.post('/api/me/mode', { preHandler: auth }, async (req, reply) => {
-    const b = parse(z.object({ mode: z.enum(['athlete', 'pro']) }), req.body, reply);
+    const b = parse(z.object({ mode: z.enum(['athlete', 'pro', 'medical', 'admin']) }), req.body, reply);
     if (!b) return;
     if (b.mode === 'pro' && !canPro(req.user!)) return reply.code(403).send({ error: 'pro_not_enabled' });
+    if(b.mode==='admin'&&!isAdmin(req.user!))return reply.code(403).send({error:'admin_only'});
+    if(b.mode==='medical'&&!await db.prepare("SELECT 1 AS x FROM professional_profiles WHERE user_id=? AND category='medical'").get(req.user!.id))return reply.code(403).send({error:'medical_profile_required'});
     await db.prepare('UPDATE users SET mode=? WHERE id=?').run(b.mode, req.user!.id);
     await audit(req.user!.id, null, `mode:${b.mode}`);
     return { mode: b.mode };
@@ -223,10 +227,12 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     await db.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at').run(uid, JSON.stringify(b.profile), now());
     const safety = screenSafety(b as unknown as AssessmentInput);
     if (safety.status === 'refer') { await audit(uid, uid, 'assessment:referral'); return { referral: true, reasons: safety.reasons }; }
-    const plan = generatePlan(b as unknown as AssessmentInput);
-    const version = await savePlan(uid, plan, 'engine');
-    const target = await saveTarget(uid, b);
-    return { referral: false, planVersion: version, plan, target };
+    const previous=await latestPlan(uid);
+    const professionalPlan=previous?.source.startsWith('pro:')??false;
+    const plan=professionalPlan ? JSON.parse(previous!.data) as Plan : generatePlan(b as unknown as AssessmentInput);
+    const version=professionalPlan ? previous!.version : await savePlan(uid,plan,'engine');
+    const target=await saveTarget(uid,b);
+    return { referral:false,planVersion:version,plan,target,professionalPlanPreserved:professionalPlan };
   });
 
   /** Latest answers, to edit the plan without starting over. */
@@ -269,12 +275,12 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     }
     const cur = await latestPlan(uid);
     if (!cur) return reply.code(409).send({ error: 'no_plan' });
-    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
-
     const plan = JSON.parse(cur.data) as Plan;
     const day = plan.days[b.dayIndex];
     if (!day) return reply.code(400).send({ error: 'invalid_day' });
     if (day.kind === 'cardio') return reply.code(400).send({ error: 'cardio_day_use_activities' });
+    if(b.items.some(item=>!day.items.some(p=>p.exerciseId===item.exerciseId)))return reply.code(400).send({error:'unknown_session_exercise'});
+    await db.prepare('INSERT INTO workouts(user_id,day_index,data,created_at) VALUES(?,?,?,?)').run(uid, b.dayIndex, JSON.stringify(b), now());
     // Deload weeks, post-break ramps and fixed programs log the work but do not change loads.
     const exp = ((JSON.parse((await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as { data: string } | undefined)?.data ?? '{}') as { experience?: 'beginner' | 'intermediate' | 'advanced' }).experience) ?? 'intermediate';
     const mat = materialize(plan, new Date(), exp);
@@ -308,7 +314,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       return { applied: false, approvalId: r.id, violations: verdict.violations, decisions, deloadSuggested: deload };
     }
     // Without a professional the engine's own safe defaults apply (increments are already small).
-    const version = await savePlan(uid, next, 'engine:auto');
+    const version = await savePlan(uid, next, cur.source.startsWith('pro:') ? cur.source : 'engine:auto');
     return { applied: true, planVersion: version, decisions, deloadSuggested: deload };
   });
 
@@ -507,6 +513,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const dayFraction=Math.max(0,Math.min(1,(Date.now()-midnight)/86400000));
     const targetRow=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='target' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
     const target=targetRow?JSON.parse(targetRow.data) as {kcal?:number;explain?:{bmr?:number;lifeKcal?:number;tdee?:number;trainKcal?:number;adjustPct?:number;lifeFactor?:number}}:null;
+    const assessmentRow=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as {data:string}|undefined;
+    const goal=assessmentRow?(JSON.parse(assessmentRow.data) as {goal?:string}).goal??'general':'general';
     const bmr=Math.max(0,target?.explain?.bmr??0);
     const lifeDaily=Math.max(bmr,target?.explain?.lifeKcal??bmr*1.2);
     const neatProxy=Math.max(0,lifeDaily-bmr);
@@ -530,6 +538,8 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return {date:day,basalSoFar,neatSoFar,exerciseKcal,burnedSoFar,eaten,
       dailyBmr:Math.round(bmr),dailyNeatProxy:Math.round(neatProxy),
       targetBudget:budget,remaining:budget===null?null:budget-eaten,
+      goal,plannedTdee:Math.round(plannedTdee),goalAdjustment,lifeFactor:target?.explain?.lifeFactor??null,
+      nutritionMethod:'Mifflin-St Jeor',
       complete:!!target,dayFraction,
       note:'El NEAT no se mide: la cifra representa actividad cotidiana y otros gastos incluidos en el factor de vida. El ejercicio y la comida pueden estar incompletos. No es un gasto calórico medido.'};
   });
@@ -589,6 +599,40 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return gamification([...byDay.values()], rec);
   });
 
+
+  /* Weekly sports leaderboards: opt-in only, and no calorie/volume-grinding rewards. */
+  app.get('/api/rankings/weekly',{preHandler:auth},async(req,reply)=>{
+    const q=parse(z.object({metric:z.enum(['strength','run_distance','run_pace','sprint_100m','sessions']).default('run_distance')}),req.query,reply);
+    if(!q)return;
+    const start=new Date();start.setUTCHours(0,0,0,0);start.setUTCDate(start.getUTCDate()-((start.getUTCDay()+6)%7));
+    const from=start.toISOString(),end=new Date(start.getTime()+7*86400000).toISOString();
+    const consentRows=await db.prepare("SELECT user_id FROM consents WHERE scope='public_ranking' AND granted=1").all() as {user_id:number}[];
+    const allowed=new Set(consentRows.map(r=>r.user_id));
+    if(!allowed.size)return {metric:q.metric,weekStart:from.slice(0,10),entries:[],note:'Los rankings son voluntarios. Activá la participación en Perfil.'};
+    const names=await db.prepare("SELECT id,name FROM users WHERE role='athlete'").all() as {id:number;name:string}[];
+    const users=new Map(names.filter(u=>allowed.has(u.id)).map(u=>[u.id,u.name]));
+    const scores=new Map<number,number>();
+    const record=(id:number,val:number)=>{if(users.has(id)&&Number.isFinite(val)&&val>0)scores.set(id,q.metric==='sessions'||q.metric==='run_distance'?(scores.get(id)??0)+val:Math.max(scores.get(id)??0,val));};
+    if(q.metric==='strength'||q.metric==='sessions'){
+      const workouts=await db.prepare('SELECT user_id,data FROM workouts WHERE created_at>=? AND created_at<?').all(from,end) as {user_id:number;data:string}[];
+      for(const w of workouts){
+        if(q.metric==='sessions'){record(w.user_id,1);continue;}
+        const data=JSON.parse(w.data) as {items?:{sets?:{weight?:number;reps?:number}[]}[]};
+        const max=Math.max(0,...(data.items??[]).flatMap(i=>(i.sets??[]).filter(x=>(x.reps??0)>=1&&(x.reps??0)<=12).map(x=>Number(x.weight)||0)));
+        record(w.user_id,max);
+      }
+    }else{
+      const activities=await db.prepare("SELECT user_id,distance_m,duration_sec,sport FROM activities WHERE started_at>=? AND started_at<? AND sport='run'").all(from,end) as {user_id:number;distance_m:number;duration_sec:number;sport:string}[];
+      for(const a of activities){
+        if(q.metric==='run_distance')record(a.user_id,a.distance_m/1000);
+        if(q.metric==='run_pace'&&a.distance_m>=1000&&a.duration_sec>=120)record(a.user_id,a.distance_m/a.duration_sec*3.6);
+        if(q.metric==='sprint_100m'&&a.distance_m>=95&&a.distance_m<=105&&a.duration_sec>=9&&a.duration_sec<=120)record(a.user_id,100/a.duration_sec*3.6);
+      }
+    }
+    const entries=[...scores].sort((a,b)=>b[1]-a[1]).slice(0,30).map(([id,value],index)=>({rank:index+1,name:users.get(id),value:Number(value.toFixed(2)),self:id===req.user!.id}));
+    return {metric:q.metric,weekStart:from.slice(0,10),entries,note:q.metric==='strength'?'Mejor carga externa registrada (kg), no 1RM calculada.':q.metric==='sprint_100m'?'Solo registros de aproximadamente 100 m; GPS de teléfono no es cronometraje certificado.':'Resultados semanales de participantes voluntarios.'};
+  });
+  app.get('/api/exercises',{preHandler:auth},async()=>CATALOG.map(e=>({id:e.id,name:e.id.replaceAll('_',' ')})));
 
   /* ---------------- Professional links ---------------- */
   app.post('/api/pro/invites', { preHandler: proOnly }, async (req, reply) => {
@@ -693,6 +737,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   app.get('/api/health', async () => ({ ok: true }));
 
   registerAdmin({ app, db, adminOnly, parse, audit, now });
+  registerDirectory({app,db,auth,adminOnly,audit,now});
   registerProgress({ app, db, parse, audit, now, athleteOnly, needHealth });
   registerSocial({ app, db, parse, audit, now, athleteOnly, hasConsent });
   registerMemory({ app, db, parse, audit, now, athleteOnly });
