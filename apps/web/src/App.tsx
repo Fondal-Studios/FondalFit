@@ -206,7 +206,7 @@ type AssessmentValues = {
 };
 const GOAL_DETAILS=['Correr 5 km','Correr 10 km','Media maratón','Maratón','Mejorar ritmo de carrera','Aumentar distancia','Mejorar capacidad aeróbica','Ganar fuerza máxima','Ganar masa muscular','Resistencia muscular','Reducir grasa corporal','Mantener peso','Mejorar composición corporal','Mejorar movilidad','Mejorar equilibrio','Volver a entrenar','Prevenir lesiones','Mejorar salud metabólica','Preparar una competencia','Entrenamiento combinado','Mejorar bienestar general'];
 const DEFAULT_ASSESSMENT:AssessmentValues={
- goal:'general',secondaryGoals:[],specificGoals:[],targetDescription:'',targetDate:'',daysPerWeek:3,sessionMinutes:60,
+ goal:'general',secondaryGoals:[],specificGoals:[],targetDescription:'',targetDate:'',daysPerWeek:3,programWeeks:4,sessionMinutes:60,
  preferredActivities:['strength'],experience:'beginner',equipment:['none'],restrictions:[],
  redFlags:{chestPain:false,dizziness:false,recentSurgery:false,pregnancy:false,medication:false},
  baseline:{},trainingContext:{preferredReassessmentWeeks:6}
