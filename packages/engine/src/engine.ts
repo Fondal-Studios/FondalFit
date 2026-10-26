@@ -94,7 +94,14 @@ export function generatePlan(a: AssessmentInput): Plan {
     const emphasis=['Empuje y sentadilla','Tracción y bisagra','Piernas y estabilidad'][d%3];
     days.push({ name: a.goal === 'hybrid' ? (hybridRun ? `Fuerza + carrera · ${emphasis}` : `Fuerza · ${emphasis}`) : `Sesión ${d+1} · ${emphasis}`, items: hybridRun ? items.slice(0, 3) : items, ...(run ? {run} : {}) });
   }
-  return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0 };
+  const programWeeks = a.programWeeks ?? 4;
+  const schedule = Array.from({length: programWeeks}, (_, index) => {
+    const week = index + 1;
+    const phase = week % 4 === 0 ? 'recovery' as const : week % 4 === 1 ? 'foundation' as const : 'progression' as const;
+    const volumeFactor = phase === 'recovery' ? 0.7 : phase === 'foundation' ? 1 : week % 4 === 2 ? 1.05 : 1.1;
+    return {week,phase,volumeFactor};
+  });
+  return { engineVersion: ENGINE_VERSION, goal: a.goal, days, weeksSinceDeload: 0, programWeeks, schedule };
 }
 
 export type Decision = { action: 'increase' | 'hold' | 'decrease'; load: number; reason: string };
