@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useState, type FormEvent} from 'react';
 import {api} from '../api';
 import {useApp,useLoad} from '../ctx';
 
@@ -13,7 +13,7 @@ export function AthleteProfessionalLink(){
  const [message,setMessage]=useState('');
  const [error,setError]=useState('');
  const allow=!!me.consents.share_with_pro;
- const join=async(e:React.FormEvent)=>{
+ const join=async(e:FormEvent)=>{
   e.preventDefault();
   const normalized=code.toUpperCase().replace(/\s|-/g,'');
   if(!/^[A-Z0-9]{6,12}$/.test(normalized))return setError('El código debe contener entre 6 y 12 letras o números.');
