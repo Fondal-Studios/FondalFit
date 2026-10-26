@@ -37,7 +37,12 @@ export function registerDirectory({app,db,auth,adminOnly,audit,now}:Context){
   const profiles=await db.prepare('SELECT category,phone,city,license,credentials,verified,published,lat,lon FROM professional_profiles WHERE user_id=?').all(uid) as Record<string,unknown>[];
   const professional=user?.role==='pro'||user?.role==='admin'||!!user?.pro_enabled||user?.mode==='medical'||user?.mode==='pro';
   const notifications:{code:string;category?:string;message:string}[]=[];
-  if(professional&&!profiles.length)notifications.push({code:'complete_profile',message:'Completá tu perfil, contacto y credenciales para solicitar la verificación.'});
+  if(professional&&!profiles.length){
+   const onboarding=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='professional_onboarding' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
+   let category='fitness';
+   try{if(onboarding&&JSON.parse(onboarding.data).profession!=='coach')category='medical';}catch{}
+   notifications.push({code:'complete_profile',category,message:'Completá tu perfil, teléfono, ciudad y credenciales para solicitar la verificación.'});
+  }
   for(const p of profiles){
    const category=String(p.category);
    if(!p.phone)notifications.push({code:'missing_phone',category,message:'Agregá un teléfono de contacto.'});
