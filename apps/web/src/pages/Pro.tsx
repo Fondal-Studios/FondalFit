@@ -84,6 +84,20 @@ export function ProStudio() {
   const t = useT(), nav = useNav(), { toast } = useApp();
   const tpls = useLoad<(Tpl & { id: number })[]>('/api/pro/templates');
   const [lib, setLib] = useState(false);
+  const students = useLoad<Student[]>('/api/pro/athletes');
+  const [assignment,setAssignment]=useState<Record<number,string>>({});
+  const [assignBusy,setAssignBusy]=useState<number|null>(null);
+  const [assignMessage,setAssignMessage]=useState('');
+  const assignFromStudio=async(templateId:number)=>{
+    const athleteId=Number(assignment[templateId]);
+    if(!athleteId)return;
+    const selected=students.data?.find(x=>x.id===athleteId);
+    if(!selected||!window.confirm('¿Asignar esta rutina a '+selected.name+'? Reemplazará su plan activo y conservará el historial.'))return;
+    setAssignBusy(templateId);setAssignMessage('');
+    try{await api('POST',`/api/pro/templates/${templateId}/assign`,{athleteId});setAssignMessage('Rutina asignada correctamente a '+selected.name+'.');}
+    catch{setAssignMessage('No se pudo asignar. Revisá que el alumno esté vinculado y activo.');}
+    finally{setAssignBusy(null);}
+  };
   const fromRoutine = async (rid: string) => {
     const r = routineById(rid)!;
     const days: TplDay[] = routineWeekDays(r, 0).map((d, i) => ({
@@ -95,14 +109,19 @@ export function ProStudio() {
   };
   return (
     <div className="stack">
-      <div className="row between"><h2>{t('studio')}</h2><button className="primary" onClick={() => nav.push('studio_edit', {})}>＋ {t('newRoutine')}</button></div>
-      <p className="muted">{t('studioHelp')}</p>
-      <div className="row"><button onClick={() => setLib(!lib)}>{t('copyFromLibrary')}</button></div>
+      <div className="card hero"><h2>Creador de rutinas profesionales</h2>
+        <p>Armá programas para tus alumnos con ejercicios, series, repeticiones, descansos y sesiones de cardio. Guardalos y asignáselos desde acá.</p>
+        <ol className="muted"><li>Creá una rutina o elegí una plantilla.</li><li>Definí objetivo, jornadas y ejercicios.</li><li>Guardá la rutina y asignala a un alumno vinculado.</li></ol>
+        <div className="row"><button className="primary" onClick={() => nav.push('studio_edit', {})}>＋ Crear rutina desde cero</button><button onClick={() => setLib(v=>!v)}>Usar una rutina de ejemplo</button></div>
+      </div>
+      {assignMessage&&<p role="status" className={assignMessage.startsWith('No se')?'warn':'ok'}>{assignMessage}</p>}
       {lib && <div className="card list">{ROUTINES.filter((r) => r.weeks === 1 && !r.tags.includes('mobility')).map((r) => <button key={r.id} onClick={() => fromRoutine(r.id)}><span><b>{r.n[0]}</b><span className="sub">{r.perWeek}×/{t('week_short')}</span></span><span>＋</span></button>)}</div>}
       {!tpls.data ? <Loading err={tpls.err} retry={tpls.reload} /> : tpls.data.length === 0 ? <div className="empty"><div className="em">📝</div><p>{t('noTemplates')}</p></div> : tpls.data.map((x) => (
         <div className="card" key={x.id}>
           <div className="row between"><h3 style={{ margin: 0 }}>{x.name}</h3><span className="badge">{x.days.length} {t('daysWord')}</span></div>
           <p className="muted small">{t('g_' + x.goal)}{x.notes ? ` · ${x.notes}` : ''}</p>
+          <details><summary>Ver jornadas y ejercicios</summary>{x.days.map((d,i)=><div key={i} className="muted small"><strong>{d.name}</strong> · {d.kind==='cardio'?`${d.cardio?.durationMin??0} min de cardio`:d.items.map(it=>`${t('ex_'+it.exerciseId)} ${it.sets}×${it.repMin}-${it.repMax}`).join(' · ')}</div>)}</details>
+          <div className="row"><label style={{flex:'2 1 180px'}}>Asignar a un alumno<select value={assignment[x.id]??''} onChange={e=>setAssignment(prev=>({...prev,[x.id]:e.target.value}))}><option value="">Elegí un alumno vinculado</option>{students.data?.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><button type="button" className="primary" disabled={!assignment[x.id]||assignBusy===x.id} onClick={()=>void assignFromStudio(x.id)}>{assignBusy===x.id?'Asignando…':'Asignar rutina'}</button></div>
           <div className="row"><button onClick={() => nav.push('studio_edit', { id: x.id })}>{t('edit')}</button><button className="danger" onClick={async () => { if (confirm(t('deleteConfirm'))) { await api('DELETE', `/api/pro/templates/${x.id}`); tpls.reload(); } }}>{t('remove')}</button></div>
         </div>))}
     </div>
