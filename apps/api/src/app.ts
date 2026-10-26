@@ -15,6 +15,7 @@ import { registerAdmin } from './admin';
 import {registerDirectory} from './directory';
 import { registerFood } from './food';
 import { registerPro } from './pro';
+import {registerGym} from './gym';
 import { registerPlans } from './plans';
 import { registerProgress } from './progress';
 import { registerSocial } from './social';
@@ -743,6 +744,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
   registerMemory({ app, db, parse, audit, now, athleteOnly });
   registerPlans({ app, db, parse, audit, now, athleteOnly, needHealth, latestPlan, savePlan });
   registerPro({ app, db, parse, audit, now, proOnly, athleteOnly, hasConsent, savePlan });
+  registerGym({app,db,auth,proOnly,athleteOnly,hasConsent,audit,now});
   registerFood({ app, db, parse, audit, now, athleteOnly, needHealth, profileWeight, activityEnergy, ai: opts.coach });
 
   // Serve the built PWA from the same origin (single-service deploy).
