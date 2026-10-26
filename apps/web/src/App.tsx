@@ -1,3 +1,4 @@
+import {GymStudio} from './pages/GymStudio';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, hasToken, setToken } from './api';
 import { AppCtx, initialLang, LangCtx, LangPicker, useApp, useT, type Lang, type Me } from './ctx';
@@ -109,11 +110,11 @@ function Auth({ lang, onLang, onDone }: { lang: Lang; onLang: (l: Lang) => void;
 }
 
 const ATHLETE_TABS = ['home', 'train', 'cardio', 'food', 'more'];
-const PRO_TABS = ['students', 'studio', 'approvals', 'more'];
+const PRO_TABS = ['students', 'studio', 'gyms', 'approvals', 'more'];
 const MEDICAL_TABS = ['medical_panel', 'directory', 'settings'];
 const ADMIN_TABS = ['admin', 'admin_panel', 'directory', 'settings'];
-const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', students: 'athletes', studio: 'studio', approvals: 'approvals', medical_panel: 'navHealth', directory: 'navDirectory', settings: 'settings', admin: 'admin', admin_panel: 'navAdminPanel' };
-const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', students: '👥', studio: '📝', approvals: '✅', medical_panel: '🩺', directory: '🔎', settings: '⚙️', admin: '📊', admin_panel: '🛡️' };
+const NAV: Record<string, string> = { home: 'nav_home', train: 'nav_train', cardio: 'nav_cardio', food: 'nav_nutrition', more: 'nav_more', students: 'athletes', studio: 'studio', gyms: 'Gimnasios', approvals: 'approvals', medical_panel: 'navHealth', directory: 'navDirectory', settings: 'settings', admin: 'admin', admin_panel: 'navAdminPanel' };
+const ICON: Record<string, string> = { home: '🏠', train: '🏋️', cardio: '📍', food: '🍽️', more: '☰', students: '👥', studio: '📝', gyms: '🏢', approvals: '✅', medical_panel: '🩺', directory: '🔎', settings: '⚙️', admin: '📊', admin_panel: '🛡️' };
 
 function Shell() {
   const { me } = useApp();
@@ -140,7 +141,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<div className="skeleton" role="status" aria-label={t('loading')} />}>
           {top ? <ScreenView s={top} /> : <TabView tab={active} />}
-          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={!top && active === k ? 'on' : ''} aria-current={!top && active === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{t(NAV[k]!)}</button>)}</nav>
+          <nav className="tabs" aria-label="main">{tabs.map((k) => <button key={k} className={!top && active === k ? 'on' : ''} aria-current={!top && active === k ? 'page' : undefined} onClick={() => go(k)}><span aria-hidden>{ICON[k]}</span>{k==='gyms'?'Gimnasios':t(NAV[k]!)}</button>)}</nav>
         </Suspense>
       )}
     </>
@@ -156,6 +157,7 @@ function TabView({ tab }: { tab: string }): ReactNode {
     case 'food': return <Food />;
     case 'students': return <ProStudents />;
     case 'studio': return <ProStudio />;
+    case 'gyms': return <GymStudio/>;
     case 'approvals': return <ProApprovals />;
     case 'medical_panel': return <MedicalPanel me={me} />;
     case 'directory': return <Directory />;
@@ -191,6 +193,7 @@ function ScreenView({ s }: { s: Screen }): ReactNode {
     case 'directory': return <Page title={t('navDirectory')}><Directory /></Page>;
     case 'profile': return <Page title={t('affiliate')}><MyProfessionalProfile me={me} category="medical" onSaved={refresh} /></Page>;
     case 'hub': return <Page title={t('athletes')}><ProfessionalHub /></Page>;
+    case 'gyms': return <Page title="Gimnasios"><GymStudio athlete={me.mode==='athlete'}/></Page>;
     case 'settings': return <Settings />;
     case 'admin': return <Admin />;
     case 'student': return <ProStudent id={p.id} />;

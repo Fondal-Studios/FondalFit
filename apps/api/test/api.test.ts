@@ -136,6 +136,52 @@ describe('nutrition & recovery', () => {
   });
 });
 
+describe('gym business: owner, staff, athletes and retention metrics',()=>{
+ it('creates a beta gym, safely invites trainer and athlete, aggregates their sessions and isolates organizations',async()=>{
+   const owner=await reg('gym-owner@example.com','pro');
+   const trainer=await reg('gym-trainer@example.com','pro');
+   const {t:athlete,plan}=await athleteWithPlan('gym-athlete@example.com');
+   const other=await reg('other-owner@example.com','pro');
+   const created=await call('POST','/api/gyms',owner,{name:'Academia Cafayate',city:'Cafayate',area:'Centro'});
+   expect(created.status).toBe(200);expect(created.body.plan).toBe('beta_free');
+   const id=created.body.id;
+   expect((await call('GET',`/api/gyms/${id}`,other)).status).toBe(404);
+   expect((await call('POST',`/api/gyms/${id}/invite`,other,{email:'gym-athlete@example.com',memberType:'athlete'})).status).toBe(404);
+   expect((await call('POST',`/api/gyms/${id}/invite`,owner,{email:'gym-trainer@example.com',memberType:'coach'})).status).toBe(200);
+   expect((await call('POST',`/api/gyms/${id}/invite`,owner,{email:'gym-athlete@example.com',memberType:'athlete'})).status).toBe(200);
+   expect((await call('GET','/api/gyms/invitations',trainer)).body.invitations).toHaveLength(1);
+   expect((await call('GET','/api/gyms/invitations',athlete)).body.invitations).toHaveLength(1);
+   expect((await call('POST',`/api/gyms/${id}/invitations/accept`,trainer)).status).toBe(200);
+   expect((await call('POST',`/api/gyms/${id}/invitations/accept`,athlete)).status).toBe(200);
+   const athId=(await call('GET','/api/me',athlete)).body.id;
+   const coachId=(await call('GET','/api/me',trainer)).body.id;
+   expect((await call('PUT',`/api/gyms/${id}/members/${athId}/assign`,trainer,{coachId})).status).toBe(403);
+   expect((await call('PUT',`/api/gyms/${id}/members/${athId}/assign`,owner,{coachId})).status).toBe(200);
+   await call('POST','/api/workouts',athlete,sessionFor(plan,10,2));
+   const view=(await call('GET',`/api/gyms/${id}`,owner)).body;
+   expect(view.members).toHaveLength(2);
+   expect(view.activity[0].sessions30).toBeGreaterThan(0);
+   expect((await call('GET',`/api/gyms/${id}`,trainer)).body.members.filter((x:any)=>x.member_type==='athlete')).toHaveLength(1);
+   expect((await call('GET','/api/gyms/plans',owner)).body.checkoutEnabled).toBe(false);
+   // Revoking the sharing consent must immediately remove athlete data from staff.
+   await call('PUT','/api/consents',athlete,{share_with_pro:false});
+   expect((await call('GET',`/api/gyms/${id}`,trainer)).body.members.filter((x:any)=>x.member_type==='athlete')).toHaveLength(0);
+   expect((await call('POST',`/api/gyms/${id}/members/${coachId}/remove`,owner)).status).toBe(200);
+   expect((await call('GET',`/api/gyms/${id}`,trainer)).status).toBe(404);
+ });
+ it('requires the athlete to consent before joining and prevents coach from seeing another gym',async()=>{
+   const owner=await reg('gym-2-owner@example.com','pro');
+   const athlete=await reg('gym-2-athlete@example.com','athlete');
+   const created=await call('POST','/api/gyms',owner,{name:'Centro Deporte',city:'Salta'});
+   const id=created.body.id;
+   await call('POST',`/api/gyms/${id}/invite`,owner,{email:'gym-2-athlete@example.com',memberType:'athlete'});
+   expect((await call('POST',`/api/gyms/${id}/invitations/accept`,athlete)).status).toBe(403);
+   await call('PUT','/api/consents',athlete,{share_with_pro:true});
+   expect((await call('POST',`/api/gyms/${id}/invitations/accept`,athlete)).status).toBe(200);
+   expect((await call('POST',`/api/gyms/${id}/invitations/accept`,athlete)).status).toBe(404);
+ });
+});
+
 describe('professional supervision', () => {
   async function linked(limits?: object) {
     const { t, plan } = await athleteWithPlan();

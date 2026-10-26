@@ -200,3 +200,12 @@ button.linkbtn { background:none; border:1px solid var(--line); color:var(--acce
 .directory-selected{border-color:#df9a53;background:#28231d}
 .professional-template{border:1px dashed #598e75;border-radius:12px;padding:12px;margin:12px 0;background:#11231b}
 .professional-template button{margin-top:5px}
+
+/* Gym dashboard */
+.gym-row{display:flex;flex-direction:column;align-items:flex-start;width:100%;margin:8px 0;padding:13px;border:1px solid var(--line);border-radius:12px;text-align:left;gap:4px}
+.gym-row.on{border-color:#65b78b;background:#173324}
+.gym-row span,.gym-member span{color:var(--muted);font-size:.82rem}
+.gym-member{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:13px;border:1px solid var(--line);border-radius:12px;margin:8px 0;background:#121d19}
+.gym-member label,.gym-member select{max-width:100%;width:100%}
+.gym-studio .row label{min-width:0;flex:1}
+@media(max-width:420px){.gym-studio .row{flex-wrap:wrap}.gym-studio .row label{min-width:120px}}
