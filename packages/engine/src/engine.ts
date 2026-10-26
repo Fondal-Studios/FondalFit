@@ -47,8 +47,7 @@ const DAY_PATTERNS: Exercise['pattern'][][] = [
 
 /** Picks the most conservative variant first (fewest stressed areas, bodyweight first for beginners). */
 function pick(pool: Exercise[], pattern: Exercise['pattern'], beginner: boolean, used: Set<string>) {
-  // Isometric holds require a timed-session UI; do not prescribe them as repetitions.
-  const c = pool.filter((e) => e.pattern === pattern && !e.holdSeconds && (e.level??1) <= (beginner?2:3));
+  const c = pool.filter((e) => e.pattern === pattern && (e.level??1) <= (beginner?2:3));
   c.sort((a, b) => (beginner ? (a.level??1)-(b.level??1) : (b.level??1)-(a.level??1)) || (beginner ? a.increment-b.increment : b.increment-a.increment));
   return c.find((e) => !used.has(e.id)) ?? c[0];
 }
@@ -85,6 +84,7 @@ export function generatePlan(a: AssessmentInput): Plan {
         repMax: s.repMax,
         rirTarget: conservativeStart ? Math.max(s.rir, 4) : s.rir,
         load: 0,
+        ...(ex.holdSeconds ? { durationSeconds: conservativeStart ? 15 : 30 } : {}),
       });
     }
     // Three distinct emphasis patterns: avoid repeating an identical full-body session every day.
