@@ -5,9 +5,9 @@ type PlanOptions={version:number;goal:string;days:{index:number;name:string;item
 type SwapPreview={allowed:boolean;version:number;fromId:string;toId:string;explanation:string;requiresConfirmation:boolean};
 const friendly=(id:string)=>id.replace(/_/g,' ');
 const alias=(value:string)=>{const v=value.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');if(/^(pull.?ups?|dominadas?|barra fija)$/.test(v))return 'pull_up';if(/^(chin.?ups?|dominadas supinas)$/.test(v))return 'chin_up';if(/^(jalon|jalones|polea alta)$/.test(v))return 'lat_pulldown';return v.replace(/\s+/g,'_');};
-export function TutorExerciseSwap(){
+export function TutorExerciseSwap({initialDay=0,initialItem=0,onSaved,compact=false}:{initialDay?:number;initialItem?:number;onSaved?:()=>void;compact?:boolean}={}){
  const [data,setData]=useState<PlanOptions|null>(null);
- const [day,setDay]=useState(0),[item,setItem]=useState(0),[desired,setDesired]=useState('');
+ const [day,setDay]=useState(initialDay),[item,setItem]=useState(initialItem),[desired,setDesired]=useState('');
  const [preview,setPreview]=useState<SwapPreview|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState('');
  const reload=()=>api<PlanOptions>('GET','/api/plan/exercise-swap/options').then(setData).catch(()=>setError('No se pudo cargar tu rutina.'));
@@ -37,17 +37,18 @@ export function TutorExerciseSwap(){
  };
  const confirm=async()=>{
   if(!preview||!data)return;setBusy(true);setError('');
-  try{await api('POST','/api/plan/exercise-swap/confirm',{dayIndex:day,itemIndex:item,replacementId:preview.toId,expectedVersion:preview.version});setSuccess('Cambio confirmado y guardado como nueva versión de tu rutina.');setPreview(null);setDesired('');reload();}
+  try{await api('POST','/api/plan/exercise-swap/confirm',{dayIndex:day,itemIndex:item,replacementId:preview.toId,expectedVersion:preview.version});setSuccess('Cambio confirmado y guardado como nueva versión de tu rutina.');setPreview(null);setDesired('');reload();onSaved?.();}
   catch{setError('No se pudo aplicar. Si la rutina cambió, volvé a revisar la propuesta.');setPreview(null);reload();}
   finally{setBusy(false);}
  };
  return <section className="card" aria-label="Cambiar ejercicio con tutor">
-  <h3>Proponer un cambio de rutina</h3>
-  <p className="muted">¿Preferís hacer dominadas en lugar de otro ejercicio? Elegí cuál y escribí el reemplazo. Tu tutor valida el estímulo, equipamiento, experiencia y restricciones antes de pedirte confirmación.</p>
+  <h3>{compact?'Modificar ejercicio de mi rutina':'Proponer un cambio de rutina'}</h3>
+  <p className="muted">Elegí un ejercicio alternativo del mismo grupo muscular y patrón de movimiento. Verificamos tu objetivo y restricciones antes de guardar el cambio.</p>
   {data&&data.days.length>0?<>
    <label>Jornada<select value={day} onChange={e=>{setDay(Number(e.target.value));setItem(0);setPreview(null);}}>{data.days.map(d=><option key={d.index} value={d.index}>{d.name}</option>)}</select></label>
    <label>Ejercicio a sustituir<select value={item} onChange={e=>{setItem(Number(e.target.value));setPreview(null);}}>{(data.days[day]?.items??[]).map(x=><option key={x.index} value={x.index}>{friendly(x.exerciseId)}</option>)}</select></label>
    <label>Quiero hacer…<input value={desired} onChange={e=>{setDesired(e.target.value);setPreview(null);}} placeholder="Ej.: dominadas / pull-ups" list="tutor-exercise-options"/></label>
+   <div className="row">{suggested.slice(0,8).map(x=><button type="button" key={x.id} onClick={()=>{setDesired(friendly(x.id));setPreview(null)}}>{friendly(x.id)}</button>)}</div>
    <datalist id="tutor-exercise-options">{suggested.map(x=><option key={x.id} value={friendly(x.id)}/>)}</datalist>
    <p className="muted small">{found?'Identificado: '+friendly(found.id):'Escribí el nombre del ejercicio o elegí uno de los sugeridos.'}</p>
    <button type="button" disabled={busy||!found||!source} onClick={()=>void propose()}>{busy?'Evaluando…':'Consultar si es compatible'}</button>
