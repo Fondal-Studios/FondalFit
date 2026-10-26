@@ -1,5 +1,4 @@
 import {useEffect,useState} from 'react';
-import {byId} from '@fondal/engine';
 import {api} from '../api';
 import {useT} from '../ctx';
 
@@ -20,7 +19,7 @@ const messages:Record<string,string>={
  same_exercise:'Ya estás realizando ese ejercicio.',
 };
 export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,onSaved}:Props){
- const t=useT(),source=byId(exerciseId);
+ const t=useT();
  const [version,setVersion]=useState<number|null>(null);
  const [choices,setChoices]=useState<Alternative[]>([]);
  const [loading,setLoading]=useState(true);
