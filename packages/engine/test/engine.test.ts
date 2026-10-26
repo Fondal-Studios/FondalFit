@@ -33,6 +33,12 @@ describe('generatePlan', () => {
     }
     expect(p.days).toHaveLength(3);
   });
+  it('gives timed holds a seconds target', () => {
+    const p = generatePlan({ ...base, goal: 'general', daysPerWeek: 2, equipment: ['none'] });
+    for (const item of p.days.flatMap(d => d.items)) {
+      if (byId(item.exerciseId)?.holdSeconds) expect(item.durationSeconds).toBeGreaterThan(0);
+    }
+  });
   it('is deterministic', () => { expect(generatePlan(base)).toEqual(generatePlan(base)); });
   it('bodyweight only when no equipment', () => {
     expect(allowedExercises({ equipment: [], restrictions: [] }).every((e) => e.equipment.includes('none'))).toBe(true);
