@@ -33,7 +33,7 @@ const RunProgress = L(() => import('./pages/Progress'), 'RunProgress');
 const BodyProgress = L(() => import('./pages/Progress'), 'BodyProgress');
 const Devices = L(() => import('./pages/Progress'), 'Devices');
 const Challenges = L(() => import('./pages/Social'), 'Challenges');
-const Coach = L(() => import('./pages/Coach'), 'Coach');
+const Coach = L(() => import('./pages/Tutors'), 'TutorLounge');
 const CoachMemory = L(() => import('./pages/Coach'), 'CoachMemory');
 const Science = L(() => import('./pages/Science'), 'Science');
 const Settings = L(() => import('./pages/Settings'), 'Settings');
