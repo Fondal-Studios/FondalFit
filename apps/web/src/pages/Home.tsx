@@ -10,7 +10,7 @@ export function Home({ me, go }: { me: Me; go: (tab: string) => void }) {
   const energy=useLoad<{date:string;basalSoFar:number;neatSoFar:number;exerciseKcal:number;burnedSoFar:number;eaten:number;dailyBmr:number;dailyNeatProxy:number;targetBudget:number|null;remaining:number|null;goal:string;plannedTdee:number;goalAdjustment:number;lifeFactor:number|null;nutritionMethod:string;complete:boolean;note:string}>('/api/energy/today?timezoneOffset='+new Date().getTimezoneOffset());
   const daily = useLoad<{date:string;totalKcal:number;estimated:boolean;activities:{id:number;sport:string;started_at:string;duration_sec:number;distance_m:number;avg_pace_sec_km:number;estimated_kcal:number|null;elev_gain_m:number}[]}>('/api/activity/today?timezoneOffset='+new Date().getTimezoneOffset());
   if (!plan.data) return <Loading err={plan.err} retry={plan.reload} />;
-  if (!plan.data.plan) return <><HomeEnergy data={energy.data} reload={energy.reload} go={go}/><DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/><div className="card"><h2>{t('hi')}, {me.name}</h2><p>{t('noPlanYet')}</p><button className="primary" onClick={() => go('wizard')}>{t('createPlan')}</button></div></>;
+  if (!plan.data.plan) return <><HomeEnergy data={energy.data} reload={energy.reload} go={go}/><DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/><PersonalConsultation/><div className="card"><h2>{t('hi')}, {me.name}</h2><p>{t('noPlanYet')}</p><button className="primary" onClick={() => go('wizard')}>{t('createPlan')}</button></div></>;
   const days = plan.data.plan.days;
   const done = (prog.data?.total ?? 0) + (act.data?.activities.length ?? 0);
   const next = days[done % days.length]!;
@@ -19,6 +19,7 @@ export function Home({ me, go }: { me: Me; go: (tab: string) => void }) {
       <h2>{t('hi')}, {me.name}</h2>
       <HomeEnergy data={energy.data} reload={energy.reload} go={go}/>
       <DailySummary activities={daily.data?.activities??[]} totalKcal={daily.data?.totalKcal??0} estimated={!!daily.data?.estimated} go={go}/>
+      <PersonalConsultation/>
       <CustomBlocks onSaved={()=>{daily.reload();energy.reload();}}/>
       <div className="card">
         <p className="muted">{(daily.data?.activities.length??0)>0?'Actividad registrada hoy · Próxima sugerencia opcional':t('nextSession')}</p>
@@ -59,4 +60,17 @@ function HomeEnergy({data,reload,go}:{data:{basalSoFar:number;neatSoFar:number;e
    <div className="row"><button className="primary" onClick={()=>go('food')}>Agregar comida</button><button onClick={()=>go('cardio')}>Registrar actividad</button></div>
    <details><summary>¿Qué significan BMR, NEAT y el saldo?</summary><p>BMR es el gasto basal en reposo. NEAT es el movimiento cotidiano fuera del deporte; aquí usamos una aproximación por factor de actividad, no una medición directa. *El saldo para comer proyecta el día completo y no equivale a calorías que ya hayas gastado. Puede variar y no se debe interpretar como una autorización automática para restringir la comida.</p><p className="muted">{data.note}</p></details>
  </section>;
+}
+
+/** Optional private consultation CTA; WhatsApp handles the message, never our servers. */
+function PersonalConsultation(){
+ const message=encodeURIComponent('Hola Dr. Mariano Jiménez, llego desde Fondal Fit y quisiera consultar disponibilidad y honorarios para una consulta individual de salud metabólica y entrenamiento.');
+ return <aside className="card medical-consultation" aria-label="Consulta médica individual">
+   <p className="muted">ATENCIÓN MÉDICA INDIVIDUAL</p>
+   <h3>Salud metabólica, composición corporal y musculación</h3>
+   <p><strong>Médico Mariano Jiménez</strong> · Matrícula 7016 · Cafayate, Vertientes.</p>
+   <p className="muted">Acompañamiento médico personalizado para revisar hábitos, entrenamiento, composición corporal y objetivos. Consulta presencial o virtual a coordinar.</p>
+   <a className="directory-contact" target="_blank" rel="noopener noreferrer" href={'https://wa.me/5493875466419?text='+message}>Consultar disponibilidad por WhatsApp</a>
+   <p className="muted small">La consulta es opcional y tiene honorarios a confirmar. WhatsApp se abre fuera de Fondal Fit; no se comparte tu historial automáticamente.</p>
+ </aside>;
 }
