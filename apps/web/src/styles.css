@@ -309,3 +309,5 @@ nav.tabs button {min-width:0;flex:1 1 0;padding:8px 3px;overflow-wrap:anywhere}
 .exercise-swap-confirm h3{margin:0 0 6px}
 .exercise-swap-confirm-actions{display:flex;gap:8px;flex-wrap:wrap}
 .exercise-swap-confirm-actions button{flex:1 1 160px;white-space:normal}
+
+.swap-risk-green{border-left:4px solid #35b878!important}.swap-risk-yellow{border-left:4px solid #e5ba45!important}.swap-risk-red{border-left:4px solid #df6767!important}
