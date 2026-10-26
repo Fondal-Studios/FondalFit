@@ -156,7 +156,7 @@ function Consents({ me, refresh }: { me: Me; refresh: () => void }) {
 }
 
 /* ---------- Athlete: training ---------- */
-interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number }
+interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number; durationSeconds?: number }
 interface PlanRes { version?: number; recommendedDay?: number; plan: { days: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }[] } | null }
 
 function Chips({ options, value, onChange, multi }: { options: string[]; value: string[]; onChange: (v: string[]) => void; multi?: boolean }) {
@@ -292,9 +292,13 @@ function Session({ day, index, onDone, onCancel, exerciseNames }: { exerciseName
   const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
     Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
   const [fatigue, setFatigue] = useState(5);
+  const [timer, setTimer] = useState<{id:string;index:number;started:number}|null>(null);
+  const [elapsed,setElapsed] = useState(0);
+  useEffect(() => { if(!timer)return; const id=window.setInterval(()=>setElapsed(Math.floor((Date.now()-timer.started)/1000)),250);return ()=>window.clearInterval(id); },[timer]);
+  const stopHold=()=>{if(!timer)return;set(timer.id,timer.index,'reps',String(Math.max(1,Math.floor((Date.now()-timer.started)/1000))));setTimer(null);setElapsed(0);};
   const set = (id: string, i: number, k: 'weight' | 'reps' | 'rir', v: string) => setSets({ ...sets, [id]: sets[id]!.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
   const submit = async () => {
-    const items = day.items.map((it) => ({ exerciseId: it.exerciseId, sets: sets[it.exerciseId]!.filter((s) => s.reps !== '').map((s) => ({ weight: Number(s.weight || 0), reps: Number(s.reps), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
+    const items = day.items.map((it) => ({ exerciseId: it.exerciseId, sets: sets[it.exerciseId]!.filter((s) => s.reps !== '').map((s) => ({ weight: Number(s.weight || 0), reps: it.durationSeconds ? 0 : Number(s.reps), ...(it.durationSeconds ? {durationSeconds:Number(s.reps)} : {}), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
     if (!items.length) return;
     try {
       const r = await api('POST', '/api/workouts', { dayIndex: index, fatigue, items });
@@ -309,11 +313,12 @@ function Session({ day, index, onDone, onCancel, exerciseNames }: { exerciseName
       <p className="muted">Registrá tus series. Si volvés al plan antes de finalizar, los datos de esta sesión no se guardan.</p>
       {day.items.map((it) => (
         <div className="card" key={it.exerciseId}>
-          <h3>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
+          <h3>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</h3><p className="muted">{it.durationSeconds ? `Objetivo: ${it.durationSeconds} segundos por serie` : `${it.repMin}-${it.repMax} ${t('reps')}`} · {t('rir')} {it.rirTarget}</p>
           {sets[it.exerciseId]!.map((s, i) => (
             <div className="set" key={i}><span>{i + 1}</span>
               <input aria-label={t('weight')} placeholder={t('weight')} inputMode="decimal" value={s.weight} onChange={(e) => set(it.exerciseId, i, 'weight', e.target.value)} />
-              <input aria-label={t('reps')} placeholder={t('reps')} inputMode="numeric" value={s.reps} onChange={(e) => set(it.exerciseId, i, 'reps', e.target.value)} />
+              <input aria-label={it.durationSeconds?'Duración en segundos':t('reps')} placeholder={it.durationSeconds?'Segundos':t('reps')} inputMode="numeric" value={s.reps} onChange={(e) => set(it.exerciseId, i, 'reps', e.target.value)} />
+              {it.durationSeconds && (timer?.id===it.exerciseId && timer.index===i ? <button type="button" onClick={stopHold}>Detener · {elapsed}s</button> : <button type="button" disabled={!!timer} onClick={()=>{setElapsed(0);setTimer({id:it.exerciseId,index:i,started:Date.now()});}}>Iniciar cronómetro</button>)}
               <input aria-label={t('rir')} placeholder={t('rir')} inputMode="numeric" value={s.rir} onChange={(e) => set(it.exerciseId, i, 'rir', e.target.value)} /></div>
           ))}
         </div>
