@@ -200,7 +200,7 @@ function Training() {
 
 type AssessmentValues = {
  goal:string;secondaryGoals:string[];specificGoals:string[];targetDescription:string;targetDate:string;
- daysPerWeek:number;sessionMinutes:number;preferredActivities:string[];experience:string;equipment:string[];restrictions:string[];
+ daysPerWeek:number;programWeeks:4|8|12;sessionMinutes:number;preferredActivities:string[];experience:string;equipment:string[];restrictions:string[];
  redFlags:{chestPain:boolean;dizziness:boolean;recentSurgery:boolean;pregnancy:boolean;medication:boolean};
  baseline:Record<string,number>;trainingContext:Record<string,number>;
 };
@@ -250,6 +250,7 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
   </>}
   {step===1&&<><label>Experiencia actual</label><Chips options={['beginner','intermediate','advanced']} value={[a.experience]} onChange={v=>setA({...a,experience:v[0]!})}/>
    <label>Días disponibles para fuerza</label><input type="number" min={1} max={6} value={a.daysPerWeek} onChange={e=>setA({...a,daysPerWeek:Number(e.target.value)})}/>
+   <label>Duración del programa</label><select value={a.programWeeks} onChange={e=>setA({...a,programWeeks:Number(e.target.value) as 4|8|12})}>{[4,8,12].map(w=><option key={w} value={w}>{w} semanas</option>)}</select>
    <label>Duración disponible por sesión</label><select value={a.sessionMinutes} onChange={e=>setA({...a,sessionMinutes:Number(e.target.value)})}>{[20,30,45,60,75,90,120].map(n=><option key={n} value={n}>{n} minutos</option>)}</select>
    {contextField('strengthDays','Sesiones actuales de fuerza por semana',0,7)}
    {contextField('cardioDays','Sesiones actuales de cardio por semana',0,7)}
