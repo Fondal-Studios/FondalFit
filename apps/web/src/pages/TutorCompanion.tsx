@@ -30,7 +30,7 @@ export function TutorCompanion({tab,onOpen}:{tab:string;onOpen:()=>void}){
  };
  return <aside className={'tutor-companion '+(tab==='home'?'tutor-companion-home':'')} aria-label="Tu tutor siempre disponible">
   <div className="tutor-companion-head">
-   <div className="tutor-mini-sprite" aria-hidden="true" style={{backgroundImage:'url(https://raw.githubusercontent.com/Fondal-Studios/La-Horda/main/assets/sprites/champions/'+(tutor?.sprite==='mago'?'mago':'tanque')+'/atlas.png)'}}/>
+   <div className="tutor-mini-sprite" aria-hidden="true" style={{backgroundImage:'url(https://raw.githubusercontent.com/Fondal-Studios/La-Horda/main/assets/sprites/champions/'+(tutor?.sprite??'tanque')+'/atlas.png)'}}/>
    <div className="tutor-companion-copy"><strong>{name} te acompaña</strong><p>{tip}</p></div>
   </div>
   <div className="tutor-companion-actions">
