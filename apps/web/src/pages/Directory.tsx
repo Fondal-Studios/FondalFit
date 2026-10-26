@@ -3,12 +3,12 @@ import {api} from '../api';
 import type {Me} from '../ctx';
 import {ProfessionalsMap} from './ProfessionalsMap';
 type Category='medical'|'fitness';
-type Profession='physician'|'kinesiologist'|'other_health'|'coach';
+type Profession='physician'|'kinesiologist'|'dietitian'|'other_health'|'coach';
 type Profile={id:number;category:Category;profession:Profession;displayName:string;specialty:string;credentials:string;license?:string;description:string;phone:string;city:string;area:string;modality:'online'|'in_person'|'both';lat:number|null;lon:number|null;verified:boolean;published?:boolean;distanceKm?:number|null};
-const categoryName=(c:Category,profession?:Profession)=>c==='fitness'?'Entrenador / profesor':profession==='kinesiologist'?'Kinesiólogo/a':profession==='physician'?'Médico/a':'Profesional de salud';
+const categoryName=(c:Category,profession?:Profession)=>c==='fitness'?'Entrenador / profesor':profession==='kinesiologist'?'Kinesiólogo/a':profession==='physician'?'Médico/a':profession==='dietitian'?'Licenciado/a en Nutrición':'Profesional de salud';
 const whatsapp=(phone:string,name:string)=>'https://wa.me/'+phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hola, encontré tu perfil en Fondal Fit y quisiera consultar por un turno con '+name+'.');
 export function Directory(){
- const [category,setCategory]=useState<'all'|Category|'kinesiology'>('all'),[city,setCity]=useState('Cafayate'),[near,setNear]=useState<{lat:number;lon:number}|null>(null);
+ const [category,setCategory]=useState<'all'|Category|'kinesiology'|'nutrition'>('all'),[city,setCity]=useState('Cafayate'),[near,setNear]=useState<{lat:number;lon:number}|null>(null);
  const [profiles,setProfiles]=useState<Profile[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [showMap,setShowMap]=useState(true),[selected,setSelected]=useState<string|null>(null);
  const search=async(c=category,t=city,loc=near)=>{
@@ -24,9 +24,9 @@ export function Directory(){
   navigator.geolocation.getCurrentPosition(p=>{const loc={lat:p.coords.latitude,lon:p.coords.longitude};setNear(loc);setCity('');void search(category,'',loc);},()=>setError('No se pudo obtener tu ubicación. Podés buscar por ciudad.'),{enableHighAccuracy:false,timeout:10000});
  };
  return <section className="card directory"><h2>Encontrá un profesional</h2>
-  <p className="muted">Médicos y profesores verificados. Elegí a quién consultar, por ubicación o modalidad. El contacto no comparte automáticamente tus datos de salud.</p>
+  <p className="muted">Médicos, kinesiólogos, nutricionistas y profesores verificados. Elegí a quién consultar, por ubicación o modalidad. El contacto no comparte automáticamente tus datos de salud.</p>
   <div className="directory-controls">
-   <label>Especialidad<select value={category} onChange={e=>setCategory(e.target.value as 'all'|Category|'kinesiology')}><option value="all">Todos</option><option value="medical">Médicos y salud</option><option value="kinesiology">Kinesiólogos</option><option value="fitness">Entrenadores y gimnasios</option></select></label>
+   <label>Especialidad<select value={category} onChange={e=>setCategory(e.target.value as 'all'|Category|'kinesiology')}><option value="all">Todos</option><option value="medical">Médicos y salud</option><option value="kinesiology">Kinesiólogos</option><option value="nutrition">Nutricionistas</option><option value="fitness">Entrenadores y gimnasios</option></select></label>
    <label>Ciudad<input value={city} onChange={e=>setCity(e.target.value)} placeholder="Ej.: Cafayate"/></label>
   </div>
   <div className="row"><button className="primary" disabled={busy} onClick={()=>void search()}>{busy?'Buscando…':'Buscar profesionales'}</button><button onClick={nearby}>Cerca de mí</button></div>
@@ -75,7 +75,7 @@ export function MyProfessionalProfile({me,category,onSaved}:{me:Me;category:Cate
   </div>
   <div className="profile-fields">
    {category==='medical'&&<label>Profesión de salud<select value={profile.profession} onChange={e=>set('profession',e.target.value as Profession)}>
-     <option value="physician">Medicina</option><option value="kinesiologist">Kinesiología / Fisioterapia</option><option value="other_health">Otra profesión sanitaria</option>
+     <option value="physician">Medicina</option><option value="kinesiologist">Kinesiología / Fisioterapia</option><option value="dietitian">Nutrición</option><option value="other_health">Otra profesión sanitaria</option>
    </select></label>}
    <label>Nombre público<input value={profile.displayName} onChange={e=>set('displayName',e.target.value)}/></label>
    <label>Especialidad<input placeholder={category==='medical'?(profile.profession==='kinesiologist'?'Rehabilitación musculoesquelética, ejercicio terapéutico…':'Salud metabólica, actividad física…'):'Calistenia, fuerza, running…'} value={profile.specialty} onChange={e=>set('specialty',e.target.value)}/></label>
