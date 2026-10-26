@@ -1,4 +1,5 @@
 import {GymStudio} from './pages/GymStudio';
+import {Tutorial,useTutorialStatus} from './pages/Tutorial';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, hasToken, setToken } from './api';
 import { AppCtx, initialLang, LangCtx, LangPicker, useApp, useT, type Lang, type Me } from './ctx';
@@ -128,6 +129,7 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
   const t = useT();
   const nav = useNav();
   const { me, refresh } = useApp();
+  const tutorial=useTutorialStatus(me.id,me.mode);
   const needsConsent = me.mode === 'athlete' && !(me.consents.terms && me.consents.health_data);
   const top = stack[stack.length - 1];
   const active = tabs.includes(tab) ? tab : tabs[0]!;
@@ -137,9 +139,11 @@ function Frame({ tabs, tab, go, stack }: { tabs: string[]; tab: string; go: (k: 
     <>
       <header className="top">
         <h1>{t('app')}</h1>
+        <button className="tutorial-help-button" type="button" onClick={tutorial.show} aria-label="Ver tutorial de Fondal Fit">? Guía</button>
         {!me.canPro && me.mode === 'athlete' && <button className="linkbtn" onClick={() => nav.push('settings')}>🎓 {t('proModeShort')}</button>}
         {(me.canPro || me.mode === 'medical' || me.mode === 'admin') && <div className="modepill" role="group" aria-label={t('accountMode')}>{modes.map((m) => <button key={m} className={me.mode === m ? 'on' : ''} aria-pressed={me.mode === m} onClick={() => void switchMode(m as 'athlete' | 'pro')}>{t(m === 'pro' ? 'pro' : m === 'medical' ? 'navHealth' : m === 'admin' ? 'admin' : 'athlete')}</button>)}</div>}
       </header>
+      {!needsConsent&&tutorial.open&&<Tutorial initial onClose={tutorial.hide}/>}
       {needsConsent ? <Consents me={me} refresh={refresh} /> : (
         <Suspense fallback={<div className="skeleton" role="status" aria-label={t('loading')} />}>
           {top ? <ScreenView s={top} /> : <TabView tab={active} />}
