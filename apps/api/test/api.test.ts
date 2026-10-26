@@ -1066,3 +1066,25 @@ describe('collectible AI tutors', () => {
     expect((await call('POST', '/api/tutors/ask', t, {message:'¿Qué puedo cocinar?'})).status).toBe(503);
   });
 });
+
+
+describe('tutor food logging integration', () => {
+  it('interprets a meal without Anthropic and only saves after explicit confirmation', async () => {
+    const t = await reg('foodtutor@x.com', 'athlete');
+    await call('PUT', '/api/consents', t, allConsents);
+    const initial = (await call('GET', '/api/nutrition', t)).body;
+    const interpretation = await call('POST', '/api/nutrition/interpret', t, { text: '200 gramos de pollo' });
+    expect(interpretation.status).toBe(200);
+    expect(Array.isArray(interpretation.body.items)).toBe(true);
+    expect(interpretation.body.source).toBe('rules');
+    const afterPreview = (await call('GET', '/api/nutrition', t)).body;
+    expect(afterPreview.today).toEqual(initial.today);
+    const known = interpretation.body.items.filter((i: {foodId:string|null;grams:number})=>i.foodId&&i.grams>0);
+    expect(known.length).toBeGreaterThan(0);
+    const saved = await call('POST', '/api/nutrition/log', t, {mealType:'lunch',items:known.map((i:{foodId:string;grams:number})=>({foodId:i.foodId,grams:i.grams}))});
+    expect(saved.status).toBe(200);
+    expect(saved.body.kcal).toBeGreaterThan(0);
+    const current = (await call('GET', '/api/nutrition', t)).body;
+    expect(current.today.kcal).toBeGreaterThan(0);
+  });
+});
