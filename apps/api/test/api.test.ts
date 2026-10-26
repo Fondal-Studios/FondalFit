@@ -718,6 +718,32 @@ describe('weekly ranking opt-in',()=>{
    expect(result.body.entries).toEqual([]);
  });
 });
+describe('professional network and four account modes',()=>{
+ it('requires admin authorization and hides unverified professionals',async()=>{
+   const token=await reg('nanogm.test@x.com','athlete');
+   const profile={category:'medical',displayName:'Mariano Jiménez',specialty:'Medicina del ejercicio',credentials:'Médico',license:'Matrícula pendiente de validación',description:'Consultas de entrenamiento y salud',phone:'5493875466419',city:'Cafayate',area:'Vertientes',modality:'both',lat:null,lon:null,published:true};
+   expect((await call('POST','/api/me/mode',token,{mode:'admin'})).status).toBe(403);
+   expect((await call('POST','/api/me/mode',token,{mode:'medical'})).status).toBe(403);
+   expect((await call('PUT','/api/profiles/me',token,profile)).status).toBe(200);
+   expect((await call('POST','/api/me/mode',token,{mode:'medical'})).status).toBe(200);
+   expect((await call('GET','/api/me',token)).body.mode).toBe('medical');
+   const hidden=await call('GET','/api/directory?city=Cafayate',token);
+   expect(hidden.status).toBe(200);expect(hidden.body.items).toHaveLength(0);
+   expect((await call('GET','/api/admin/professionals',token)).status).toBe(403);
+   await db.prepare("UPDATE users SET role='admin' WHERE email=?").run('nanogm.test@x.com');
+   expect((await call('POST','/api/me/mode',token,{mode:'admin'})).status).toBe(200);
+   const user=(await call('GET','/api/me',token)).body;
+   expect(user.mode).toBe('admin');expect(user.isAdmin).toBe(true);
+   const pending=(await call('GET','/api/admin/professionals',token)).body;
+   expect(pending).toHaveLength(1);expect(pending[0].verified).toBe(false);
+   expect((await call('POST','/api/admin/professionals/verify',token,{userId:user.id,category:'medical',verified:true})).status).toBe(200);
+   const visible=(await call('GET','/api/directory?category=medical&city=Cafayate',token)).body;
+   expect(visible.items).toHaveLength(1);expect(visible.items[0].phone).toBe('5493875466419');
+   expect((await call('GET','/api/admin/accounts/lookup?name=nanogm.test',token)).body.users).toHaveLength(1);
+   await call('PUT','/api/profiles/me',token,{...profile,description:'Descripción nueva'});
+   expect((await call('GET','/api/directory?city=Cafayate',token)).body.items).toHaveLength(0);
+ });
+});
 describe('privacy', () => {
   it('export and delete', async () => {
     const { t } = await athleteWithPlan();
