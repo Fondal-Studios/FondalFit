@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { adaptedReturn, adviseDay, materialize, weekStartUtc, resumeShift, routineById, routineWeekDays, type Experience, type Plan } from '@fondal/engine';
+import { adaptedReturn, adviseDay, materialize, weekStartUtc, resumeShift, routineById, routineWeekDays, type Experience, type Plan, CATALOG } from '@fondal/engine';
 import type { RouteCtx } from './admin';
 
 type Guard = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -53,6 +53,61 @@ export function registerPlans(c: PlanCtx) {
       away: { gapDays, options: gapDays >= 10 ? adaptedReturn(gapDays) : null },
       week: { doneDays, nextIndex: nextIndex >= 0 ? nextIndex : null },
     };
+  });
+
+  /** Two-stage exercise swap: never allow the language model to write the plan directly. */
+  const swapSchema=z.object({dayIndex:z.number().int().min(0).max(6),itemIndex:z.number().int().min(0).max(30),replacementId:z.string().max(60),expectedVersion:z.number().int().positive().optional()});
+  const evaluateSwap=async(uid:number,b:z.infer<typeof swapSchema>)=>{
+    const latest=await c.latestPlan(uid);
+    if(!latest)return {error:'no_plan'} as const;
+    if(b.expectedVersion!==undefined&&b.expectedVersion!==latest.version)return {error:'plan_changed'} as const;
+    if(latest.source.startsWith('pro:'))return {error:'professional_plan_requires_approval'} as const;
+    const plan=JSON.parse(latest.data) as Plan;
+    if(plan.program?.weeks?.length)return {error:'program_requires_professional_review'} as const;
+    const current=plan.days[b.dayIndex]?.items[b.itemIndex];
+    if(!current)return {error:'exercise_not_found'} as const;
+    const from=CATALOG.find(x=>x.id===current.exerciseId),to=CATALOG.find(x=>x.id===b.replacementId);
+    if(!from||!to)return {error:'unknown_exercise'} as const;
+    const assessment=await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as {data:string}|undefined;
+    if(!assessment)return {error:'no_assessment'} as const;
+    const a=JSON.parse(assessment.data) as {experience?:string;equipment?:string[];restrictions?:string[];redFlags?:Record<string,boolean>};
+    const condition=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='medical_context' ORDER BY id DESC LIMIT 1").get(uid) as {data:string}|undefined;
+    let hasCondition=false;try{hasCondition=condition?JSON.parse(condition.data).hasCondition===true:false;}catch{}
+    if(hasCondition||Object.values(a.redFlags??{}).some(Boolean))return {error:'professional_clearance_required'} as const;
+    const available=new Set([...(a.equipment??[]),'none']);
+    if(!to.equipment.some(x=>available.has(x)))return {error:'equipment_unavailable'} as const;
+    if(to.stresses.some(x=>(a.restrictions??[]).includes(x)))return {error:'exercise_conflicts_with_restriction'} as const;
+    const maxLevel=a.experience==='advanced'?3:a.experience==='intermediate'?2:1;
+    if(to.level>maxLevel)return {error:'exercise_too_advanced'} as const;
+    if(from.id===to.id)return {error:'same_exercise'} as const;
+    if(from.pattern!==to.pattern||from.muscle!==to.muscle||from.timed!==to.timed)return {error:'different_training_stimulus'} as const;
+    const proposed=structuredClone(plan);
+    const item=proposed.days[b.dayIndex]!.items[b.itemIndex]!;
+    item.exerciseId=to.id;item.load=0;
+    const explanation='Ambos ejercicios trabajan principalmente '+to.muscle+' y comparten el patrón '+to.pattern+'. La sustitución es compatible con el objetivo '+plan.goal+'. Se conserva la cantidad de series y repeticiones, y se reinicia la carga para evitar trasladar automáticamente un peso inseguro. Revisá la técnica antes de comenzar.';
+    return {plan:proposed,version:latest.version,fromId:from.id,toId:to.id,explanation} as const;
+  };
+  app.post('/api/plan/exercise-swap/preview',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await c.needHealth(req,reply))return;
+    const b=c.parse(swapSchema,req.body,reply);if(!b)return;
+    const result=await evaluateSwap(req.user!.id,b);
+    if('error'in result)return reply.code(409).send(result);
+    return {allowed:true,version:result.version,fromId:result.fromId,toId:result.toId,explanation:result.explanation,requiresConfirmation:true};
+  });
+  app.post('/api/plan/exercise-swap/confirm',{preHandler:athleteOnly,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if(!await c.needHealth(req,reply))return;
+    const b=c.parse(swapSchema.extend({expectedVersion:z.number().int().positive()}),req.body,reply);if(!b)return;
+    const result=await evaluateSwap(req.user!.id,b);
+    if('error'in result)return reply.code(409).send(result);
+    const version=await c.savePlan(req.user!.id,result.plan,'athlete:confirmed_swap');
+    await c.audit(req.user!.id,req.user!.id,'plan:exercise_swap:'+result.fromId+':'+result.toId);
+    return {ok:true,version,explanation:result.explanation};
+  });
+  app.get('/api/plan/exercise-swap/options',{preHandler:athleteOnly},async(req)=>{
+    const latest=await c.latestPlan(req.user!.id);
+    if(!latest)return {days:[],catalog:[]};
+    const plan=JSON.parse(latest.data) as Plan;
+    return {version:latest.version,goal:plan.goal,days:plan.days.map((d,i)=>({index:i,name:d.name,items:d.items.map((p,j)=>({index:j,exerciseId:p.exerciseId}))})),catalog:CATALOG.map(x=>({id:x.id,pattern:x.pattern,muscle:x.muscle}))};
   });
 
   /** Adopt a library routine as the current plan: a new plan version, history kept. */
