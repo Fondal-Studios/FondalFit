@@ -50,6 +50,9 @@ export function Wizard({ onDone, onCancel }: { onDone: () => void; onCancel?: ()
   const [referral, setReferral] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fail, setFail] = useState(false);
+  const [initialTutor,setInitialTutor]=useState('tito');
+  const [tutorSaveError,setTutorSaveError]=useState(false);
+  useEffect(()=>{api<{selectedId:string}>('GET','/api/tutors').then(r=>setInitialTutor(r.selectedId)).catch(()=>{});},[]);
 
   useEffect(() => {
     const a = data?.assessment;
@@ -83,6 +86,7 @@ export function Wizard({ onDone, onCancel }: { onDone: () => void; onCancel?: ()
         equipment: f.equipment, restrictions: f.restrictions, redFlags: f.redFlags,
       };
       const r = await api('POST', '/api/assessment', body);
+      try{await api('POST','/api/tutors/select',{id:initialTutor});setTutorSaveError(false);}catch{setTutorSaveError(true);}
       if (r.referral) setReferral(true); else onDone();
     } catch { setFail(true); } finally { setBusy(false); }
   };
@@ -149,6 +153,11 @@ export function Wizard({ onDone, onCancel }: { onDone: () => void; onCancel?: ()
           <li>{p.weightKg} kg · {p.heightCm} cm · {p.age}</li>
           {p.diet.length > 0 && <li>{p.diet.map((d) => t('d_' + d)).join(', ')}</li>}
         </ul>
+        <section className="card" aria-label="Elegí tu tutor inicial">
+          <h3>Elegí tu tutor IA</h3><p className="muted">Tu compañero dará sugerencias educativas sobre alimentación, ejercicio y descanso. Podrás cambiarlo y desbloquear otros personajes con XP.</p>
+          <div className="row"><button type="button" className={initialTutor==='tito'?'on':''} aria-pressed={initialTutor==='tito'} onClick={()=>setInitialTutor('tito')}>Tito · Fuerza</button><button type="button" className={initialTutor==='mora'?'on':''} aria-pressed={initialTutor==='mora'} onClick={()=>setInitialTutor('mora')}>Mora · Alimentación</button></div>
+          {tutorSaveError&&<p role="alert" className="warn">No se pudo guardar el tutor. Podés elegirlo después en la tienda.</p>}
+        </section>
         <p className="muted">{t('planEditNote')}</p>
         {referral && <p className="warn" role="alert">{t('referral')}</p>}
         {fail && <p className="bad" role="alert">{t('invalid')}</p>}
