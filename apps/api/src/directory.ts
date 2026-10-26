@@ -31,6 +31,24 @@ export function registerDirectory({app,db,auth,adminOnly,audit,now}:Context){
     .sort((a,b)=>(a.distanceKm??99999)-(b.distanceKm??99999));
   return {items:items.slice(0,100),note:'Solo profesionales verificados. La distancia se estima en línea recta cuando se comparte ubicación.'};
  });
+ app.get('/api/profiles/notifications',{preHandler:auth},async(req)=>{
+  const uid=userId(req);
+  const user=await db.prepare('SELECT role,pro_enabled,mode FROM users WHERE id=?').get(uid) as {role:string;pro_enabled:number;mode:string|null}|undefined;
+  const profiles=await db.prepare('SELECT category,phone,city,license,credentials,verified,published,lat,lon FROM professional_profiles WHERE user_id=?').all(uid) as Record<string,unknown>[];
+  const professional=user?.role==='pro'||user?.role==='admin'||!!user?.pro_enabled||user?.mode==='medical'||user?.mode==='pro';
+  const notifications:{code:string;category?:string;message:string}[]=[];
+  if(professional&&!profiles.length)notifications.push({code:'complete_profile',message:'Completá tu perfil, contacto y credenciales para solicitar la verificación.'});
+  for(const p of profiles){
+   const category=String(p.category);
+   if(!p.phone)notifications.push({code:'missing_phone',category,message:'Agregá un teléfono de contacto.'});
+   if(!p.city)notifications.push({code:'missing_city',category,message:'Indicá tu ciudad.'});
+   if(p.category==='medical'&&(!p.license||!p.credentials))notifications.push({code:'missing_credentials',category,message:'Completá matrícula y credenciales profesionales.'});
+   if(!p.verified)notifications.push({code:'pending_verification',category,message:'Tu perfil está pendiente de verificación administrativa.'});
+   else if(!p.published)notifications.push({code:'not_published',category,message:'Tu perfil verificado no está publicado.'});
+   if(p.verified&&p.published&&(p.lat==null||p.lon==null))notifications.push({code:'missing_map_location',category,message:'Agregá tu ubicación para aparecer con precisión en el mapa.'});
+  }
+  return {professional,notifications,unreadCount:notifications.length};
+ });
  app.get('/api/profiles/me',{preHandler:auth},async(req)=>{
   const rows=await db.prepare('SELECT * FROM professional_profiles WHERE user_id=? ORDER BY category').all(userId(req)) as Record<string,unknown>[];
   return rows.map(r=>({...rowToPublic(r),license:r.license,published:!!r.published,verified:!!r.verified,updatedAt:r.updated_at}));
