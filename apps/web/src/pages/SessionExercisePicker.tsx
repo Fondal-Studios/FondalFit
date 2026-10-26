@@ -83,6 +83,7 @@ export function SessionExercisePicker({dayIndex,itemIndex,exerciseId,onCancel,on
    </>}
    {busy&&<p role="status">{preview?'Guardando el cambio…':'Verificando compatibilidad…'}</p>}
    {error&&<p className="warn" role="alert">{error}</p>}
+   {selected&&onSessionChoice&&<div className="card exercise-swap-confirm"><h3>Usar el ejercicio elegido hoy</h3><p>Si registraste una lesión, la aplicación no recomienda este movimiento. Podés dejar constancia de que lo realizaste sin modificar la rutina futura.</p><button type="button" className="primary" disabled={busy||version===null} onClick={()=>void recordChoice()}>Confirmar ejercicio para esta sesión</button></div>}
    {selected&&onSessionChoice&&<div className="card"><p><strong>Registrar lo que voy a hacer hoy</strong></p><p className="muted">Si el ejercicio entra en conflicto con una lesión registrada, Fondal Fit no lo recomienda. Podés documentar tu elección para esta sesión sin modificar tu plan ni afirmar que es seguro.</p><button type="button" disabled={busy} onClick={()=>void recordChoice()}>Registrar este ejercicio para la sesión</button></div>}
    <p className="muted small">No se modifica ningún ejercicio hasta que confirmes. Si el plan fue asignado por un profesional, el cambio requiere su revisión.</p>
   </section>
