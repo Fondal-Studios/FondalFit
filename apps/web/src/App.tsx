@@ -2,7 +2,7 @@ import {RunningMap, missingGPSGap, type GPSPoint} from './RunningMap';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, hasToken, setToken } from './api';
 import { LANGS, translate, type Lang } from './i18n';
-import { FOODS, MENUS, THEORY, nutrition, parseSimpleFood, type Portion } from './foodLibrary';
+import { FOODS, MENUS, THEORY, nutrition, suggestDailyMeals, parseSimpleFood, type Portion } from './foodLibrary';
 
 /* ---------- i18n context ---------- */
 const LangCtx = createContext<{ lang: Lang; t: (k: string) => string }>({ lang: 'es', t: (k) => k });
@@ -120,7 +120,7 @@ function Shell({ me, refresh, onLang, onLogout }: { me: Me; refresh: () => void;
             {tab === 'development' ? <Development isAdmin={isAdmin}/> : tab === 'settings' ? <Settings me={me} refresh={refresh} onLang={onLang} onLogout={onLogout} /> : proView === 'athletes' ? <ProAthletes /> : <ProApprovals />}
           </> : <>
             {tab === 'assessment' && <Assessment onDone={()=>navigate('today')} onCancel={()=>navigate('today')} />}
-            {tab === 'today' && <><ActivityBlocks/><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
+            {tab === 'today' && <><ActivityBlocks/><button className="primary action-full" onClick={()=>navigate('assessment')}>Mi evaluación física · Hacer o repetir entrevista →</button><VirtualMentorChoice onCoach={()=>setCoachOpen(true)} onProfessional={()=>navigate('settings')}/><button className="primary action-full" onClick={()=>setCoachOpen(true)}>Consultar a Fondal Coach →</button><NutritionTodaySummary/><div className="hero card"><div className="eyebrow">TU PLAN PERSONAL</div><h2>Entrená con un propósito.</h2><p>Tu sesión se ajusta a la evaluación inicial y al progreso que registres.</p><div className="hero-note">Empezá por la sesión que corresponde a tu plan.</div></div><Training /><LearningTips topic="training" /></>}
             {tab === 'progress' && <Progress />}
             {tab === 'development' && <Development isAdmin={isAdmin}/>}
             {tab === 'wellness' && (wellness === 'running' ? <Running /> : wellness === 'nutrition' ? <Nutrition /> : wellness === 'recovery' ? <Recovery /> : <div className="feature-grid">
@@ -156,7 +156,7 @@ function Consents({ me, refresh }: { me: Me; refresh: () => void }) {
 }
 
 /* ---------- Athlete: training ---------- */
-interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number }
+interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number; durationSeconds?: number }
 interface PlanRes { version?: number; recommendedDay?: number; plan: { days: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }[] } | null }
 
 function Chips({ options, value, onChange, multi }: { options: string[]; value: string[]; onChange: (v: string[]) => void; multi?: boolean }) {
@@ -200,13 +200,13 @@ function Training() {
 
 type AssessmentValues = {
  goal:string;secondaryGoals:string[];specificGoals:string[];targetDescription:string;targetDate:string;
- daysPerWeek:number;sessionMinutes:number;preferredActivities:string[];experience:string;equipment:string[];restrictions:string[];
+ daysPerWeek:number;programWeeks:4|8|12;sessionMinutes:number;preferredActivities:string[];experience:string;equipment:string[];restrictions:string[];
  redFlags:{chestPain:boolean;dizziness:boolean;recentSurgery:boolean;pregnancy:boolean;medication:boolean};
  baseline:Record<string,number>;trainingContext:Record<string,number>;
 };
 const GOAL_DETAILS=['Correr 5 km','Correr 10 km','Media maratón','Maratón','Mejorar ritmo de carrera','Aumentar distancia','Mejorar capacidad aeróbica','Ganar fuerza máxima','Ganar masa muscular','Resistencia muscular','Reducir grasa corporal','Mantener peso','Mejorar composición corporal','Mejorar movilidad','Mejorar equilibrio','Volver a entrenar','Prevenir lesiones','Mejorar salud metabólica','Preparar una competencia','Entrenamiento combinado','Mejorar bienestar general'];
 const DEFAULT_ASSESSMENT:AssessmentValues={
- goal:'general',secondaryGoals:[],specificGoals:[],targetDescription:'',targetDate:'',daysPerWeek:3,sessionMinutes:60,
+ goal:'general',secondaryGoals:[],specificGoals:[],targetDescription:'',targetDate:'',daysPerWeek:3,programWeeks:4,sessionMinutes:60,
  preferredActivities:['strength'],experience:'beginner',equipment:['none'],restrictions:[],
  redFlags:{chestPain:false,dizziness:false,recentSurgery:false,pregnancy:false,medication:false},
  baseline:{},trainingContext:{preferredReassessmentWeeks:6}
@@ -250,6 +250,7 @@ function Assessment({onDone,onCancel,initial}:{onDone:()=>void;onCancel?:()=>voi
   </>}
   {step===1&&<><label>Experiencia actual</label><Chips options={['beginner','intermediate','advanced']} value={[a.experience]} onChange={v=>setA({...a,experience:v[0]!})}/>
    <label>Días disponibles para fuerza</label><input type="number" min={1} max={6} value={a.daysPerWeek} onChange={e=>setA({...a,daysPerWeek:Number(e.target.value)})}/>
+   <label>Duración del programa</label><select value={a.programWeeks} onChange={e=>setA({...a,programWeeks:Number(e.target.value) as 4|8|12})}>{[4,8,12].map(w=><option key={w} value={w}>{w} semanas</option>)}</select>
    <label>Duración disponible por sesión</label><select value={a.sessionMinutes} onChange={e=>setA({...a,sessionMinutes:Number(e.target.value)})}>{[20,30,45,60,75,90,120].map(n=><option key={n} value={n}>{n} minutos</option>)}</select>
    {contextField('strengthDays','Sesiones actuales de fuerza por semana',0,7)}
    {contextField('cardioDays','Sesiones actuales de cardio por semana',0,7)}
@@ -292,9 +293,13 @@ function Session({ day, index, onDone, onCancel, exerciseNames }: { exerciseName
   const [sets, setSets] = useState<Record<string, { weight: string; reps: string; rir: string }[]>>(() =>
     Object.fromEntries(day.items.map((it) => [it.exerciseId, Array.from({ length: it.sets }, () => ({ weight: String(it.load || ''), reps: '', rir: '' }))])));
   const [fatigue, setFatigue] = useState(5);
+  const [timer, setTimer] = useState<{id:string;index:number;started:number}|null>(null);
+  const [elapsed,setElapsed] = useState(0);
+  useEffect(() => { if(!timer)return; const id=window.setInterval(()=>setElapsed(Math.floor((Date.now()-timer.started)/1000)),250);return ()=>window.clearInterval(id); },[timer]);
+  const stopHold=()=>{if(!timer)return;set(timer.id,timer.index,'reps',String(Math.max(1,Math.floor((Date.now()-timer.started)/1000))));setTimer(null);setElapsed(0);};
   const set = (id: string, i: number, k: 'weight' | 'reps' | 'rir', v: string) => setSets({ ...sets, [id]: sets[id]!.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
   const submit = async () => {
-    const items = day.items.map((it) => ({ exerciseId: it.exerciseId, sets: sets[it.exerciseId]!.filter((s) => s.reps !== '').map((s) => ({ weight: Number(s.weight || 0), reps: Number(s.reps), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
+    const items = day.items.map((it) => ({ exerciseId: it.exerciseId, sets: sets[it.exerciseId]!.filter((s) => s.reps !== '').map((s) => ({ weight: Number(s.weight || 0), reps: it.durationSeconds ? 0 : Number(s.reps), ...(it.durationSeconds ? {durationSeconds:Number(s.reps)} : {}), rir: Number(s.rir || 0) })) })).filter((i) => i.sets.length);
     if (!items.length) return;
     try {
       const r = await api('POST', '/api/workouts', { dayIndex: index, fatigue, items });
@@ -309,11 +314,12 @@ function Session({ day, index, onDone, onCancel, exerciseNames }: { exerciseName
       <p className="muted">Registrá tus series. Si volvés al plan antes de finalizar, los datos de esta sesión no se guardan.</p>
       {day.items.map((it) => (
         <div className="card" key={it.exerciseId}>
-          <h3>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</h3><p className="muted">{it.repMin}-{it.repMax} {t('reps')} · {t('rir')} {it.rirTarget}</p>
+          <h3>{exerciseNames[it.exerciseId]??t('ex_' + it.exerciseId)}</h3><p className="muted">{it.durationSeconds ? `Objetivo: ${it.durationSeconds} segundos por serie` : `${it.repMin}-${it.repMax} ${t('reps')}`} · {t('rir')} {it.rirTarget}</p>
           {sets[it.exerciseId]!.map((s, i) => (
             <div className="set" key={i}><span>{i + 1}</span>
               <input aria-label={t('weight')} placeholder={t('weight')} inputMode="decimal" value={s.weight} onChange={(e) => set(it.exerciseId, i, 'weight', e.target.value)} />
-              <input aria-label={t('reps')} placeholder={t('reps')} inputMode="numeric" value={s.reps} onChange={(e) => set(it.exerciseId, i, 'reps', e.target.value)} />
+              <input aria-label={it.durationSeconds?'Duración en segundos':t('reps')} placeholder={it.durationSeconds?'Segundos':t('reps')} inputMode="numeric" value={s.reps} onChange={(e) => set(it.exerciseId, i, 'reps', e.target.value)} />
+              {it.durationSeconds && (timer?.id===it.exerciseId && timer.index===i ? <button type="button" onClick={stopHold}>Detener · {elapsed}s</button> : <button type="button" disabled={!!timer} onClick={()=>{setElapsed(0);setTimer({id:it.exerciseId,index:i,started:Date.now()});}}>Iniciar cronómetro</button>)}
               <input aria-label={t('rir')} placeholder={t('rir')} inputMode="numeric" value={s.rir} onChange={(e) => set(it.exerciseId, i, 'rir', e.target.value)} /></div>
           ))}
         </div>
@@ -649,8 +655,8 @@ function Development({ isAdmin }: { isAdmin: boolean }) {
   </section>;
 }
 
-type EnergyDay={date:string;intake:number;runKcal:number;blocksKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[];provisional:boolean};
-type EnergyCalendar={month:string;target:{kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
+type EnergyDay={date:string;intake:number;runKcal:number;blocksKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[];completed?:boolean;provisional:boolean};
+type EnergyCalendar={month:string;target:{kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];weeks?:{weekStart:string;intake:number;expenditure:number;days:number;balance:number|null;complete:boolean}[];note:string};
 const ENERGY_LABELS:Record<string,string>={red:'Superávit alto',orange:'Superávit leve',yellow:'Cerca del mantenimiento',green:'Déficit moderado estimado',blue:'Déficit alto: revisar',violet:'Déficit muy alto: atención',unknown:'Sin estimación'};
 function DailyEnergyCalendar(){
  const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
@@ -676,14 +682,14 @@ function DailyEnergyCalendar(){
    {!result?.target&&<p className="warn">Configurá tu objetivo de calorías en Nutrición para ver el balance estimado.</p>}
    <div className="energy-legend">{[['red','Superávit'],['orange','Superávit leve'],['yellow','Equilibrio'],['green','Déficit moderado'],['blue','Déficit alto'],['violet','Déficit muy alto']].map(([color,label])=><span key={color}><i className={color}/>{label}</span>)}</div>
    <div className="energy-day-summary"><h3>{new Date(selected+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</h3>
-    {chosen?<><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
+    {chosen?<><p className="muted">{chosen.completed?'Día confirmado · balance orientativo':'Registro incompleto · sin clasificación de déficit ni superávit'}</p><button type="button" onClick={async()=>{try{await api('POST','/api/energy/day-status',{date:selected,complete:!chosen.completed,timezoneOffset:new Date().getTimezoneOffset()});refresh();}catch{setError('No se pudo cambiar el estado del día.');}}}>{chosen.completed?'Marcar día incompleto':'Confirmar que registré todas mis comidas'}</button><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
       <div className="energy-figures"><div><strong>{chosen.intake}</strong><small>kcal ingeridas</small></div><div><strong>{chosen.runKcal}</strong><small>kcal por carreras (aprox.)</small></div><div><strong>{chosen.balance===null?'—':(chosen.balance>0?'+':'')+chosen.balance}</strong><small>balance diario estimado, kcal</small></div></div>
       <h4>Comidas</h4>{chosen.meals.length?chosen.meals.map((meal,i)=><p key={i}>{meal.name} · ≈{Math.round(meal.kcal)} kcal</p>):<p className="muted">No se registraron comidas.</p>}
       <h4>Bloques de entrenamiento</h4>{chosen.blocks?.length?chosen.blocks.map((b,i)=><p key={i}>{b.name} · {b.minutes} min · ≈{b.kcal} kcal activas</p>):<p className="muted">No hay otros bloques registrados.</p>}
       <h4>Carreras</h4>{chosen.runs.length?chosen.runs.map((run,i)=><p key={i}>{run.km.toFixed(2)} km · ≈{Math.round(run.kcal)} kcal</p>):<p className="muted">No hay carreras con peso registrado para estimar energía.</p>}
       <p className="muted">Balance provisional: referencia sedentaria, ejercicio registrado y alimentos declarados. No presupongas que el registro representa todas las comidas del día.</p>
      </>:<p className="muted">Todavía no hay registros para esta fecha.</p>}
-   </div><details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Comparación orientativa entre alimentos registrados y gasto diario estimado, sumando la carrera. El cálculo puede contar dos veces parte del ejercicio si tu factor de actividad ya lo incluye. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
+   </div><h3>Balance semanal flexible</h3>{result?.weeks?.length?result.weeks.map(w=><p key={w.weekStart}>Semana del {w.weekStart}: {w.complete&&w.balance!==null?(w.balance>0?'+':'')+w.balance+' kcal estimadas':'Pendiente de completar ('+w.days+'/7 días)'}</p>):<p className="muted">Sin semanas completas todavía. Confirmá cada día cuando termines de registrar tus comidas.</p>}<details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Solo los días confirmados se clasifican; si faltan comidas, mantené el día como incompleto. La referencia es metabolismo basal × 1,2 más ejercicio registrado, y puede errar o duplicar actividad. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
  </section>;
 }
 
@@ -885,6 +891,36 @@ function VirtualMentorChoice({onCoach,onProfessional}:{onCoach:()=>void;onProfes
   </div>;
 }
 
+function DailyMealSuggestions({targetKcal}:{targetKcal:number}) {
+  const today=new Date().toLocaleDateString('en-CA');
+  const [skip,setSkip]=useState<string[]>([]);
+  const [rotation,setRotation]=useState(0);
+  const options=suggestDailyMeals(targetKcal,today+'-'+rotation,skip);
+  return <div className="card" aria-label="Menú propuesto del día">
+    <div className="eyebrow">IDEAS PARA COMER HOY</div><h3>Menú orientativo</h3>
+    {options.length?options.map(({meal,kcal,proteinG},i)=><p key={meal.id}>{['Comida 1','Comida 2','Comida 3'][i]}: {meal.title} · ≈{kcal} kcal · {proteinG} g de proteína</p>):<p>No hay platos con los filtros seleccionados.</p>}
+    <label>Evitar ingrediente <select value="" onChange={e=>{if(e.target.value)setSkip(v=>v.includes(e.target.value)?v:[...v,e.target.value]);}}>
+      <option value="">Seleccionar…</option>{FOODS.filter(x=>!skip.includes(x.id)).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+    </select></label>
+    {skip.length>0&&<button type="button" onClick={()=>setSkip([])}>Quitar filtros ({skip.length})</button>}
+    <button type="button" onClick={()=>setRotation(x=>x+1)}>Cambiar sugerencias</button>
+    <p className="muted">Combinaciones orientativas, no un plan alimentario completo. Se pueden ajustar las porciones desde Nutrición. No se registran como consumidas.</p>
+  </div>;
+}
+
+function NutritionTodaySummary() {
+  const [data,setData]=useState<any>(null);
+  useEffect(()=>{api<any>('GET','/api/nutrition').then(setData).catch(()=>{});},[]);
+  if(!data)return null;
+  return <section className="card" aria-label="Alimentación de hoy">
+    <div className="eyebrow">ALIMENTACIÓN DE HOY</div>
+    <h3>{data.target ? `${Math.round(data.today.kcal)} / ${Math.round(data.target.kcal)} kcal registradas` : 'Objetivo nutricional sin configurar'}</h3>
+    <p className="muted">{data.suggestedNutrition ? `Ajuste sugerido: ${data.suggestedNutrition.suggestedAdjustmentPct}% (editable)` : 'Completá tu evaluación para recibir una sugerencia.'}</p>
+    <p className="muted">Los menús propuestos no cuentan como comida consumida.</p>
+    <DailyMealSuggestions targetKcal={data.target?.kcal??1800}/>
+  </section>;
+}
+
 function Nutrition() {
   const [d,setD]=useState<any>(null);
   const [p,setP]=useState({sex:'f',weightKg:70,heightCm:170,age:30,activity:1.375,goal:'general',adjustmentPct:0});
@@ -895,7 +931,7 @@ function Nutrition() {
   const [editTarget,setEditTarget]=useState(false);
   const [quick,setQuick]=useState('');
   const [portions,setPortions]=useState<Portion[]>([]);
-  const load=()=>api('GET','/api/nutrition').then(setD).catch(()=>setError('No se pudo cargar la alimentación.'));
+  const load=()=>api<any>('GET','/api/nutrition').then(data=>{setD(data);const n=data.suggestedNutrition;if(n)setP(prev=>({...prev,goal:n.goal,weightKg:n.weightKg??prev.weightKg,heightCm:n.heightCm??prev.heightCm,age:n.age??prev.age,adjustmentPct:n.suggestedAdjustmentPct}));}).catch(()=>setError('No se pudo cargar la alimentación.'));
   useEffect(()=>{load();},[]);
   const calc=async()=>{setError('');try{await api('POST','/api/nutrition/target',p);setEditTarget(false);load();}catch{setError('No se pudo calcular el objetivo.');}};
   const estimate=async()=>{if(!m.meal.trim())return;setBusy(true);setError('');try{
@@ -910,6 +946,7 @@ function Nutrition() {
   const target=d?.target;
   return <section>
     <DailyEnergyCalendar />
+    {d?.suggestedNutrition&&<div className="card"><h3>Propuesta según tu entrenamiento</h3><p>Objetivo: {d.suggestedNutrition.goal} · Ajuste orientativo: {d.suggestedNutrition.suggestedAdjustmentPct}% · {d.suggestedNutrition.trainingDays} sesiones semanales.</p><p className="muted">Estimación editable; confirmar los datos antes de guardar un objetivo.</p></div>}
     <div className="card"><h2>Tu objetivo de energía</h2>
       {target&&<><p className="metric"><strong>{target.kcal}</strong><span>kcal por día (estimadas)</span></p>
         <p>Consumidas: {Math.round(d.today.kcal)} kcal · Restantes: {Math.round(target.kcal-d.today.kcal)} kcal</p>

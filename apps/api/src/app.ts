@@ -42,6 +42,7 @@ const assessmentSchema = z.object({
   sessionMinutes: z.number().int().min(20).max(120).optional(),
   preferredActivities: z.array(z.enum(['strength', 'running', 'mobility'])).optional(),
   daysPerWeek: z.number().int().min(1).max(6),
+  programWeeks: z.union([z.literal(4),z.literal(8),z.literal(12)]).optional(),
   experience: z.enum(['beginner', 'intermediate', 'advanced']),
   equipment: z.array(z.enum(['none', 'dumbbells', 'barbell', 'machines', 'bands', 'bar', 'rings'])),
   restrictions: z.array(z.enum(['knee', 'shoulder', 'lower_back', 'hip', 'ankle', 'wrist', 'neck'])),
@@ -182,7 +183,20 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const p = await latestPlan(req.user!.id);
     const last = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(req.user!.id) as { n: number };
     const plan = p ? JSON.parse(p.data) as Plan : null;
-    return p ? { version: p.version, source: p.source, plan, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
+    // Apply the periodized week to the prescription returned to the athlete without mutating saved load targets.
+    const initial=await db.prepare('SELECT created_at FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {created_at:string}|undefined;
+    const elapsedWeeks=initial?Math.max(0,Math.floor((Date.now()-Date.parse(initial.created_at))/(7*86400000))):0;
+    const currentWeek=plan?.schedule?.[Math.min(elapsedWeeks,(plan.schedule.length||1)-1)];
+    const effectivePlan=plan&&currentWeek&&!(p?.source.startsWith('pro:'))?{
+      ...plan,days:plan.days.map(day=>({
+        ...day,
+        items:day.items.map(item=>({...item,
+          sets:Math.max(1,Math.round(item.sets*currentWeek.volumeFactor)),
+          rirTarget:currentWeek.phase==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
+        ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*currentWeek.volumeFactor))}}:{})
+      }))
+    }:plan;
+    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
@@ -194,7 +208,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const b = parse(z.object({
       dayIndex: z.number().int().min(0).max(13),
       fatigue: z.number().min(1).max(10).default(5),
-      items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), rir: z.number().min(0).max(10) })).min(1) })).min(1),
+      items: z.array(z.object({ exerciseId: z.string(), sets: z.array(z.object({ weight: z.number().min(0).max(1000), reps: z.number().int().min(0).max(200), durationSeconds: z.number().int().min(1).max(3600).optional(), rir: z.number().min(0).max(10) })).min(1) })).min(1),
     }), req.body, reply);
     if (!b) return;
     const uid = req.user!.id;
@@ -212,6 +226,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       const idx = day.items.findIndex((x) => x.exerciseId === it.exerciseId);
       if (idx < 0) continue;
       const p = day.items[idx]!;
+      if (p.durationSeconds) { decisions[it.exerciseId] = 'timed_hold_recorded'; continue; }
       let load = p.load;
       if (p.load === 0) { load = seedLoad(it.sets[0]!, p); decisions[it.exerciseId] = load ? 'seed' : 'hold'; }
       else {
@@ -353,7 +368,31 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const logs = rows.filter((r) => r.kind === 'log').map((r) => ({ ...JSON.parse(r.data), at: r.created_at }));
     const todayLogs = logs.filter((l) => l.at.startsWith(today));
     const sum = (k: string) => todayLogs.reduce((a, l) => a + (l[k] ?? 0), 0);
-    return { target: target ? JSON.parse(target.data) : null, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
+    const assessmentRow = await db.prepare('SELECT data FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {data:string}|undefined;
+    const assessment = assessmentRow ? JSON.parse(assessmentRow.data) as AssessmentInput : null;
+    const planRow = await latestPlan(req.user!.id);
+    const trainingPlan = planRow ? JSON.parse(planRow.data) as Plan : null;
+    const suggestedAdjustmentPct = assessment?.goal === 'fat_loss' ? -10 : assessment?.goal === 'hypertrophy' ? 5 : 0;
+    const suggestedNutrition = assessment ? {
+      goal: assessment.goal, secondaryGoals: assessment.secondaryGoals ?? [],
+      weightKg: assessment.baseline?.weightKg ?? null, heightCm: assessment.baseline?.heightCm ?? null,
+      age: assessment.baseline?.age ?? null, suggestedAdjustmentPct,
+      trainingDays: trainingPlan?.days.length ?? assessment.daysPerWeek,
+      trainingGoal: trainingPlan?.goal ?? assessment.goal,
+      note: 'Sugerencia orientativa basada en la evaluación; requiere datos energéticos y confirmación.'
+    } : null;
+    return { target: target ? JSON.parse(target.data) : null, suggestedNutrition, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
+  });
+
+  app.post('/api/energy/day-status',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({date:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),complete:z.boolean(),timezoneOffset:z.number().int().min(-840).max(840)}),req.body,reply);
+    if(!b)return;
+    const date=new Date(b.date+'T12:00:00Z');
+    if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==b.date)return reply.code(400).send({error:'invalid_date'});
+    // Append-only completion decisions: last status for each calendar day wins.
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'day_status',?,?)").run(req.user!.id,JSON.stringify(b),now());
+    return {ok:true,complete:b.complete};
   });
 
   /* Calendar: explicit local-time offset; estimated energy balance, not a medical measurement. */
@@ -381,18 +420,27 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       else{item.runKcal+=kcal;item.runs.push({km:Number(data.km)||0,kcal});}
       byDay.set(localDay,item);
     }
+    // A user's explicit confirmation is required before classifying any daily or weekly balance.
+    const statuses=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='day_status' ORDER BY id ASC").all(req.user!.id) as {data:string}[];
+    const completeDates=new Map<string,boolean>();
+    for(const row of statuses){const v=JSON.parse(row.data) as {date:string;complete:boolean};if(v.date.startsWith(q.month))completeDates.set(v.date,!!v.complete);}
     const days=[...byDay].map(([date,item])=>{
       const tdee=Number(target?.tdee)||0;
       const exerciseKcal=item.runKcal+item.blocksKcal;
       // Sedentary baseline is an estimate of BMR + everyday activity; exercises are tracked separately.
       const bmr=Number(target?.bmr)||0;
       const adjustedBudget=bmr>0 ? bmr*1.2+exerciseKcal : tdee+exerciseKcal;
-      const balance=tdee>0?Math.round(item.intake-adjustedBudget):null;
+      const completed=completeDates.get(date)===true;
+      const balance=tdee>0&&completed?Math.round(item.intake-adjustedBudget):null;
       const ratio=balance===null?null:balance/tdee;
       const band=ratio===null?'unknown':ratio>0.05?'red':ratio>0?'orange':ratio>=-0.05?'yellow':ratio>=-0.15?'green':ratio>=-0.25?'blue':'violet';
-      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,provisional:true};
+      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,completed,provisional:true};
     });
-    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,note:'Estimaciones provisionales. El gasto basal ya puede incluir parte de la actividad; sumar running podría duplicar gasto. Los colores no diagnostican déficit real.'};
+    const confirmed=days.filter(d=>d.completed&&d.balance!==null);
+    const weekly=new Map<string,{weekStart:string;intake:number;expenditure:number;days:number}>();
+    for(const day of confirmed){const dt=new Date(day.date+'T12:00:00Z');const weekday=(dt.getUTCDay()+6)%7;dt.setUTCDate(dt.getUTCDate()-weekday);const key=dt.toISOString().slice(0,10);const w=weekly.get(key)??{weekStart:key,intake:0,expenditure:0,days:0};w.intake+=day.intake;w.expenditure+=day.estimatedExpenditure;w.days++;weekly.set(key,w);}
+    const weeks=[...weekly.values()].map(w=>({...w,balance:w.days===7?Math.round(w.intake-w.expenditure):null,complete:w.days===7}));
+    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'Solo días confirmados muestran balance aproximado. Las semanas requieren siete días completos. Las cifras no diagnostican déficit real y el gasto puede estar estimado con error.'};
   });
 
   app.post('/api/activity/blocks',{preHandler:athleteOnly},async(req,reply)=>{

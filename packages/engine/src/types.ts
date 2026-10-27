@@ -25,10 +25,11 @@ export interface Prescription {
   repMax: number;
   rirTarget: number;
   load: number; // kg, 0 for bodyweight
+  durationSeconds?: number; // isometric hold target; repetitions otherwise
 }
 
 export interface PlanDay { name: string; items: Prescription[]; run?: {minutes:number; intensity:'easy'|'moderate'; note:string} }
-export interface Plan { engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number }
+export interface Plan { engineVersion: string; goal: Goal; days: PlanDay[]; weeksSinceDeload: number; programWeeks?: 4 | 8 | 12; schedule?: { week: number; phase: 'foundation' | 'progression' | 'recovery'; volumeFactor: number }[] }
 
 export interface AssessmentInput {
   goal: Goal;
@@ -49,6 +50,7 @@ export interface AssessmentInput {
   sessionMinutes?: number;
   preferredActivities?: ('strength' | 'running' | 'mobility')[];
   daysPerWeek: number;
+  programWeeks?: 4 | 8 | 12;
   experience: 'beginner' | 'intermediate' | 'advanced';
   equipment: Equipment[];
   restrictions: Area[];
