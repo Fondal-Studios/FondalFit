@@ -451,7 +451,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       const band=computed?.band??'unknown';
       return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,completed,provisional:true};
     });
-    const weeks=weeklyBalance(days);
+    const weeks=weeklyBalance(days.map(d=>({date:d.date,complete:d.completed,balance:d.balance})));
     return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'El mantenimiento incluye actividad habitual. El ejercicio registrado se informa por separado para evitar doble conteo. Solo días confirmados tienen balance aproximado; semanas incompletas no se contabilizan.'};
   });
 
