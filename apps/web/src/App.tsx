@@ -655,8 +655,8 @@ function Development({ isAdmin }: { isAdmin: boolean }) {
   </section>;
 }
 
-type EnergyDay={date:string;intake:number;runKcal:number;blocksKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[];provisional:boolean};
-type EnergyCalendar={month:string;target:{kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];note:string};
+type EnergyDay={date:string;intake:number;runKcal:number;blocksKcal:number;estimatedExpenditure:number;balance:number|null;band:string;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[];completed?:boolean;provisional:boolean};
+type EnergyCalendar={month:string;target:{kcal?:number;bmr?:number;tdee?:number;adjustmentPct?:number}|null;days:EnergyDay[];weeks?:{weekStart:string;intake:number;expenditure:number;days:number;balance:number|null;complete:boolean}[];note:string};
 const ENERGY_LABELS:Record<string,string>={red:'Superávit alto',orange:'Superávit leve',yellow:'Cerca del mantenimiento',green:'Déficit moderado estimado',blue:'Déficit alto: revisar',violet:'Déficit muy alto: atención',unknown:'Sin estimación'};
 function DailyEnergyCalendar(){
  const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
@@ -682,14 +682,14 @@ function DailyEnergyCalendar(){
    {!result?.target&&<p className="warn">Configurá tu objetivo de calorías en Nutrición para ver el balance estimado.</p>}
    <div className="energy-legend">{[['red','Superávit'],['orange','Superávit leve'],['yellow','Equilibrio'],['green','Déficit moderado'],['blue','Déficit alto'],['violet','Déficit muy alto']].map(([color,label])=><span key={color}><i className={color}/>{label}</span>)}</div>
    <div className="energy-day-summary"><h3>{new Date(selected+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</h3>
-    {chosen?<><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
+    {chosen?<><p className="muted">{chosen.completed?'Día confirmado · balance orientativo':'Registro incompleto · sin clasificación de déficit ni superávit'}</p><button type="button" onClick={async()=>{try{await api('POST','/api/energy/day-status',{date:selected,complete:!chosen.completed,timezoneOffset:new Date().getTimezoneOffset()});refresh();}catch{setError('No se pudo cambiar el estado del día.');}}}>{chosen.completed?'Marcar día incompleto':'Confirmar que registré todas mis comidas'}</button><p className="energy-band"><i className={chosen.band}/>{ENERGY_LABELS[chosen.band]??'Sin estimación'}</p>
       <div className="energy-figures"><div><strong>{chosen.intake}</strong><small>kcal ingeridas</small></div><div><strong>{chosen.runKcal}</strong><small>kcal por carreras (aprox.)</small></div><div><strong>{chosen.balance===null?'—':(chosen.balance>0?'+':'')+chosen.balance}</strong><small>balance diario estimado, kcal</small></div></div>
       <h4>Comidas</h4>{chosen.meals.length?chosen.meals.map((meal,i)=><p key={i}>{meal.name} · ≈{Math.round(meal.kcal)} kcal</p>):<p className="muted">No se registraron comidas.</p>}
       <h4>Bloques de entrenamiento</h4>{chosen.blocks?.length?chosen.blocks.map((b,i)=><p key={i}>{b.name} · {b.minutes} min · ≈{b.kcal} kcal activas</p>):<p className="muted">No hay otros bloques registrados.</p>}
       <h4>Carreras</h4>{chosen.runs.length?chosen.runs.map((run,i)=><p key={i}>{run.km.toFixed(2)} km · ≈{Math.round(run.kcal)} kcal</p>):<p className="muted">No hay carreras con peso registrado para estimar energía.</p>}
       <p className="muted">Balance provisional: referencia sedentaria, ejercicio registrado y alimentos declarados. No presupongas que el registro representa todas las comidas del día.</p>
      </>:<p className="muted">Todavía no hay registros para esta fecha.</p>}
-   </div><details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Comparación orientativa entre alimentos registrados y gasto diario estimado, sumando la carrera. El cálculo puede contar dos veces parte del ejercicio si tu factor de actividad ya lo incluye. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
+   </div><h3>Balance semanal flexible</h3>{result?.weeks?.length?result.weeks.map(w=><p key={w.weekStart}>Semana del {w.weekStart}: {w.complete&&w.balance!==null?(w.balance>0?'+':'')+w.balance+' kcal estimadas':'Pendiente de completar ('+w.days+'/7 días)'}</p>):<p className="muted">Sin semanas completas todavía. Confirmá cada día cuando termines de registrar tus comidas.</p>}<details><summary>¿Cómo se calcula y qué significan los colores?</summary><p className="muted">Solo los días confirmados se clasifican; si faltan comidas, mantené el día como incompleto. La referencia es metabolismo basal × 1,2 más ejercicio registrado, y puede errar o duplicar actividad. Los seis colores distinguen superávit, equilibrio y déficits de diferente magnitud; azul y violeta indican que conviene revisar la estimación, no son un premio. No uses un día incompleto para ajustar la alimentación.</p></details>
  </section>;
 }
 
