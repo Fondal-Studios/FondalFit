@@ -1,3 +1,4 @@
+import {computeEnergyDay, weeklyBalance, localDate} from './energy';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { z } from 'zod';
@@ -411,7 +412,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const byDay=new Map<string,{intake:number;runKcal:number;blocksKcal:number;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[]}>();
     for(const row of rows){
       if(row.kind!=='log'&&row.kind!=='exercise')continue;
-      const localDay=new Date(Date.parse(row.created_at)-q.timezoneOffset*60000).toISOString().slice(0,10);
+      const localDay=localDate(row.created_at,q.timezoneOffset);
       const item=byDay.get(localDay)??{intake:0,runKcal:0,blocksKcal:0,meals:[],runs:[],blocks:[]};
       const data=JSON.parse(row.data) as {kind?:string;kcal?:number;km?:number;meal?:string;blocks?:{name:string;minutes:number;activeKcal:number}[]};
       const kcal=Math.max(0,Number(data.kcal)||0);
@@ -426,21 +427,17 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     for(const row of statuses){const v=JSON.parse(row.data) as {date:string;complete:boolean};if(v.date.startsWith(q.month))completeDates.set(v.date,!!v.complete);}
     const days=[...byDay].map(([date,item])=>{
       const tdee=Number(target?.tdee)||0;
-      const exerciseKcal=item.runKcal+item.blocksKcal;
-      // Sedentary baseline is an estimate of BMR + everyday activity; exercises are tracked separately.
       const bmr=Number(target?.bmr)||0;
-      const adjustedBudget=bmr>0 ? bmr*1.2+exerciseKcal : tdee+exerciseKcal;
       const completed=completeDates.get(date)===true;
-      const balance=tdee>0&&completed?Math.round(item.intake-adjustedBudget):null;
-      const ratio=balance===null?null:balance/tdee;
-      const band=ratio===null?'unknown':ratio>0.05?'red':ratio>0?'orange':ratio>=-0.05?'yellow':ratio>=-0.15?'green':ratio>=-0.25?'blue':'violet';
+      const activity=([1.2,1.375,1.55,1.725] as const).reduce((best,x)=>Math.abs(x-(bmr>0?tdee/bmr:1.2))<Math.abs(best-(bmr>0?tdee/bmr:1.2))?x:best,1.2 as number) as 1.2|1.375|1.55|1.725;
+      const computed=bmr>0?computeEnergyDay({bmr,activity,intake:item.intake,extraActiveKcal:item.runKcal+item.blocksKcal,complete:completed}):null;
+      const adjustedBudget=computed?.expenditure??0;
+      const balance=computed?.balance??null;
+      const band=computed?.band??'unknown';
       return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,completed,provisional:true};
     });
-    const confirmed=days.filter(d=>d.completed&&d.balance!==null);
-    const weekly=new Map<string,{weekStart:string;intake:number;expenditure:number;days:number}>();
-    for(const day of confirmed){const dt=new Date(day.date+'T12:00:00Z');const weekday=(dt.getUTCDay()+6)%7;dt.setUTCDate(dt.getUTCDate()-weekday);const key=dt.toISOString().slice(0,10);const w=weekly.get(key)??{weekStart:key,intake:0,expenditure:0,days:0};w.intake+=day.intake;w.expenditure+=day.estimatedExpenditure;w.days++;weekly.set(key,w);}
-    const weeks=[...weekly.values()].map(w=>({...w,balance:w.days===7?Math.round(w.intake-w.expenditure):null,complete:w.days===7}));
-    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'Solo días confirmados muestran balance aproximado. Las semanas requieren siete días completos. Las cifras no diagnostican déficit real y el gasto puede estar estimado con error.'};
+    const weeks=weeklyBalance(days);
+    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'El mantenimiento incluye actividad habitual. El ejercicio registrado se informa por separado para evitar doble conteo. Solo días confirmados tienen balance aproximado; semanas incompletas no se contabilizan.'};
   });
 
   app.post('/api/activity/blocks',{preHandler:athleteOnly},async(req,reply)=>{
