@@ -12,7 +12,10 @@ export function computeEnergyDay(v:EnergyInputs){
 }
 export function weeklyBalance(days:{date:string;complete:boolean;balance:number|null}[]){
  const groups=new Map<string,{weekStart:string;days:number;balance:number}>();
+ const seen=new Set<string>();
  for(const day of days){
+  if(seen.has(day.date))continue;
+  seen.add(day.date);
   if(!day.complete||day.balance===null)continue;
   const d=new Date(day.date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));
   const key=d.toISOString().slice(0,10),w=groups.get(key)??{weekStart:key,days:0,balance:0};
