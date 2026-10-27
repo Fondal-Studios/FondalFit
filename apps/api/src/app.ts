@@ -183,7 +183,20 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const p = await latestPlan(req.user!.id);
     const last = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(req.user!.id) as { n: number };
     const plan = p ? JSON.parse(p.data) as Plan : null;
-    return p ? { version: p.version, source: p.source, plan, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
+    // Apply the periodized week to the prescription returned to the athlete without mutating saved load targets.
+    const initial=await db.prepare('SELECT created_at FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {created_at:string}|undefined;
+    const elapsedWeeks=initial?Math.max(0,Math.floor((Date.now()-Date.parse(initial.created_at))/(7*86400000))):0;
+    const currentWeek=plan?.schedule?.[Math.min(elapsedWeeks,(plan.schedule.length||1)-1)];
+    const effectivePlan=plan&&currentWeek&&!(p?.source.startsWith('pro:'))?{
+      ...plan,days:plan.days.map(day=>({
+        ...day,
+        items:day.items.map(item=>({...item,
+          sets:Math.max(1,Math.round(item.sets*currentWeek.volumeFactor)),
+          rirTarget:currentWeek.phase==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
+        ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*currentWeek.volumeFactor))}}:{})
+      }))
+    }:plan;
+    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
