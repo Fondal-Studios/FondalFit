@@ -157,7 +157,7 @@ function Consents({ me, refresh }: { me: Me; refresh: () => void }) {
 
 /* ---------- Athlete: training ---------- */
 interface Rx { exerciseId: string; sets: number; repMin: number; repMax: number; rirTarget: number; load: number; durationSeconds?: number }
-interface PlanRes { version?: number; recommendedDay?: number; plan: { days: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }[] } | null }
+interface PlanRes { version?: number; recommendedDay?: number; weekChoice?:'recovery'|'normal'|'strong'; weekStart?:string; weeklyDecision?:{mode:string;factor:number;reason:string;absenceStatus:string}; plan: { days: { name: string; items: Rx[]; run?: {minutes:number;intensity:string;note:string} }[] } | null }
 
 function Chips({ options, value, onChange, multi }: { options: string[]; value: string[]; onChange: (v: string[]) => void; multi?: boolean }) {
   const t = useT();
@@ -173,6 +173,7 @@ function Training() {
   const [session, setSession] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [allSessions, setAllSessions] = useState(false);
+  const [weekSaving,setWeekSaving]=useState(false);
   const [exerciseNames,setExerciseNames]=useState<Record<string,string>>({});
   useEffect(()=>{api<{id:string;name:string}[]>('GET','/api/exercises').then(items=>setExerciseNames(Object.fromEntries(items.map(i=>[i.id,i.name])))).catch(()=>{});},[]);
   const load = useCallback(() => api<PlanRes>('GET', '/api/plan').then(setRes).catch(() => setMsg('No pudimos cargar tu plan. Revisá tu conexión.')), []);
@@ -185,6 +186,7 @@ function Training() {
   return (
     <section aria-label="Tu plan de entrenamiento">
       <div className="row plan-overview"><p className="muted">Tu próxima sesión · Plan v{res.version}</p><button type="button" onClick={() => setAllSessions(!allSessions)}>{allSessions ? 'Ver solo la próxima' : 'Ver mi plan completo'}</button></div>
+      {res.weekStart&&<div className="card"><h3>Elegí cómo entrenar esta semana</h3><p className="muted">Es una preferencia flexible, no una obligación. La app mantiene límites prudentes.</p>{res.weeklyDecision&&<p className="muted">{res.weeklyDecision.reason==='gradual_return'?'Vuelta progresiva sugerida por falta de sesiones recientes registradas (no equivale a inactividad confirmada).':res.weeklyDecision.reason==='recovery_warning'?'Tu recuperación indica que conviene disminuir la carga esta semana.':res.weeklyDecision.reason==='strong_requires_data'?'Para subir la intensidad necesitamos registros recientes de entrenamiento y recuperación.':'Tu elección semanal está activa dentro de límites seguros.'}</p>}<div className="chips">{([['recovery','Recuperación'],['normal','Normal'],['strong','Más intensa']] as const).map(([mode,label])=><button key={mode} className={'chip'+(res.weekChoice===mode?' on':'')} disabled={weekSaving} onClick={async()=>{setWeekSaving(true);try{await api('POST','/api/training/week-choice',{mode,weekStart:res.weekStart});await load();}catch{setMsg('No pudimos guardar tu elección semanal.');}finally{setWeekSaving(false);}}}>{label}</button>)}</div></div>}
       {msg && <p className="ok" role="status">{msg}</p>}
       {days.map(({day, index}) => <div className="card workout-card" key={index}>
         <div className="eyebrow">{index === recommended ? 'RECOMENDADA PARA HOY' : 'OTRA SESIÓN DEL PLAN'}</div>

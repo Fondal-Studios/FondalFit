@@ -1,3 +1,5 @@
+import {weeklyDecision} from './weekly';
+import {computeEnergyDay, weeklyBalance, localDate} from './energy';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { z } from 'zod';
@@ -179,6 +181,16 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return rows.map(r=>({date:r.created_at,assessment:JSON.parse(r.data)}));
   });
 
+  app.post('/api/training/week-choice',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({mode:z.enum(['recovery','normal','strong']),weekStart:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/)}),req.body,reply);
+    if(!b)return;
+    const d=new Date(b.weekStart+'T12:00:00Z');
+    if(!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==b.weekStart||d.getUTCDay()!==1)return reply.code(400).send({error:'invalid_week'});
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'training_choice',?,?)").run(req.user!.id,JSON.stringify(b),now());
+    return {ok:true,choice:b};
+  });
+
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
     const p = await latestPlan(req.user!.id);
     const last = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(req.user!.id) as { n: number };
@@ -187,16 +199,28 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const initial=await db.prepare('SELECT created_at FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {created_at:string}|undefined;
     const elapsedWeeks=initial?Math.max(0,Math.floor((Date.now()-Date.parse(initial.created_at))/(7*86400000))):0;
     const currentWeek=plan?.schedule?.[Math.min(elapsedWeeks,(plan.schedule.length||1)-1)];
+    const weekStart=new Date();weekStart.setUTCDate(weekStart.getUTCDate()-((weekStart.getUTCDay()+6)%7));const weekKey=weekStart.toISOString().slice(0,10);
+    const choices=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='training_choice' ORDER BY id DESC LIMIT 52").all(req.user!.id) as {data:string}[];
+    const choice=choices.map(v=>JSON.parse(v.data) as {mode:'recovery'|'normal'|'strong';weekStart:string}).find(v=>v.weekStart===weekKey)?.mode??'normal';
+    const since=new Date(Date.now()-7*86400000).toISOString();
+    const history=await db.prepare('SELECT created_at FROM workouts WHERE user_id=? ORDER BY id DESC LIMIT 100').all(req.user!.id) as {created_at:string}[];
+    const recent=history.filter(v=>v.created_at>=since).length;
+    const lastDate=history[0]?.created_at;
+    const latestRecovery=await db.prepare('SELECT data FROM recovery WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {data:string}|undefined;
+    const rec=latestRecovery?JSON.parse(latestRecovery.data) as {fatigue:number;pain:number;sleepHours:number}:null;
+    const decision=weeklyDecision({planned:plan?.days.length??0,completed:recent,lastSessionDaysAgo:lastDate?Math.floor((Date.now()-Date.parse(lastDate))/86400000):null,fatigue:rec?.fatigue??null,pain:rec?.pain??null,sleepHours:rec?.sleepHours??null,choice});
+    const userFactor=decision.factor;
+    const effectiveFactor=Math.min(1.1,(currentWeek?.volumeFactor??1)*userFactor);
     const effectivePlan=plan&&currentWeek&&!(p?.source.startsWith('pro:'))?{
       ...plan,days:plan.days.map(day=>({
         ...day,
         items:day.items.map(item=>({...item,
-          sets:Math.max(1,Math.round(item.sets*currentWeek.volumeFactor)),
-          rirTarget:currentWeek.phase==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
-        ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*currentWeek.volumeFactor))}}:{})
+          sets:Math.max(1,Math.round(item.sets*effectiveFactor)),
+          rirTarget:currentWeek.phase==='recovery'||decision.mode==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
+        ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*effectiveFactor))}}:{})
       }))
     }:plan;
-    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
+    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null,weekChoice:choice,weeklyDecision:decision,weekStart:weekKey, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
@@ -411,7 +435,7 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const byDay=new Map<string,{intake:number;runKcal:number;blocksKcal:number;meals:{name:string;kcal:number}[];runs:{km:number;kcal:number}[];blocks:{name:string;minutes:number;kcal:number}[]}>();
     for(const row of rows){
       if(row.kind!=='log'&&row.kind!=='exercise')continue;
-      const localDay=new Date(Date.parse(row.created_at)-q.timezoneOffset*60000).toISOString().slice(0,10);
+      const localDay=localDate(row.created_at,q.timezoneOffset);
       const item=byDay.get(localDay)??{intake:0,runKcal:0,blocksKcal:0,meals:[],runs:[],blocks:[]};
       const data=JSON.parse(row.data) as {kind?:string;kcal?:number;km?:number;meal?:string;blocks?:{name:string;minutes:number;activeKcal:number}[]};
       const kcal=Math.max(0,Number(data.kcal)||0);
@@ -426,21 +450,17 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     for(const row of statuses){const v=JSON.parse(row.data) as {date:string;complete:boolean};if(v.date.startsWith(q.month))completeDates.set(v.date,!!v.complete);}
     const days=[...byDay].map(([date,item])=>{
       const tdee=Number(target?.tdee)||0;
-      const exerciseKcal=item.runKcal+item.blocksKcal;
-      // Sedentary baseline is an estimate of BMR + everyday activity; exercises are tracked separately.
       const bmr=Number(target?.bmr)||0;
-      const adjustedBudget=bmr>0 ? bmr*1.2+exerciseKcal : tdee+exerciseKcal;
       const completed=completeDates.get(date)===true;
-      const balance=tdee>0&&completed?Math.round(item.intake-adjustedBudget):null;
-      const ratio=balance===null?null:balance/tdee;
-      const band=ratio===null?'unknown':ratio>0.05?'red':ratio>0?'orange':ratio>=-0.05?'yellow':ratio>=-0.15?'green':ratio>=-0.25?'blue':'violet';
+      const activity=([1.2,1.375,1.55,1.725] as const).reduce((best,x)=>Math.abs(x-(bmr>0?tdee/bmr:1.2))<Math.abs(best-(bmr>0?tdee/bmr:1.2))?x:best,1.2 as number) as 1.2|1.375|1.55|1.725;
+      const computed=bmr>0?computeEnergyDay({bmr,activity,intake:item.intake,extraActiveKcal:item.runKcal+item.blocksKcal,complete:completed}):null;
+      const adjustedBudget=computed?.expenditure??0;
+      const balance=computed?.balance??null;
+      const band=computed?.band??'unknown';
       return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,completed,provisional:true};
     });
-    const confirmed=days.filter(d=>d.completed&&d.balance!==null);
-    const weekly=new Map<string,{weekStart:string;intake:number;expenditure:number;days:number}>();
-    for(const day of confirmed){const dt=new Date(day.date+'T12:00:00Z');const weekday=(dt.getUTCDay()+6)%7;dt.setUTCDate(dt.getUTCDate()-weekday);const key=dt.toISOString().slice(0,10);const w=weekly.get(key)??{weekStart:key,intake:0,expenditure:0,days:0};w.intake+=day.intake;w.expenditure+=day.estimatedExpenditure;w.days++;weekly.set(key,w);}
-    const weeks=[...weekly.values()].map(w=>({...w,balance:w.days===7?Math.round(w.intake-w.expenditure):null,complete:w.days===7}));
-    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'Solo días confirmados muestran balance aproximado. Las semanas requieren siete días completos. Las cifras no diagnostican déficit real y el gasto puede estar estimado con error.'};
+    const weeks=weeklyBalance(days.map(d=>({date:d.date,complete:d.completed,balance:d.balance})));
+    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'El mantenimiento incluye actividad habitual. El ejercicio registrado se informa por separado para evitar doble conteo. Solo días confirmados tienen balance aproximado; semanas incompletas no se contabilizan.'};
   });
 
   app.post('/api/activity/blocks',{preHandler:athleteOnly},async(req,reply)=>{
