@@ -1,3 +1,4 @@
+import {weeklyDecision} from './weekly';
 import {computeEnergyDay, weeklyBalance, localDate} from './energy';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
@@ -201,18 +202,25 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const weekStart=new Date();weekStart.setUTCDate(weekStart.getUTCDate()-((weekStart.getUTCDay()+6)%7));const weekKey=weekStart.toISOString().slice(0,10);
     const choices=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='training_choice' ORDER BY id DESC LIMIT 52").all(req.user!.id) as {data:string}[];
     const choice=choices.map(v=>JSON.parse(v.data) as {mode:'recovery'|'normal'|'strong';weekStart:string}).find(v=>v.weekStart===weekKey)?.mode??'normal';
-    const userFactor=choice==='recovery'?0.75:choice==='strong'?1.05:1;
+    const since=new Date(Date.now()-7*86400000).toISOString();
+    const history=await db.prepare('SELECT created_at FROM workouts WHERE user_id=? ORDER BY id DESC LIMIT 100').all(req.user!.id) as {created_at:string}[];
+    const recent=history.filter(v=>v.created_at>=since).length;
+    const lastDate=history[0]?.created_at;
+    const latestRecovery=await db.prepare('SELECT data FROM recovery WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {data:string}|undefined;
+    const rec=latestRecovery?JSON.parse(latestRecovery.data) as {fatigue:number;pain:number;sleepHours:number}:null;
+    const decision=weeklyDecision({planned:plan?.days.length??0,completed:recent,lastSessionDaysAgo:lastDate?Math.floor((Date.now()-Date.parse(lastDate))/86400000):null,fatigue:rec?.fatigue??null,pain:rec?.pain??null,sleepHours:rec?.sleepHours??null,choice});
+    const userFactor=decision.factor;
     const effectiveFactor=Math.min(1.1,(currentWeek?.volumeFactor??1)*userFactor);
     const effectivePlan=plan&&currentWeek&&!(p?.source.startsWith('pro:'))?{
       ...plan,days:plan.days.map(day=>({
         ...day,
         items:day.items.map(item=>({...item,
           sets:Math.max(1,Math.round(item.sets*effectiveFactor)),
-          rirTarget:currentWeek.phase==='recovery'||choice==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
+          rirTarget:currentWeek.phase==='recovery'||decision.mode==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
         ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*effectiveFactor))}}:{})
       }))
     }:plan;
-    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null,weekChoice:choice,weekStart:weekKey, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
+    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null,weekChoice:choice,weeklyDecision:decision,weekStart:weekKey, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
