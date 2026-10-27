@@ -371,6 +371,17 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return { target: target ? JSON.parse(target.data) : null, suggestedNutrition, logs, today: { kcal: sum('kcal'), proteinG: sum('proteinG'), carbsG: sum('carbsG'), fatG: sum('fatG'), waterMl: sum('waterMl') } };
   });
 
+  app.post('/api/energy/day-status',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({date:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),complete:z.boolean(),timezoneOffset:z.number().int().min(-840).max(840)}),req.body,reply);
+    if(!b)return;
+    const date=new Date(b.date+'T12:00:00Z');
+    if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==b.date)return reply.code(400).send({error:'invalid_date'});
+    // Append-only completion decisions: last status for each calendar day wins.
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'day_status',?,?)").run(req.user!.id,JSON.stringify(b),now());
+    return {ok:true,complete:b.complete};
+  });
+
   /* Calendar: explicit local-time offset; estimated energy balance, not a medical measurement. */
   app.get('/api/energy/calendar', { preHandler: athleteOnly }, async(req,reply)=>{
     const q=parse(z.object({month:z.string().regex(/^\d{4}-\d{2}$/),timezoneOffset:z.coerce.number().int().min(-840).max(840).default(0)}),req.query,reply);
@@ -396,18 +407,27 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
       else{item.runKcal+=kcal;item.runs.push({km:Number(data.km)||0,kcal});}
       byDay.set(localDay,item);
     }
+    // A user's explicit confirmation is required before classifying any daily or weekly balance.
+    const statuses=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='day_status' ORDER BY id ASC").all(req.user!.id) as {data:string}[];
+    const completeDates=new Map<string,boolean>();
+    for(const row of statuses){const v=JSON.parse(row.data) as {date:string;complete:boolean};if(v.date.startsWith(q.month))completeDates.set(v.date,!!v.complete);}
     const days=[...byDay].map(([date,item])=>{
       const tdee=Number(target?.tdee)||0;
       const exerciseKcal=item.runKcal+item.blocksKcal;
       // Sedentary baseline is an estimate of BMR + everyday activity; exercises are tracked separately.
       const bmr=Number(target?.bmr)||0;
       const adjustedBudget=bmr>0 ? bmr*1.2+exerciseKcal : tdee+exerciseKcal;
-      const balance=tdee>0?Math.round(item.intake-adjustedBudget):null;
+      const completed=completeDates.get(date)===true;
+      const balance=tdee>0&&completed?Math.round(item.intake-adjustedBudget):null;
       const ratio=balance===null?null:balance/tdee;
       const band=ratio===null?'unknown':ratio>0.05?'red':ratio>0?'orange':ratio>=-0.05?'yellow':ratio>=-0.15?'green':ratio>=-0.25?'blue':'violet';
-      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,provisional:true};
+      return {date,...item,intake:Math.round(item.intake),runKcal:Math.round(item.runKcal),blocksKcal:Math.round(item.blocksKcal),estimatedExpenditure:Math.round(adjustedBudget),balance,band,completed,provisional:true};
     });
-    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,note:'Estimaciones provisionales. El gasto basal ya puede incluir parte de la actividad; sumar running podría duplicar gasto. Los colores no diagnostican déficit real.'};
+    const confirmed=days.filter(d=>d.completed&&d.balance!==null);
+    const weekly=new Map<string,{weekStart:string;intake:number;expenditure:number;days:number}>();
+    for(const day of confirmed){const dt=new Date(day.date+'T12:00:00Z');const weekday=(dt.getUTCDay()+6)%7;dt.setUTCDate(dt.getUTCDate()-weekday);const key=dt.toISOString().slice(0,10);const w=weekly.get(key)??{weekStart:key,intake:0,expenditure:0,days:0};w.intake+=day.intake;w.expenditure+=day.estimatedExpenditure;w.days++;weekly.set(key,w);}
+    const weeks=[...weekly.values()].map(w=>({...w,balance:w.days===7?Math.round(w.intake-w.expenditure):null,complete:w.days===7}));
+    return {month:q.month,target:target?{kcal:target.kcal,bmr:target.bmr,tdee:target.tdee,adjustmentPct:target.adjustmentPct}:null,days,weeks,note:'Solo días confirmados muestran balance aproximado. Las semanas requieren siete días completos. Las cifras no diagnostican déficit real y el gasto puede estar estimado con error.'};
   });
 
   app.post('/api/activity/blocks',{preHandler:athleteOnly},async(req,reply)=>{
