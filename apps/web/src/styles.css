@@ -204,7 +204,7 @@ nav.tabs{padding-bottom:calc(7px + env(safe-area-inset-bottom))}
 .energy-calendar-grid .weekday{text-align:center;font-size:.75rem;color:var(--muted);padding:6px 0}
 .energy-day{min-width:0;min-height:47px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:2px;border:2px solid transparent;border-radius:11px;background:#182220;color:#e6eee9;font-variant-numeric:tabular-nums}
 .energy-day.selected{outline:2px solid var(--accent);outline-offset:1px}
-.energy-day.empty{background:#18211f;color:#82948a}
+.energy-day.empty,.energy-day.unknown{background:#30343a;color:#b5bbc3}
 .energy-day.red,.energy-legend .red,.energy-band .red{background:#a7444c}
 .energy-day.orange,.energy-legend .orange,.energy-band .orange{background:#b87537}
 .energy-day.yellow,.energy-legend .yellow,.energy-band .yellow{background:#a89b4d;color:#101814}
