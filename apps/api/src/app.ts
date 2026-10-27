@@ -180,6 +180,16 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     return rows.map(r=>({date:r.created_at,assessment:JSON.parse(r.data)}));
   });
 
+  app.post('/api/training/week-choice',{preHandler:athleteOnly},async(req,reply)=>{
+    if(!await needHealth(req,reply))return;
+    const b=parse(z.object({mode:z.enum(['recovery','normal','strong']),weekStart:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/)}),req.body,reply);
+    if(!b)return;
+    const d=new Date(b.weekStart+'T12:00:00Z');
+    if(!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==b.weekStart||d.getUTCDay()!==1)return reply.code(400).send({error:'invalid_week'});
+    await db.prepare("INSERT INTO nutrition(user_id,kind,data,created_at) VALUES(?,'training_choice',?,?)").run(req.user!.id,JSON.stringify(b),now());
+    return {ok:true,choice:b};
+  });
+
   app.get('/api/plan', { preHandler: athleteOnly }, async (req) => {
     const p = await latestPlan(req.user!.id);
     const last = await db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE user_id=?').get(req.user!.id) as { n: number };
@@ -188,16 +198,21 @@ export function buildApp(opts: { db: DB; rateLimitMax?: number; staticDir?: stri
     const initial=await db.prepare('SELECT created_at FROM assessments WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user!.id) as {created_at:string}|undefined;
     const elapsedWeeks=initial?Math.max(0,Math.floor((Date.now()-Date.parse(initial.created_at))/(7*86400000))):0;
     const currentWeek=plan?.schedule?.[Math.min(elapsedWeeks,(plan.schedule.length||1)-1)];
+    const weekStart=new Date();weekStart.setUTCDate(weekStart.getUTCDate()-((weekStart.getUTCDay()+6)%7));const weekKey=weekStart.toISOString().slice(0,10);
+    const choices=await db.prepare("SELECT data FROM nutrition WHERE user_id=? AND kind='training_choice' ORDER BY id DESC LIMIT 52").all(req.user!.id) as {data:string}[];
+    const choice=choices.map(v=>JSON.parse(v.data) as {mode:'recovery'|'normal'|'strong';weekStart:string}).find(v=>v.weekStart===weekKey)?.mode??'normal';
+    const userFactor=choice==='recovery'?0.75:choice==='strong'?1.05:1;
+    const effectiveFactor=Math.min(1.1,(currentWeek?.volumeFactor??1)*userFactor);
     const effectivePlan=plan&&currentWeek&&!(p?.source.startsWith('pro:'))?{
       ...plan,days:plan.days.map(day=>({
         ...day,
         items:day.items.map(item=>({...item,
-          sets:Math.max(1,Math.round(item.sets*currentWeek.volumeFactor)),
-          rirTarget:currentWeek.phase==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
-        ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*currentWeek.volumeFactor))}}:{})
+          sets:Math.max(1,Math.round(item.sets*effectiveFactor)),
+          rirTarget:currentWeek.phase==='recovery'||choice==='recovery'?Math.max(item.rirTarget,4):item.rirTarget})),
+        ...(day.run?{run:{...day.run,minutes:Math.max(10,Math.round(day.run.minutes*effectiveFactor))}}:{})
       }))
     }:plan;
-    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
+    return p ? { version: p.version, source: p.source, plan:effectivePlan, currentWeek:currentWeek?.week??null, phase:currentWeek?.phase??null,weekChoice:choice,weekStart:weekKey, recommendedDay: plan && plan.days.length ? Number(last.n) % plan.days.length : 0 } : { plan: null, recommendedDay: 0 };
   });
 
   /* ---------------- Sessions & adaptation ---------------- */
