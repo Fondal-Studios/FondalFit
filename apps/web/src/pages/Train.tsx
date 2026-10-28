@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {SessionExercisePicker} from './SessionExercisePicker';
+import {ManualActivity} from './Cardio';
 import { byId, hrZones, schemeFor, weeklyVolume, type Goal, type Plan, type PlanDay } from '@fondal/engine';
 import { Bar, Loading, useLoad, useT } from '../ctx';
 import { useNav } from '../nav';
@@ -19,11 +20,14 @@ export function Train() {
   const { data, err, reload } = useLoad<PlanRes>('/api/plan');
   const asm = useLoad<{ assessment: { profile?: { age: number } } | null }>('/api/assessment');
   const [why, setWhy] = useState(false);
+  const activities=useLoad<{activities:{id:number;sport:string;started_at:string;distance_m:number;duration_sec:number;estimated_kcal:number|null;manual:boolean}[]}>('/api/activities');
+  const manualPanel=<section className="card"><h3>Registrar corrida o bicicleta</h3><p className="muted">¿Usaste un reloj u otra aplicación? Cargá distancia, duración y, si la tenés, la estimación de calorías de esa app. Se añadirá a tu historial y al gasto energético del día, sin duplicarla.</p><ManualActivity onSaved={()=>activities.reload()}/>{activities.data?.activities.filter(a=>a.manual).slice(0,3).map(a=><p key={a.id} className="muted small">{new Date(a.started_at).toLocaleDateString()} · {a.sport==='bike'?'Bicicleta':'Corrida'} · {(a.distance_m/1000).toFixed(2)} km · {Math.round(a.duration_sec/60)} min · {a.estimated_kcal===null?'Gasto por estimar':'≈'+a.estimated_kcal+' kcal'}</p>)}</section>;
   const [editing,setEditing]=useState<{day:number;item:number}|null>(null);
   if (!data) return <Loading err={err} retry={reload} />;
   if (!data.plan) return (
     <div className="stack"><h2>{t('nav_train')}</h2>
       <div className="card hero"><h3>{t('noPlanYet')}</h3><p className="muted">{t('planWizardIntro')}</p><button className="primary" onClick={() => nav.push('wizard')}>{t('createPlan')}</button></div>
+      {manualPanel}
       <div className="card"><h3>{t('orPickRoutine')}</h3><button onClick={() => nav.push('routines')}>{t('routines')} →</button></div>
     </div>
   );
@@ -34,6 +38,7 @@ export function Train() {
   return (
     <div className="stack">
       <div className="row between"><h2>{t('nav_train')}</h2><button onClick={() => nav.push('wizard')}>{t('editPlan')}</button></div>
+      {manualPanel}
       <div className="card hero">
         <p className="muted small">{data.proName ? `${t('byPro')} ${data.proName}` : data.routineId ? t('routine') : t('generatedPlan')} · v{data.version}</p>
         <h3>{t('g_' + plan.goal)}</h3>
